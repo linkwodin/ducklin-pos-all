@@ -1,0 +1,582 @@
+{
+  "@@locale": "en",
+  "appTitle": "POS System",
+  "@appTitle": {
+    "description": "The title of the application"
+  },
+  "loginTitle": "德靈公司 POS v1.0",
+  "@loginTitle": {
+    "description": "The title shown on the login screen"
+  },
+  "enterPIN": "Enter PIN",
+  "@enterPIN": {
+    "description": "Title for PIN entry screen"
+  },
+  "signIn": "Sign In",
+  "@signIn": {
+    "description": "Sign in button text"
+  },
+  "signingIn": "Signing in...",
+  "@signingIn": {
+    "description": "Signing in loading text"
+  },
+  "username": "Username",
+  "@username": {
+    "description": "Username label"
+  },
+  "password": "Password",
+  "@password": {
+    "description": "Password label"
+  },
+  "pin": "PIN",
+  "@pin": {
+    "description": "PIN label"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button"
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save button"
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button"
+  },
+  "edit": "Edit",
+  "@edit": {
+    "description": "Edit button"
+  },
+  "add": "Add",
+  "@add": {
+    "description": "Add button"
+  },
+  "update": "Update",
+  "@update": {
+    "description": "Update button"
+  },
+  "close": "Close",
+  "@close": {
+    "description": "Close button"
+  },
+  "error": "Error",
+  "@error": {
+    "description": "Error title"
+  },
+  "confirm": "Confirm",
+  "@confirm": {
+    "description": "Confirm button"
+  },
+  "search": "Search",
+  "@search": {
+    "description": "Search placeholder"
+  },
+  "loading": "Loading...",
+  "@loading": {
+    "description": "Loading text"
+  },
+  "noData": "No data found",
+  "@noData": {
+    "description": "No data message"
+  },
+  "sync": "Sync",
+  "@sync": {
+    "description": "Sync button"
+  },
+  "syncUsers": "Sync Users",
+  "@syncUsers": {
+    "description": "Sync users button"
+  },
+  "syncing": "Syncing...",
+  "@syncing": {
+    "description": "Syncing text"
+  },
+  "loginWithUsernamePassword": "Login with Username/Password",
+  "@loginWithUsernamePassword": {
+    "description": "Login with username/password button"
+  },
+  "noUsersAvailable": "No users available",
+  "@noUsersAvailable": {
+    "description": "No users message"
+  },
+  "pleaseSyncWithServerFirst": "Please sync with server first",
+  "@pleaseSyncWithServerFirst": {
+    "description": "Message to sync with server"
+  },
+  "invalidPIN": "Invalid PIN",
+  "@invalidPIN": {
+    "description": "Invalid PIN error"
+  },
+  "loginFailed": "Login failed",
+  "@loginFailed": {
+    "description": "Login failed error"
+  },
+  "pinMustBeDigits": "PIN must be exactly {count} digits",
+  "@pinMustBeDigits": {
+    "description": "PIN validation message",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newOrder": "New Order",
+  "@newOrder": {
+    "description": "New order navigation item"
+  },
+  "searchOrder": "Search Order",
+  "@searchOrder": {
+    "description": "Search order navigation item"
+  },
+  "inventory": "Inventory",
+  "@inventory": {
+    "description": "Inventory navigation item"
+  },
+  "userManagement": "User Management",
+  "@userManagement": {
+    "description": "User management navigation item"
+  },
+  "report": "Report",
+  "@report": {
+    "description": "Report navigation item"
+  },
+  "settings": "Settings",
+  "@settings": {
+    "description": "Settings navigation item"
+  },
+  "logout": "Logout",
+  "@logout": {
+    "description": "Logout button"
+  },
+  "areYouSureLogout": "Are you sure you want to logout?",
+  "@areYouSureLogout": {
+    "description": "Logout confirmation"
+  },
+  "dataSyncedSuccessfully": "Data synced successfully",
+  "@dataSyncedSuccessfully": {
+    "description": "Data sync success message"
+  },
+  "searchProducts": "Search products by name, barcode, or SKU...",
+  "@searchProducts": {
+    "description": "Product search placeholder"
+  },
+  "noProductsFound": "No products found for \"{query}\"",
+  "@noProductsFound": {
+    "description": "No products found message",
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "noProductsInCategory": "No products in category \"{category}\"",
+  "@noProductsInCategory": {
+    "description": "No products in category message",
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
+  "noProductsAvailable": "No products available",
+  "@noProductsAvailable": {
+    "description": "No products available message"
+  },
+  "clearFilters": "Clear filters",
+  "@clearFilters": {
+    "description": "Clear filters button"
+  },
+  "scanBarcode": "Scan Barcode",
+  "@scanBarcode": {
+    "description": "Scan barcode button"
+  },
+  "addedToCart": "Added to cart",
+  "@addedToCart": {
+    "description": "Added to cart message"
+  },
+  "addedWeightToCart": "Added {weight}g to cart",
+  "@addedWeightToCart": {
+    "description": "Added weight to cart message",
+    "placeholders": {
+      "weight": {
+        "type": "double"
+      }
+    }
+  },
+  "productAddedToCart": "Product \"{name}\" added to cart",
+  "@productAddedToCart": {
+    "description": "Product added to cart message",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "enterWeight": "Enter Weight",
+  "@enterWeight": {
+    "description": "Enter weight dialog title"
+  },
+  "weightG": "Weight (g)",
+  "@weightG": {
+    "description": "Weight label"
+  },
+  "quantity": "Quantity",
+  "@quantity": {
+    "description": "Quantity label"
+  },
+  "inventoryManagement": "Inventory Management",
+  "@inventoryManagement": {
+    "description": "Inventory management title"
+  },
+  "currentStock": "Current Stock",
+  "@currentStock": {
+    "description": "Current stock tab"
+  },
+  "incomingStock": "Incoming Stock",
+  "@incomingStock": {
+    "description": "Incoming stock tab"
+  },
+  "storeID": "Store ID: {id}",
+  "@storeID": {
+    "description": "Store ID label",
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "noInventoryData": "No inventory data available",
+  "@noInventoryData": {
+    "description": "No inventory data message"
+  },
+  "noIncomingStockOrders": "No incoming stock orders",
+  "@noIncomingStockOrders": {
+    "description": "No incoming stock orders message"
+  },
+  "updateStock": "Update Stock: {name}",
+  "@updateStock": {
+    "description": "Update stock dialog title",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "reasonOptional": "Reason (optional)",
+  "@reasonOptional": {
+    "description": "Reason field label"
+  },
+  "reasonPlaceholder": "e.g., manual adjustment, received stock",
+  "@reasonPlaceholder": {
+    "description": "Reason placeholder"
+  },
+  "stockUpdatedSuccessfully": "Stock updated successfully",
+  "@stockUpdatedSuccessfully": {
+    "description": "Stock updated success message"
+  },
+  "failedToUpdateStock": "Failed to update stock: {error}",
+  "@failedToUpdateStock": {
+    "description": "Stock update error message",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmReceipt": "Confirm Receipt",
+  "@confirmReceipt": {
+    "description": "Confirm receipt dialog title"
+  },
+  "confirmReceiptMessage": "Are you sure you want to confirm that this stock has arrived? This will update the inventory quantities.",
+  "@confirmReceiptMessage": {
+    "description": "Confirm receipt message"
+  },
+  "stockReceiptConfirmed": "Stock receipt confirmed successfully",
+  "@stockReceiptConfirmed": {
+    "description": "Stock receipt confirmed message"
+  },
+  "failedToConfirmReceipt": "Failed to confirm receipt: {error}",
+  "@failedToConfirmReceipt": {
+    "description": "Failed to confirm receipt error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "orderHistory": "Order History",
+  "@orderHistory": {
+    "description": "Order history title"
+  },
+  "searchByOrderTotalDate": "Search by Order #, Total, or Date",
+  "@searchByOrderTotalDate": {
+    "description": "Order search placeholder"
+  },
+  "noOrdersFound": "No orders found",
+  "@noOrdersFound": {
+    "description": "No orders found message"
+  },
+  "orderNumberHash": "Order #{number}",
+  "@orderNumberHash": {
+    "description": "Order number display",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "orderNumber": "Order #: {number}",
+  "@orderNumber": {
+    "description": "Order number label",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "date": "Date: {date}",
+  "@date": {
+    "description": "Date label",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "viewReceipt": "View receipt for Order #{number}",
+  "@viewReceipt": {
+    "description": "View receipt message",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "comingSoon": "Coming Soon",
+  "@comingSoon": {
+    "description": "Coming soon message"
+  },
+  "inventoryManagementComingSoon": "Inventory Management (Coming Soon)",
+  "@inventoryManagementComingSoon": {
+    "description": "Inventory management coming soon"
+  },
+  "userManagementComingSoon": "User Management (Coming Soon)",
+  "@userManagementComingSoon": {
+    "description": "User management coming soon"
+  },
+  "reportsComingSoon": "Reports (Coming Soon)",
+  "@reportsComingSoon": {
+    "description": "Reports coming soon"
+  },
+  "all": "All",
+  "@all": {
+    "description": "All filter option"
+  },
+  "product": "Product",
+  "@product": {
+    "description": "Product label"
+  },
+  "store": "Store",
+  "@store": {
+    "description": "Store label"
+  },
+  "qty": "Qty: {quantity}",
+  "@qty": {
+    "description": "Quantity display",
+    "placeholders": {
+      "quantity": {
+        "type": "String"
+      }
+    }
+  },
+  "weightDisplay": "{weight}g",
+  "@weightDisplay": {
+    "description": "Weight display",
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "syncedUsers": "Synced {count} user(s) successfully",
+  "@syncedUsers": {
+    "description": "Synced users message",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noUsersFoundForDevice": "No users found for this device on the server.",
+  "@noUsersFoundForDevice": {
+    "description": "No users found for device message"
+  },
+  "syncFailed": "Sync failed: {error}",
+  "@syncFailed": {
+    "description": "Sync failed message",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceCodeNotAvailable": "Device code not available. Please register device first.",
+  "@deviceCodeNotAvailable": {
+    "description": "Device code not available message"
+  },
+  "refresh": "Refresh",
+  "@refresh": {
+    "description": "Refresh button"
+  },
+  "checkout": "Checkout",
+  "@checkout": {
+    "description": "Checkout button"
+  },
+  "subtotal": "Subtotal",
+  "@subtotal": {
+    "description": "Subtotal label"
+  },
+  "discount": "Discount",
+  "@discount": {
+    "description": "Discount label"
+  },
+  "total": "Total",
+  "@total": {
+    "description": "Total label"
+  },
+  "processPayment": "Process Payment",
+  "@processPayment": {
+    "description": "Process payment button"
+  },
+  "orderReceipt": "Order Receipt",
+  "@orderReceipt": {
+    "description": "Order receipt title"
+  },
+  "orderNumber": "Order #: {number}",
+  "@orderNumber": {
+    "description": "Order number label",
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "print": "Print",
+  "@print": {
+    "description": "Print button"
+  },
+  "markPaid": "Mark Paid",
+  "@markPaid": {
+    "description": "Mark paid button"
+  },
+  "orderCreatedSuccessfully": "Order created successfully",
+  "@orderCreatedSuccessfully": {
+    "description": "Order created success message"
+  },
+  "storeNotSelected": "Store not selected",
+  "@storeNotSelected": {
+    "description": "Store not selected error"
+  },
+  "userNotAuthenticated": "User not authenticated",
+  "@userNotAuthenticated": {
+    "description": "User not authenticated error"
+  },
+  "status": "Status",
+  "@status": {
+    "description": "Status label"
+  },
+  "reprint": "Reprint",
+  "@reprint": {
+    "description": "Reprint button"
+  },
+  "tracking": "Tracking",
+  "@tracking": {
+    "description": "Tracking label"
+  },
+  "unknownProduct": "Unknown Product",
+  "@unknownProduct": {
+    "description": "Unknown product label"
+  },
+  "language": "Language",
+  "@language": {
+    "description": "Language button label"
+  },
+  "printerSettings": "Printer Settings",
+  "@printerSettings": {
+    "description": "Printer settings title"
+  },
+  "connectionType": "Connection Type",
+  "@connectionType": {
+    "description": "Connection type label"
+  },
+  "network": "Network",
+  "@network": {
+    "description": "Network connection type"
+  },
+  "bluetooth": "Bluetooth",
+  "@bluetooth": {
+    "description": "Bluetooth connection type"
+  },
+  "usb": "USB",
+  "@usb": {
+    "description": "USB connection type"
+  },
+  "networkSettings": "Network Settings",
+  "@networkSettings": {
+    "description": "Network settings title"
+  },
+  "bluetoothSettings": "Bluetooth Settings",
+  "@bluetoothSettings": {
+    "description": "Bluetooth settings title"
+  },
+  "usbSettings": "USB Settings",
+  "@usbSettings": {
+    "description": "USB settings title"
+  },
+  "printerIPAddress": "Printer IP Address",
+  "@printerIPAddress": {
+    "description": "Printer IP address label"
+  },
+  "printerPort": "Port",
+  "@printerPort": {
+    "description": "Printer port label"
+  },
+  "usbSerialPort": "USB Serial Port",
+  "@usbSerialPort": {
+    "description": "USB serial port label"
+  },
+  "usbSerialPortHint": "e.g., /dev/tty.usbserial-* or /dev/cu.usbserial-*",
+  "@usbSerialPortHint": {
+    "description": "USB serial port hint"
+  },
+  "scanDevices": "Scan Devices",
+  "@scanDevices": {
+    "description": "Scan devices button"
+  },
+  "scanning": "Scanning...",
+  "@scanning": {
+    "description": "Scanning text"
+  },
+  "noBluetoothDevicesFound": "No Bluetooth devices found",
+  "@noBluetoothDevicesFound": {
+    "description": "No Bluetooth devices found message"
+  },
+  "testPrinter": "Test Printer",
+  "@testPrinter": {
+    "description": "Test printer button"
+  },
+  "saveSettings": "Save Settings",
+  "@saveSettings": {
+    "description": "Save settings button"
+  },
+  "settingsSavedSuccessfully": "Settings saved successfully",
+  "@settingsSavedSuccessfully": {
+    "description": "Settings saved success message"
+  },
+  "noUsbPrintersFound": "No USB printers found. Make sure your printer is connected.",
+  "@noUsbPrintersFound": {
+    "description": "No USB printers found message"
+  }
+}
+

@@ -1,0 +1,72 @@
+name: pos_system
+description: POS System Flutter Application
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # HTTP & API
+  http: ^1.1.0
+  dio: ^5.4.0
+  
+  # Local Database
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.2.0
+  
+  # Encryption
+  encrypt: ^5.0.1
+  crypto: ^3.0.3
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  
+  # QR Code
+  qr_flutter: ^4.1.0
+  
+  # Barcode Scanner
+  mobile_scanner: ^3.5.0
+  
+  # UI
+  cupertino_icons: ^1.0.6
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+  
+  # Printing
+  esc_pos_utils: ^1.1.0
+  flutter_bluetooth_serial: ^0.4.0
+  
+  # Utils
+  intl: ^0.20.2
+  uuid: ^4.2.1
+  device_info_plus: ^9.1.1
+  
+  # Localization
+  flutter_localizations:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+dependency_overrides:
+  image: ^3.0.2
+
+flutter:
+  uses-material-design: true
+  
+  generate: true
+  
+  assets:
+    - assets/images/
+
