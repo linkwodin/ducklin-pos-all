@@ -13,6 +13,7 @@ import type {
   CurrencyRate,
   AuditLog,
   LoginResponse,
+  Order,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -91,6 +92,13 @@ export const productsAPI = {
     const { data } = await api.post(`/products/${id}/cost`, cost);
     return data;
   },
+  updateCostSimple: async (id: number, cost: {
+    wholesale_cost_gbp?: number;
+    direct_retail_online_store_price_gbp?: number;
+  }): Promise<ProductCost> => {
+    const { data } = await api.put(`/products/${id}/cost`, cost);
+    return data;
+  },
   getPriceHistory: async (id: number, sectorId?: number): Promise<PriceHistory[]> => {
     const { data } = await api.get(`/products/${id}/price-history`, {
       params: { sector_id: sectorId },
@@ -109,6 +117,14 @@ export const productsAPI = {
     const { data } = await api.post(`/products/${productId}/discounts/${sectorId}`, {
       discount_percent: discountPercent,
     });
+    return data;
+  },
+  importExcel: async (
+    file: File
+  ): Promise<{ imported: number; updated: number; errors: string[] }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/products/import-excel', formData);
     return data;
   },
 };
@@ -311,6 +327,50 @@ export const auditAPI = {
     entity_id?: number;
   }): Promise<AuditLog[]> => {
     const { data } = await api.get('/audit/stock', { params });
+    return data;
+  },
+};
+
+// Orders API
+export const ordersAPI = {
+  list: async (params?: {
+    store_id?: number;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    limit?: number;
+  }): Promise<Order[]> => {
+    const { data } = await api.get('/orders', { params });
+    return data;
+  },
+  get: async (id: number | string): Promise<Order> => {
+    const { data } = await api.get(`/orders/${id}`);
+    return data;
+  },
+  markPaid: async (id: number): Promise<Order> => {
+    const { data } = await api.put(`/orders/${id}/pay`);
+    return data;
+  },
+  markComplete: async (id: number): Promise<Order> => {
+    const { data } = await api.put(`/orders/${id}/complete`);
+    return data;
+  },
+  cancel: async (id: number): Promise<Order> => {
+    const { data } = await api.put(`/orders/${id}/cancel`);
+    return data;
+  },
+  getDailyRevenueStats: async (params?: {
+    days?: number;
+    store_id?: number;
+  }): Promise<Array<{ date: string; revenue: number; order_count: number }>> => {
+    const { data } = await api.get('/orders/stats/revenue', { params });
+    return data;
+  },
+  getDailyProductSalesStats: async (params?: {
+    days?: number;
+    store_id?: number;
+  }): Promise<Array<{ date: string; product_id: number; product_name: string; product_name_chinese: string; quantity: number; revenue: number }>> => {
+    const { data } = await api.get('/orders/stats/product-sales', { params });
     return data;
   },
 };

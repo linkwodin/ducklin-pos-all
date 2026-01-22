@@ -466,6 +466,22 @@
   "@print": {
     "description": "Print button"
   },
+  "printInternalAuditNote": "Print Internal Audit Note",
+  "@printInternalAuditNote": {
+    "description": "Print internal audit note button"
+  },
+  "printInvoice": "Print Invoice",
+  "@printInvoice": {
+    "description": "Print invoice button"
+  },
+  "printCustomerReceipt": "Print Customer Receipt",
+  "@printCustomerReceipt": {
+    "description": "Print customer receipt button"
+  },
+  "printAll": "Print All",
+  "@printAll": {
+    "description": "Print all receipts button"
+  },
   "markPaid": "Mark Paid",
   "@markPaid": {
     "description": "Mark paid button"
@@ -577,6 +593,78 @@
   "noUsbPrintersFound": "No USB printers found. Make sure your printer is connected.",
   "@noUsbPrintersFound": {
     "description": "No USB printers found message"
+  },
+  "orderPickup": "Order Pickup",
+  "@orderPickup": {
+    "description": "Order pickup screen title"
+  },
+  "scanOrderQRCode": "Scan Order QR Code",
+  "@scanOrderQRCode": {
+    "description": "Scan order QR code title"
+  },
+  "scanQRCodeToConfirmPickup": "Scan the QR code on the invoice to confirm order pickup",
+  "@scanQRCodeToConfirmPickup": {
+    "description": "Instructions for scanning QR code"
+  },
+  "enterOrderNumber": "Enter Order Number",
+  "@enterOrderNumber": {
+    "description": "Label for order number input field"
+  },
+  "scanOrEnterOrderNumber": "Scan QR code or enter order number",
+  "@scanOrEnterOrderNumber": {
+    "description": "Placeholder for order number input"
+  },
+  "useBarcodeScannerOrTypeManually": "Use a barcode scanner or type the order number manually",
+  "@useBarcodeScannerOrTypeManually": {
+    "description": "Instructions for using barcode scanner or manual input"
+  },
+  "orderDetails": "Order Details",
+  "@orderDetails": {
+    "description": "Title for order details screen"
+  },
+  "orderInformation": "Order Information",
+  "@orderInformation": {
+    "description": "Section title for order information"
+  },
+  "orderItems": "Order Items",
+  "@orderItems": {
+    "description": "Section title for order items"
+  },
+  "createdAt": "Created At",
+  "@createdAt": {
+    "description": "Label for order creation date/time"
+  },
+  "paidAt": "Paid At",
+  "@paidAt": {
+    "description": "Label for order payment date/time"
+  },
+  "completedAt": "Completed At",
+  "@completedAt": {
+    "description": "Label for order completion date/time"
+  },
+  "pickedUpAt": "Picked Up At",
+  "@pickedUpAt": {
+    "description": "Label for order pickup date/time"
+  },
+  "printReceipts": "Print Receipts",
+  "@printReceipts": {
+    "description": "Section title for print receipts buttons"
+  },
+  "noItemsFound": "No items found",
+  "@noItemsFound": {
+    "description": "Message when no order items are found"
+  },
+  "confirmPickup": "Confirm Pickup",
+  "@confirmPickup": {
+    "description": "Button to confirm order pickup"
+  },
+  "cancelOrder": "Cancel Order",
+  "@cancelOrder": {
+    "description": "Button to cancel an order"
+  },
+  "cancelOrderConfirmation": "Are you sure you want to cancel this order?",
+  "@cancelOrderConfirmation": {
+    "description": "Confirmation message for cancelling an order"
   }
 }
 

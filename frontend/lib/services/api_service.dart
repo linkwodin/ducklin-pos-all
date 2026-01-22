@@ -206,6 +206,21 @@ class ApiService {
     return response.data;
   }
 
+  Future<Map<String, dynamic>> confirmOrderPickup(String orderNumber) async {
+    final response = await _dio.put('/orders/pickup/$orderNumber');
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> cancelOrder(int orderId) async {
+    final response = await _dio.put('/orders/$orderId/cancel');
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> getOrder(String orderIdOrNumber) async {
+    final response = await _dio.get('/orders/$orderIdOrNumber');
+    return response.data;
+  }
+
   // Stock endpoints
   Future<List<dynamic>> getStoreStock(int storeId) async {
     final response = await _dio.get('/stock/$storeId');

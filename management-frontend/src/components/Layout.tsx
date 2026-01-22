@@ -24,6 +24,7 @@ import {
   LocalShipping as LocalShippingIcon,
   People as PeopleIcon,
   Store as StoreIcon,
+  ShoppingCart as ShoppingCartIcon,
   MenuBook as MenuBookIcon,
   CurrencyExchange as CurrencyExchangeIcon,
   Logout as LogoutIcon,
@@ -51,6 +52,7 @@ export default function Layout() {
     { text: t('layout.shipment'), icon: <LocalShippingIcon />, path: '/restock-orders' },
     { text: t('layout.users'), icon: <PeopleIcon />, path: '/users' },
     { text: t('layout.stores'), icon: <StoreIcon />, path: '/stores' },
+    { text: t('layout.orders'), icon: <ShoppingCartIcon />, path: '/orders' },
     { text: t('layout.catalogs'), icon: <MenuBookIcon />, path: '/catalogs' },
     { text: t('layout.currencyRates'), icon: <CurrencyExchangeIcon />, path: '/currency-rates' },
   ];

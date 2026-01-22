@@ -14,6 +14,8 @@ import UsersPage from './pages/UsersPage';
 import StoresPage from './pages/StoresPage';
 import CatalogPage from './pages/CatalogPage';
 import CurrencyRatesPage from './pages/CurrencyRatesPage';
+import OrdersPage from './pages/OrdersPage';
+import ProductCostEditorPage from './pages/ProductCostEditorPage';
 import Layout from './components/Layout';
 
 const theme = createTheme({
@@ -56,12 +58,14 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="products" element={<ProductsPage />} />
         <Route path="products/:id" element={<ProductDetailPage />} />
+        <Route path="product-cost-editor" element={<ProductCostEditorPage />} />
         <Route path="sectors" element={<SectorsPage />} />
         <Route path="categories" element={<CategoriesPage />} />
         <Route path="stock" element={<StockPage />} />
         <Route path="restock-orders" element={<RestockOrdersPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="stores" element={<StoresPage />} />
+        <Route path="orders" element={<OrdersPage />} />
         <Route path="catalogs" element={<CatalogPage />} />
         <Route path="currency-rates" element={<CurrencyRatesPage />} />
       </Route>

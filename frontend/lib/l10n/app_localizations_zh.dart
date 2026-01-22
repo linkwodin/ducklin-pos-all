@@ -322,6 +322,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get print => '列印';
 
   @override
+  String get printInternalAuditNote => 'Print Internal Audit Note';
+
+  @override
+  String get printInvoice => 'Print Invoice';
+
+  @override
+  String get printCustomerReceipt => 'Print Customer Receipt';
+
+  @override
+  String get printAll => 'Print All';
+
+  @override
   String get markPaid => '標記已付款';
 
   @override
@@ -405,6 +417,63 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get noUsbPrintersFound => '找不到 USB 印表機。請確認印表機已連接。';
+
+  @override
+  String get orderPickup => 'Order Pickup';
+
+  @override
+  String get scanOrderQRCode => 'Scan Order QR Code';
+
+  @override
+  String get scanQRCodeToConfirmPickup =>
+      'Scan the QR code on the invoice to confirm order pickup';
+
+  @override
+  String get enterOrderNumber => 'Enter Order Number';
+
+  @override
+  String get scanOrEnterOrderNumber => 'Scan QR code or enter order number';
+
+  @override
+  String get useBarcodeScannerOrTypeManually =>
+      'Use a barcode scanner or type the order number manually';
+
+  @override
+  String get orderDetails => 'Order Details';
+
+  @override
+  String get orderInformation => 'Order Information';
+
+  @override
+  String get orderItems => 'Order Items';
+
+  @override
+  String get createdAt => 'Created At';
+
+  @override
+  String get paidAt => 'Paid At';
+
+  @override
+  String get completedAt => 'Completed At';
+
+  @override
+  String get pickedUpAt => 'Picked Up At';
+
+  @override
+  String get printReceipts => 'Print Receipts';
+
+  @override
+  String get noItemsFound => 'No items found';
+
+  @override
+  String get confirmPickup => 'Confirm Pickup';
+
+  @override
+  String get cancelOrder => 'Cancel Order';
+
+  @override
+  String get cancelOrderConfirmation =>
+      'Are you sure you want to cancel this order?';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -720,6 +789,18 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get print => '打印';
 
   @override
+  String get printInternalAuditNote => '打印内部审计单';
+
+  @override
+  String get printInvoice => '打印发票';
+
+  @override
+  String get printCustomerReceipt => '打印客户收据';
+
+  @override
+  String get printAll => '打印全部';
+
+  @override
   String get markPaid => '标记已付款';
 
   @override
@@ -803,6 +884,60 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get noUsbPrintersFound => '未找到 USB 打印机。请确保打印机已连接。';
+
+  @override
+  String get orderPickup => '订单取货';
+
+  @override
+  String get scanOrderQRCode => '扫描订单 QR 码';
+
+  @override
+  String get scanQRCodeToConfirmPickup => '扫描发票上的 QR 码以确认订单取货';
+
+  @override
+  String get enterOrderNumber => '输入订单号码';
+
+  @override
+  String get scanOrEnterOrderNumber => '扫描 QR 码或输入订单号码';
+
+  @override
+  String get useBarcodeScannerOrTypeManually => '使用条码扫描器或手动输入订单号码';
+
+  @override
+  String get orderDetails => '订单详情';
+
+  @override
+  String get orderInformation => '订单信息';
+
+  @override
+  String get orderItems => '订单项目';
+
+  @override
+  String get createdAt => '创建时间';
+
+  @override
+  String get paidAt => '付款时间';
+
+  @override
+  String get completedAt => '完成时间';
+
+  @override
+  String get pickedUpAt => '取货时间';
+
+  @override
+  String get printReceipts => '打印收据';
+
+  @override
+  String get noItemsFound => '未找到项目';
+
+  @override
+  String get confirmPickup => '确认取货';
+
+  @override
+  String get cancelOrder => '取消订单';
+
+  @override
+  String get cancelOrderConfirmation => '您确定要取消此订单吗？';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -1118,6 +1253,18 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get print => '列印';
 
   @override
+  String get printInternalAuditNote => '列印內部審計單';
+
+  @override
+  String get printInvoice => '列印發票';
+
+  @override
+  String get printCustomerReceipt => '列印客戶收據';
+
+  @override
+  String get printAll => '列印全部';
+
+  @override
   String get markPaid => '標記已付款';
 
   @override
@@ -1201,4 +1348,58 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get noUsbPrintersFound => '找不到 USB 印表機。請確認印表機已連接。';
+
+  @override
+  String get orderPickup => '訂單取貨';
+
+  @override
+  String get scanOrderQRCode => '掃描訂單 QR 碼';
+
+  @override
+  String get scanQRCodeToConfirmPickup => '掃描發票上的 QR 碼以確認訂單取貨';
+
+  @override
+  String get enterOrderNumber => '輸入訂單號碼';
+
+  @override
+  String get scanOrEnterOrderNumber => '掃描 QR 碼或輸入訂單號碼';
+
+  @override
+  String get useBarcodeScannerOrTypeManually => '使用條碼掃描器或手動輸入訂單號碼';
+
+  @override
+  String get orderDetails => '訂單詳情';
+
+  @override
+  String get orderInformation => '訂單資訊';
+
+  @override
+  String get orderItems => '訂單項目';
+
+  @override
+  String get createdAt => '建立時間';
+
+  @override
+  String get paidAt => '付款時間';
+
+  @override
+  String get completedAt => '完成時間';
+
+  @override
+  String get pickedUpAt => '取貨時間';
+
+  @override
+  String get printReceipts => '列印收據';
+
+  @override
+  String get noItemsFound => '找不到項目';
+
+  @override
+  String get confirmPickup => '確認取貨';
+
+  @override
+  String get cancelOrder => '取消訂單';
+
+  @override
+  String get cancelOrderConfirmation => '您確定要取消此訂單嗎？';
 }

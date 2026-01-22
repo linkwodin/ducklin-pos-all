@@ -26,6 +26,7 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Visibility as VisibilityIcon,
+  EditNote as EditNoteIcon,
 } from '@mui/icons-material';
 import { productsAPI, categoriesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
@@ -38,6 +39,8 @@ export default function ProductsPage() {
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -105,16 +108,31 @@ export default function ProductsPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4">Products</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setEditingProduct(null);
-            setOpen(true);
-          }}
-        >
-          Add Product
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setImportDialogOpen(true)}
+          >
+            Import from Excel
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<EditNoteIcon />}
+            onClick={() => navigate('/product-cost-editor')}
+          >
+            Cost & Price Editor
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setEditingProduct(null);
+              setOpen(true);
+            }}
+          >
+            Add Product
+          </Button>
+        </Box>
       </Box>
 
       <Box sx={{ mb: 2 }}>
@@ -227,6 +245,91 @@ export default function ProductsPage() {
         product={editingProduct}
         existingCategories={categories}
       />
+
+      <Dialog
+        open={importDialogOpen}
+        onClose={() => {
+          setImportDialogOpen(false);
+          setImportFile(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Import Products from Excel</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Upload an Excel file (.xlsx) with the following headers in the first row:
+          </Typography>
+          <Box sx={{ mb: 2, pl: 2 }}>
+            <Typography variant="body2">• Chinese Name</Typography>
+            <Typography variant="body2">• English name</Typography>
+            <Typography variant="body2">• Unit ("weight" or leave blank for quantity)</Typography>
+            <Typography variant="body2">• Barcode</Typography>
+            <Typography variant="body2">• Retail Price (Direct Retail Price)</Typography>
+            <Typography variant="body2">• Sector - Loog Fung Retail (optional)</Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            component="label"
+            sx={{ mt: 1 }}
+          >
+            Choose Excel File
+            <input
+              type="file"
+              accept=".xlsx"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setImportFile(file);
+              }}
+            />
+          </Button>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            {importFile ? importFile.name : 'No file selected'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setImportDialogOpen(false);
+              setImportFile(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!importFile}
+            onClick={async () => {
+              if (!importFile) return;
+              try {
+                const result = await productsAPI.importExcel(importFile);
+                enqueueSnackbar(
+                  `Imported: ${result.imported}, Updated: ${result.updated}`,
+                  { variant: 'success' }
+                );
+                if (result.errors && result.errors.length > 0) {
+                  console.error('Import errors:', result.errors);
+                  enqueueSnackbar(
+                    `${result.errors.length} errors occurred. Check console for details.`,
+                    { variant: 'warning' }
+                  );
+                }
+                setImportDialogOpen(false);
+                setImportFile(null);
+                fetchProducts();
+              } catch (error: any) {
+                enqueueSnackbar(
+                  error.response?.data?.error || 'Failed to import products',
+                  { variant: 'error' }
+                );
+              }
+            }}
+          >
+            Import
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -17,6 +17,7 @@ import 'user_management_screen.dart';
 import 'report_screen.dart';
 import 'login_screen.dart';
 import 'printer_settings_screen.dart';
+import 'order_pickup_screen.dart';
 
 class POSScreen extends StatefulWidget {
   const POSScreen({super.key});
@@ -30,10 +31,14 @@ class _POSScreenState extends State<POSScreen> {
   String? _userRole;
   double groupAlignment = -1.0;
 
+  // Global keys to access state of screens that need refreshing
+  final GlobalKey<OrderHistoryScreenState> _orderHistoryKey = GlobalKey<OrderHistoryScreenState>();
+  
   // List of pages for navigation
-  final List<Widget> _pages = const [
+  List<Widget> get _pages => [
     OrderScreen(),
-    OrderHistoryScreen(),
+    OrderPickupScreen(),
+    OrderHistoryScreen(key: _orderHistoryKey),
     InventoryScreen(),
     UserManagementScreen(),
     ReportScreen(),
@@ -82,6 +87,10 @@ class _POSScreenState extends State<POSScreen> {
               setState(() {
                 _selectedIndex = index;
               });
+              // Refresh order history when navigating to it (index 2)
+              if (index == 2 && _orderHistoryKey.currentState != null) {
+                _orderHistoryKey.currentState!.refreshOrders();
+              }
             },
             groupAlignment: groupAlignment,
             labelType: NavigationRailLabelType.all,
@@ -173,6 +182,11 @@ class _POSScreenState extends State<POSScreen> {
                 icon: const Icon(Icons.add_box_outlined),
                 selectedIcon: const Icon(Icons.add_box_rounded),
                 label: Text(l10n.newOrder),
+              ),
+              NavigationRailDestination(
+                icon: const Icon(Icons.qr_code_scanner_outlined),
+                selectedIcon: const Icon(Icons.qr_code_scanner),
+                label: Text(l10n.orderPickup ?? 'Order Pickup'),
               ),
               NavigationRailDestination(
                 icon: const Icon(Icons.screen_search_desktop_outlined),

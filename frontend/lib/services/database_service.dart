@@ -31,7 +31,7 @@ class DatabaseService {
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
     return await openDatabase(
       dbPath,
-      version: 4, // Incremented version to add pos_price column
+      version: 5, // Incremented version to add picked_up_at column to orders
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -93,6 +93,17 @@ class DatabaseService {
       }
       
       print('DatabaseService: Products table upgrade to v4 completed');
+    }
+    
+    if (oldVersion < 5) {
+      // Add picked_up_at column to orders table
+      try {
+        await db.execute('ALTER TABLE orders ADD COLUMN picked_up_at INTEGER');
+      } catch (e) {
+        print('DatabaseService: Column orders.picked_up_at may already exist: $e');
+      }
+      
+      print('DatabaseService: Orders table upgrade to v5 completed');
     }
     
     print('DatabaseService: Database upgrade completed');
@@ -190,6 +201,7 @@ class DatabaseService {
         status TEXT DEFAULT 'pending',
         qr_code_data TEXT,
         created_at INTEGER,
+        picked_up_at INTEGER,
         synced INTEGER DEFAULT 0
       )
     ''');

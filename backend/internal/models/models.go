@@ -182,11 +182,12 @@ type Order struct {
 	Subtotal       float64    `gorm:"type:decimal(10,2);not null" json:"subtotal"`
 	DiscountAmount float64    `gorm:"type:decimal(10,2);default:0" json:"discount_amount"`
 	TotalAmount    float64    `gorm:"type:decimal(10,2);not null" json:"total_amount"`
-	Status         string     `gorm:"type:enum('pending','paid','completed','cancelled');default:'pending'" json:"status"`
+	Status         string     `gorm:"type:enum('pending','paid','completed','cancelled','picked_up');default:'pending'" json:"status"`
 	QRCodeData     string     `gorm:"type:text" json:"qr_code_data"`
 	CreatedAt      time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 	PaidAt         *time.Time `json:"paid_at,omitempty"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	PickedUpAt     *time.Time `json:"picked_up_at,omitempty"`
 
 	// Relationships
 	Store  Store       `gorm:"foreignKey:StoreID" json:"store,omitempty"`

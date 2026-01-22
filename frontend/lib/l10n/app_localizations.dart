@@ -658,6 +658,30 @@ abstract class AppLocalizations {
   /// **'Print'**
   String get print;
 
+  /// Print internal audit note button
+  ///
+  /// In en, this message translates to:
+  /// **'Print Internal Audit Note'**
+  String get printInternalAuditNote;
+
+  /// Print invoice button
+  ///
+  /// In en, this message translates to:
+  /// **'Print Invoice'**
+  String get printInvoice;
+
+  /// Print customer receipt button
+  ///
+  /// In en, this message translates to:
+  /// **'Print Customer Receipt'**
+  String get printCustomerReceipt;
+
+  /// Print all receipts button
+  ///
+  /// In en, this message translates to:
+  /// **'Print All'**
+  String get printAll;
+
   /// Mark paid button
   ///
   /// In en, this message translates to:
@@ -825,6 +849,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No USB printers found. Make sure your printer is connected.'**
   String get noUsbPrintersFound;
+
+  /// Order pickup screen title
+  ///
+  /// In en, this message translates to:
+  /// **'Order Pickup'**
+  String get orderPickup;
+
+  /// Scan order QR code title
+  ///
+  /// In en, this message translates to:
+  /// **'Scan Order QR Code'**
+  String get scanOrderQRCode;
+
+  /// Instructions for scanning QR code
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the QR code on the invoice to confirm order pickup'**
+  String get scanQRCodeToConfirmPickup;
+
+  /// Label for order number input field
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Order Number'**
+  String get enterOrderNumber;
+
+  /// Placeholder for order number input
+  ///
+  /// In en, this message translates to:
+  /// **'Scan QR code or enter order number'**
+  String get scanOrEnterOrderNumber;
+
+  /// Instructions for using barcode scanner or manual input
+  ///
+  /// In en, this message translates to:
+  /// **'Use a barcode scanner or type the order number manually'**
+  String get useBarcodeScannerOrTypeManually;
+
+  /// Title for order details screen
+  ///
+  /// In en, this message translates to:
+  /// **'Order Details'**
+  String get orderDetails;
+
+  /// Section title for order information
+  ///
+  /// In en, this message translates to:
+  /// **'Order Information'**
+  String get orderInformation;
+
+  /// Section title for order items
+  ///
+  /// In en, this message translates to:
+  /// **'Order Items'**
+  String get orderItems;
+
+  /// Label for order creation date/time
+  ///
+  /// In en, this message translates to:
+  /// **'Created At'**
+  String get createdAt;
+
+  /// Label for order payment date/time
+  ///
+  /// In en, this message translates to:
+  /// **'Paid At'**
+  String get paidAt;
+
+  /// Label for order completion date/time
+  ///
+  /// In en, this message translates to:
+  /// **'Completed At'**
+  String get completedAt;
+
+  /// Label for order pickup date/time
+  ///
+  /// In en, this message translates to:
+  /// **'Picked Up At'**
+  String get pickedUpAt;
+
+  /// Section title for print receipts buttons
+  ///
+  /// In en, this message translates to:
+  /// **'Print Receipts'**
+  String get printReceipts;
+
+  /// Message when no order items are found
+  ///
+  /// In en, this message translates to:
+  /// **'No items found'**
+  String get noItemsFound;
+
+  /// Button to confirm order pickup
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm Pickup'**
+  String get confirmPickup;
+
+  /// Button to cancel an order
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel Order'**
+  String get cancelOrder;
+
+  /// Confirmation message for cancelling an order
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to cancel this order?'**
+  String get cancelOrderConfirmation;
 }
 
 class _AppLocalizationsDelegate

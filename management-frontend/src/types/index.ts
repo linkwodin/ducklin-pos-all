@@ -158,3 +158,37 @@ export interface LoginResponse {
   user: User;
 }
 
+export interface Order {
+  id: number;
+  order_number: string;
+  store_id: number;
+  user_id: number;
+  device_code?: string;
+  sector_id?: number;
+  subtotal: number;
+  discount_amount: number;
+  total_amount: number;
+  status: 'pending' | 'paid' | 'completed' | 'cancelled' | 'picked_up';
+  qr_code_data?: string;
+  created_at: string;
+  paid_at?: string;
+  completed_at?: string;
+  picked_up_at?: string;
+  store?: Store;
+  user?: User;
+  sector?: Sector;
+  items?: OrderItem[];
+}
+
+export interface OrderItem {
+  id: number;
+  order_id: number;
+  product_id: number;
+  quantity: number;
+  unit_price: number;
+  discount_percent: number;
+  discount_amount: number;
+  line_total: number;
+  product?: Product;
+}
+

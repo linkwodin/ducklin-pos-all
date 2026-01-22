@@ -326,6 +326,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get print => 'Print';
 
   @override
+  String get printInternalAuditNote => 'Print Internal Audit Note';
+
+  @override
+  String get printInvoice => 'Print Invoice';
+
+  @override
+  String get printCustomerReceipt => 'Print Customer Receipt';
+
+  @override
+  String get printAll => 'Print All';
+
+  @override
   String get markPaid => 'Mark Paid';
 
   @override
@@ -410,4 +422,61 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get noUsbPrintersFound =>
       'No USB printers found. Make sure your printer is connected.';
+
+  @override
+  String get orderPickup => 'Order Pickup';
+
+  @override
+  String get scanOrderQRCode => 'Scan Order QR Code';
+
+  @override
+  String get scanQRCodeToConfirmPickup =>
+      'Scan the QR code on the invoice to confirm order pickup';
+
+  @override
+  String get enterOrderNumber => 'Enter Order Number';
+
+  @override
+  String get scanOrEnterOrderNumber => 'Scan QR code or enter order number';
+
+  @override
+  String get useBarcodeScannerOrTypeManually =>
+      'Use a barcode scanner or type the order number manually';
+
+  @override
+  String get orderDetails => 'Order Details';
+
+  @override
+  String get orderInformation => 'Order Information';
+
+  @override
+  String get orderItems => 'Order Items';
+
+  @override
+  String get createdAt => 'Created At';
+
+  @override
+  String get paidAt => 'Paid At';
+
+  @override
+  String get completedAt => 'Completed At';
+
+  @override
+  String get pickedUpAt => 'Picked Up At';
+
+  @override
+  String get printReceipts => 'Print Receipts';
+
+  @override
+  String get noItemsFound => 'No items found';
+
+  @override
+  String get confirmPickup => 'Confirm Pickup';
+
+  @override
+  String get cancelOrder => 'Cancel Order';
+
+  @override
+  String get cancelOrderConfirmation =>
+      'Are you sure you want to cancel this order?';
 }

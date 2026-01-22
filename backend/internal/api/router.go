@@ -58,7 +58,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		protected.PUT("/products/:id", productHandler.UpdateProduct)
 		protected.DELETE("/products/:id", productHandler.DeleteProduct)
 		protected.POST("/products/:id/cost", productHandler.SetProductCost)
+		protected.PUT("/products/:id/cost", productHandler.UpdateProductCostSimple)
 		protected.GET("/products/:id/price-history", productHandler.GetPriceHistory)
+		protected.POST("/products/import-excel", productHandler.ImportProductsFromExcel)
 
 		// Sectors
 		protected.GET("/sectors", sectorHandler.ListSectors)
@@ -93,10 +95,15 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		protected.PUT("/restock-orders/:id/receive", stockHandler.ReceiveRestockOrder)
 
 		// Orders
+		protected.GET("/orders", orderHandler.ListOrders)
+		protected.GET("/orders/stats/revenue", orderHandler.GetDailyRevenueStats)
+		protected.GET("/orders/stats/product-sales", orderHandler.GetDailyProductSalesStats)
 		protected.POST("/orders", orderHandler.CreateOrder)
 		protected.GET("/orders/:id", orderHandler.GetOrder)
 		protected.PUT("/orders/:id/pay", orderHandler.MarkPaid)
 		protected.PUT("/orders/:id/complete", orderHandler.MarkComplete)
+		protected.PUT("/orders/:id/cancel", orderHandler.MarkCancelled)
+		protected.PUT("/orders/pickup/:order_number", orderHandler.MarkPickedUp)
 
 		// Users
 		protected.GET("/users", userHandler.ListUsers)

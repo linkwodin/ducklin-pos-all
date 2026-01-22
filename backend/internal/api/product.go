@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif" // Register GIF decoder
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -71,9 +74,20 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	// Load current costs
 	for i := range products {
 		var cost models.ProductCost
-		h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, time.Now()).
-			Order("effective_from DESC").First(&cost)
-		products[i].CurrentCost = &cost
+		// Use Find with Limit(1) instead of First to avoid "record not found" error logging
+		// Find doesn't return an error when no records are found
+		result := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, time.Now()).
+			Order("effective_from DESC").Limit(1).Find(&cost)
+		if result.Error != nil {
+			// Log actual errors
+			fmt.Printf("Error loading cost for product %d: %v\n", products[i].ID, result.Error)
+			products[i].CurrentCost = nil
+		} else if result.RowsAffected == 0 {
+			// No cost record exists, set to nil (will be handled by frontend)
+			products[i].CurrentCost = nil
+		} else {
+			products[i].CurrentCost = &cost
+		}
 	}
 
 	c.JSON(http.StatusOK, products)
@@ -240,6 +254,236 @@ func (h *ProductHandler) DeleteProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Product deactivated"})
 }
 
+// ImportProductsFromExcel handles bulk product creation from an Excel file.
+// Expected headers (first row):
+// Chinese Name | English name | Unit | Barcode | Retail Price | Sector - Loog Fung Retail
+func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+		return
+	}
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to open uploaded file"})
+		return
+	}
+	defer f.Close()
+
+	xl, err := excelize.OpenReader(f)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Excel file"})
+		return
+	}
+	defer xl.Close()
+
+	sheetName := xl.GetSheetName(0)
+	if sheetName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Excel file has no sheets"})
+		return
+	}
+
+	rows, err := xl.Rows(sheetName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read Excel rows"})
+		return
+	}
+
+	// Read header row
+	if !rows.Next() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Excel file is empty"})
+		return
+	}
+	headerRow, err := rows.Columns()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read header row"})
+		return
+	}
+
+	headerIndex := map[string]int{}
+	for i, hcell := range headerRow {
+		switch strings.TrimSpace(strings.ToLower(hcell)) {
+		case strings.ToLower("Chinese Name"):
+			headerIndex["chinese_name"] = i
+		case strings.ToLower("English name"):
+			headerIndex["english_name"] = i
+		case strings.ToLower("Unit"):
+			headerIndex["unit"] = i
+		case strings.ToLower("Barcode"):
+			headerIndex["barcode"] = i
+		case strings.ToLower("Retail Price"):
+			headerIndex["retail_price"] = i
+		case strings.ToLower("Sector - Loog Fung Retail"):
+			headerIndex["sector"] = i
+		}
+	}
+
+	required := []string{"chinese_name", "english_name", "unit", "barcode", "retail_price"}
+	for _, key := range required {
+		if _, ok := headerIndex[key]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("missing required header: %s", key)})
+			return
+		}
+	}
+
+	imported := 0
+	updated := 0
+	var rowErrors []string
+
+	rowNum := 1 // header already read
+	for rows.Next() {
+		rowNum++
+		cols, err := rows.Columns()
+		if err != nil {
+			rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to read row", rowNum))
+			continue
+		}
+
+		get := func(key string) string {
+			idx, ok := headerIndex[key]
+			if !ok || idx >= len(cols) {
+				return ""
+			}
+			return strings.TrimSpace(cols[idx])
+		}
+
+		nameZh := get("chinese_name")
+		nameEn := get("english_name")
+		unit := strings.ToLower(get("unit"))
+		barcode := get("barcode")
+		retailStr := get("retail_price")
+		sectorName := get("sector")
+
+		if nameEn == "" && nameZh == "" {
+			rowErrors = append(rowErrors, fmt.Sprintf("row %d: missing product name", rowNum))
+			continue
+		}
+
+		if unit == "" {
+			unit = "quantity"
+		}
+		if unit != "quantity" && unit != "weight" {
+			unit = "quantity"
+		}
+
+		// Parse Retail Price (Direct Retail Price)
+		clean := strings.ReplaceAll(retailStr, ",", "")
+		clean = strings.TrimPrefix(clean, "£")
+		clean = strings.TrimSpace(clean)
+		var retail float64
+		if clean != "" {
+			r, err := strconv.ParseFloat(clean, 64)
+			if err != nil {
+				rowErrors = append(rowErrors, fmt.Sprintf("row %d: invalid Retail Price", rowNum))
+				continue
+			}
+			retail = r
+		}
+
+		// Find or create product (prefer barcode)
+		var product models.Product
+		var findErr error
+
+		if barcode != "" {
+			findErr = h.db.Where("barcode = ?", barcode).First(&product).Error
+		} else if nameEn != "" {
+			findErr = h.db.Where("name = ?", nameEn).First(&product).Error
+		}
+
+		if findErr != nil {
+			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				rowErrors = append(rowErrors, fmt.Sprintf("row %d: %v", rowNum, findErr))
+				continue
+			}
+			// New product
+			product = models.Product{
+				Name:        nameEn,
+				NameChinese: nameZh,
+				Barcode:     barcode,
+				UnitType:    unit,
+				IsActive:    true,
+			}
+			if err := h.db.Create(&product).Error; err != nil {
+				rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to create product: %v", rowNum, err))
+				continue
+			}
+			imported++
+		} else {
+			// Update existing basic fields
+			if nameEn != "" {
+				product.Name = nameEn
+			}
+			if nameZh != "" {
+				product.NameChinese = nameZh
+			}
+			product.UnitType = unit
+			if barcode != "" {
+				product.Barcode = barcode
+			}
+			if err := h.db.Save(&product).Error; err != nil {
+				rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to update product: %v", rowNum, err))
+				continue
+			}
+			updated++
+		}
+
+		// Update Direct Retail Online Store price
+		if retail > 0 {
+			var cost models.ProductCost
+			err := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", product.ID, time.Now()).
+				Order("effective_from DESC").
+				First(&cost).Error
+
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to load cost: %v", rowNum, err))
+				continue
+			}
+
+			cost.ProductID = product.ID
+			cost.DirectRetailOnlineStorePriceGBP = retail
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Minimal required fields for a new cost record
+				cost.ExchangeRate = 1
+				cost.UnitWeightG = 1
+				cost.WeightG = 1
+				cost.FreightRateHKDPerKG = 0
+				if err := h.db.Create(&cost).Error; err != nil {
+					rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to create cost: %v", rowNum, err))
+				}
+			} else {
+				if err := h.db.Save(&cost).Error; err != nil {
+					rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to update cost: %v", rowNum, err))
+				}
+			}
+		}
+
+		// Optionally link to sector (no hard failure if missing)
+		if sectorName != "" {
+			var sector models.Sector
+			if err := h.db.Where("name = ?", sectorName).First(&sector).Error; err == nil {
+				var psd models.ProductSectorDiscount
+				if err := h.db.Where("product_id = ? AND sector_id = ?", product.ID, sector.ID).
+					First(&psd).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+					psd = models.ProductSectorDiscount{
+						ProductID:       product.ID,
+						SectorID:        sector.ID,
+						DiscountPercent: 0,
+					}
+					_ = h.db.Create(&psd).Error
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"imported": imported,
+		"updated":  updated,
+		"errors":   rowErrors,
+	})
+}
+
 func (h *ProductHandler) SetProductCost(c *gin.Context) {
 	var product models.Product
 	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
@@ -272,6 +516,108 @@ func (h *ProductHandler) SetProductCost(c *gin.Context) {
 	h.recordPriceHistory(product.ID, nil, cost.WholesaleCostGBP, 0, cost.WholesaleCostGBP)
 
 	c.JSON(http.StatusCreated, cost)
+}
+
+// UpdateProductCostSimple allows updating just wholesale cost and retail price without full recalculation
+func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
+	var product models.Product
+	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		return
+	}
+
+	var req struct {
+		WholesaleCostGBP                *float64 `json:"wholesale_cost_gbp"`
+		DirectRetailOnlineStorePriceGBP *float64 `json:"direct_retail_online_store_price_gbp"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get current cost or create new one
+	var cost models.ProductCost
+	err := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", product.ID, time.Now()).
+		Order("effective_from DESC").First(&cost).Error
+
+	isNewRecord := false
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Create new cost with minimal required fields
+		cost = models.ProductCost{
+			ProductID:                       product.ID,
+			ExchangeRate:                    1,
+			UnitWeightG:                     1,
+			WeightG:                         1,
+			FreightRateHKDPerKG:             0,
+			WholesaleCostGBP:                0,
+			DirectRetailOnlineStorePriceGBP: 0,
+			EffectiveFrom:                   time.Now(),
+		}
+		isNewRecord = true
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update fields if provided
+	if req.WholesaleCostGBP != nil {
+		if isNewRecord {
+			// For new records, just set the value
+			cost.WholesaleCostGBP = *req.WholesaleCostGBP
+		} else if cost.WholesaleCostGBP != *req.WholesaleCostGBP {
+			// Deactivate previous cost if wholesale cost changed
+			now := time.Now()
+			h.db.Model(&models.ProductCost{}).
+				Where("product_id = ? AND effective_to IS NULL", product.ID).
+				Update("effective_to", now)
+
+			// Create new cost record with updated value
+			cost.ID = 0 // Reset ID for new record
+			cost.WholesaleCostGBP = *req.WholesaleCostGBP
+			cost.EffectiveFrom = time.Now()
+			cost.EffectiveTo = nil
+			isNewRecord = true
+		} else {
+			cost.WholesaleCostGBP = *req.WholesaleCostGBP
+		}
+	}
+
+	if req.DirectRetailOnlineStorePriceGBP != nil {
+		cost.DirectRetailOnlineStorePriceGBP = *req.DirectRetailOnlineStorePriceGBP
+		// If only price changed (not wholesale cost), we still need to create a new record for history
+		if !isNewRecord && req.WholesaleCostGBP == nil {
+			// Price-only update: deactivate old record and create new one
+			now := time.Now()
+			h.db.Model(&models.ProductCost{}).
+				Where("product_id = ? AND effective_to IS NULL", product.ID).
+				Update("effective_to", now)
+
+			cost.ID = 0 // Reset ID for new record
+			cost.EffectiveFrom = time.Now()
+			cost.EffectiveTo = nil
+			isNewRecord = true
+		}
+	}
+
+	// Save cost (create or update)
+	if isNewRecord || cost.ID == 0 {
+		if err := h.db.Create(&cost).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		if err := h.db.Save(&cost).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	// Record price history
+	if req.WholesaleCostGBP != nil {
+		h.recordPriceHistory(product.ID, nil, cost.WholesaleCostGBP, 0, cost.WholesaleCostGBP)
+	}
+
+	c.JSON(http.StatusOK, cost)
 }
 
 func (h *ProductHandler) calculateProductCost(productID uint, req SetCostRequest) models.ProductCost {

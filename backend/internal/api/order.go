@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"pos-system/backend/internal/config"
@@ -149,6 +150,27 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		h.db.Create(&orderItems[i])
 	}
 
+	// Reduce stock immediately when order is created
+	for _, item := range orderItems {
+		var stock models.Stock
+		if err := h.db.Where("product_id = ? AND store_id = ?", item.ProductID, order.StoreID).
+			First(&stock).Error; err != nil {
+			// Stock not found - log warning but don't fail the order creation
+			fmt.Printf("Warning: Stock not found for product %d in store %d, skipping stock reduction\n", item.ProductID, order.StoreID)
+			continue
+		}
+
+		stock.Quantity -= item.Quantity
+		if stock.Quantity < 0 {
+			stock.Quantity = 0
+		}
+		stock.LastUpdated = time.Now()
+		if err := h.db.Save(&stock).Error; err != nil {
+			fmt.Printf("Warning: Failed to update stock for product %d: %v\n", item.ProductID, err)
+			// Continue with other items even if one fails
+		}
+	}
+
 	// Record price history for each product
 	for _, item := range orderItems {
 		var cost models.ProductCost
@@ -169,12 +191,62 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	c.JSON(http.StatusCreated, order)
 }
 
+func (h *OrderHandler) ListOrders(c *gin.Context) {
+	var orders []models.Order
+	query := h.db.Preload("Store").Preload("User").Preload("Sector").Preload("Items.Product")
+
+	// Filter by store_id if provided
+	if storeID := c.Query("store_id"); storeID != "" {
+		query = query.Where("store_id = ?", storeID)
+	}
+
+	// Filter by status if provided
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	// Filter by date range if provided
+	if startDate := c.Query("start_date"); startDate != "" {
+		query = query.Where("created_at >= ?", startDate)
+	}
+	if endDate := c.Query("end_date"); endDate != "" {
+		query = query.Where("created_at <= ?", endDate)
+	}
+
+	// Order by created_at descending (newest first)
+	query = query.Order("created_at DESC")
+
+	// Limit results (default 100, max 1000)
+	limit := 100
+	if limitStr := c.Query("limit"); limitStr != "" {
+		var parsedLimit int
+		if _, err := fmt.Sscanf(limitStr, "%d", &parsedLimit); err == nil && parsedLimit > 0 && parsedLimit <= 1000 {
+			limit = parsedLimit
+		}
+	}
+	query = query.Limit(limit)
+
+	if err := query.Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, orders)
+}
+
 func (h *OrderHandler) GetOrder(c *gin.Context) {
 	var order models.Order
+	orderID := c.Param("id")
+
+	// Try to get by ID first
 	if err := h.db.Preload("Store").Preload("User").Preload("Sector").
-		Preload("Items.Product").First(&order, c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
-		return
+		Preload("Items.Product").First(&order, orderID).Error; err != nil {
+		// If not found by ID, try by order number
+		if err2 := h.db.Preload("Store").Preload("User").Preload("Sector").
+			Preload("Items.Product").Where("order_number = ?", orderID).First(&order).Error; err2 != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, order)
@@ -220,24 +292,240 @@ func (h *OrderHandler) MarkComplete(c *gin.Context) {
 		return
 	}
 
-	// Reduce stock
+	// Note: Stock is already deducted when order is created, so no need to deduct again here
+
+	c.JSON(http.StatusOK, order)
+}
+
+func (h *OrderHandler) MarkCancelled(c *gin.Context) {
+	var order models.Order
+	if err := h.db.Preload("Items").First(&order, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+
+	if order.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only pending orders can be cancelled"})
+		return
+	}
+
+	// Restore stock for cancelled orders
 	for _, item := range order.Items {
 		var stock models.Stock
 		if err := h.db.Where("product_id = ? AND store_id = ?", item.ProductID, order.StoreID).
-			First(&stock).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Stock not found for product %d", item.ProductID)})
-			return
+			First(&stock).Error; err == nil {
+			stock.Quantity += item.Quantity
+			stock.LastUpdated = time.Now()
+			h.db.Save(&stock)
 		}
-
-		stock.Quantity -= item.Quantity
-		if stock.Quantity < 0 {
-			stock.Quantity = 0
-		}
-		stock.LastUpdated = time.Now()
-		h.db.Save(&stock)
 	}
 
+	order.Status = "cancelled"
+
+	if err := h.db.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Reload order with all relationships
+	h.db.Preload("Store").Preload("User").Preload("Sector").
+		Preload("Items.Product").First(&order, order.ID)
+
 	c.JSON(http.StatusOK, order)
+}
+
+// MarkPickedUp marks an order as picked up by scanning QR code
+func (h *OrderHandler) MarkPickedUp(c *gin.Context) {
+	var order models.Order
+	orderNumber := c.Param("order_number")
+
+	// Normalize order number to uppercase for case-insensitive lookup
+	// Order numbers are generated as "ORD-YYYYMMDD-XXXX" but QR codes might be lowercase
+	orderNumberUpper := strings.ToUpper(orderNumber)
+
+	// Try case-insensitive lookup
+	if err := h.db.Where("UPPER(order_number) = ?", orderNumberUpper).First(&order).Error; err != nil {
+		// If UPPER() doesn't work, try direct lookup with uppercase
+		if err2 := h.db.Where("order_number = ?", orderNumberUpper).First(&order).Error; err2 != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Order not found: %s (tried: %s)", orderNumber, orderNumberUpper)})
+			return
+		}
+	}
+
+	// Log order details for debugging
+	fmt.Printf("Order found: ID=%d, Status=%s, PaidAt=%v, PickedUpAt=%v\n", order.ID, order.Status, order.PaidAt, order.PickedUpAt)
+
+	// Allow pickup if order is paid, completed, or has PaidAt timestamp (even if status is still pending)
+	if order.Status != "pending" && order.Status != "paid" && order.Status != "completed" && order.PaidAt == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Order must be paid before pickup. Current status: %s, PaidAt: %v", order.Status, order.PaidAt),
+		})
+		return
+	}
+
+	if order.PickedUpAt != nil {
+		// Return order details including pickup time for better error handling
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":        "Order already picked up",
+			"picked_up_at": order.PickedUpAt.Format(time.RFC3339),
+			"order_number": order.OrderNumber,
+		})
+		return
+	}
+
+	now := time.Now()
+	order.Status = "completed"
+	order.PickedUpAt = &now
+
+	if err := h.db.Save(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Reload order with all relationships
+	h.db.Preload("Store").Preload("User").Preload("Sector").
+		Preload("Items.Product").First(&order, order.ID)
+
+	c.JSON(http.StatusOK, order)
+}
+
+type DailyRevenueStat struct {
+	Date       string  `json:"date"`
+	Revenue    float64 `json:"revenue"`
+	OrderCount int     `json:"order_count"`
+}
+
+type DailyProductSalesStat struct {
+	Date               string  `json:"date"`
+	ProductID          uint    `json:"product_id"`
+	ProductName        string  `json:"product_name"`
+	ProductNameChinese string  `json:"product_name_chinese"`
+	Quantity           float64 `json:"quantity"`
+	Revenue            float64 `json:"revenue"`
+}
+
+func parseInt(s string) int {
+	var result int
+	fmt.Sscanf(s, "%d", &result)
+	return result
+}
+
+func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
+	var stats []DailyRevenueStat
+
+	// Get number of days (default 30)
+	days := 30
+	if daysStr := c.Query("days"); daysStr != "" {
+		if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
+			days = parsedDays
+		}
+	}
+
+	// Get store filter if provided
+	storeID := c.Query("store_id")
+
+	// Calculate start date
+	startDate := time.Now().AddDate(0, 0, -days)
+
+	// Build query
+	query := h.db.Model(&models.Order{}).
+		Select("DATE(created_at) as date, SUM(total_amount) as revenue, COUNT(*) as order_count").
+		Where("created_at >= ? AND status IN (?, ?, ?)", startDate, "paid", "completed", "picked_up").
+		Group("DATE(created_at)")
+
+	if storeID != "" {
+		query = query.Where("store_id = ?", storeID)
+	}
+
+	query = query.Order("date ASC")
+
+	rows, err := query.Rows()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var stat DailyRevenueStat
+		var date time.Time
+		if err := rows.Scan(&date, &stat.Revenue, &stat.OrderCount); err != nil {
+			continue
+		}
+		stat.Date = date.Format("2006-01-02")
+		stats = append(stats, stat)
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+func (h *OrderHandler) GetDailyProductSalesStats(c *gin.Context) {
+	var stats []DailyProductSalesStat
+
+	// Get number of days (default 30)
+	days := 30
+	if daysStr := c.Query("days"); daysStr != "" {
+		if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
+			days = parsedDays
+		}
+	}
+
+	// Get store filter if provided
+	storeID := c.Query("store_id")
+
+	// Calculate start date
+	startDate := time.Now().AddDate(0, 0, -days)
+
+	// Build query to join orders and order_items
+	query := h.db.Table("orders").
+		Select("DATE(orders.created_at) as date, order_items.product_id, SUM(order_items.quantity) as quantity, SUM(order_items.line_total) as revenue").
+		Joins("INNER JOIN order_items ON orders.id = order_items.order_id").
+		Where("orders.created_at >= ? AND orders.status IN (?, ?, ?)", startDate, "paid", "completed", "picked_up").
+		Group("DATE(orders.created_at), order_items.product_id")
+
+	if storeID != "" {
+		query = query.Where("orders.store_id = ?", storeID)
+	}
+
+	query = query.Order("date ASC, order_items.product_id ASC")
+
+	rows, err := query.Rows()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	// Map to store product names
+	productMap := make(map[uint]models.Product)
+
+	for rows.Next() {
+		var stat DailyProductSalesStat
+		var date time.Time
+		var productID uint
+		if err := rows.Scan(&date, &productID, &stat.Quantity, &stat.Revenue); err != nil {
+			continue
+		}
+		stat.Date = date.Format("2006-01-02")
+		stat.ProductID = productID
+
+		// Get product name if not cached
+		if product, ok := productMap[productID]; !ok {
+			var product models.Product
+			if err := h.db.First(&product, productID).Error; err == nil {
+				productMap[productID] = product
+				stat.ProductName = product.Name
+				stat.ProductNameChinese = product.NameChinese
+			}
+		} else {
+			stat.ProductName = product.Name
+			stat.ProductNameChinese = product.NameChinese
+		}
+
+		stats = append(stats, stat)
+	}
+
+	c.JSON(http.StatusOK, stats)
 }
 
 func (h *OrderHandler) recordPriceHistory(productID uint, sectorID *uint, wholesaleCost, discountPercent, finalPrice float64) {

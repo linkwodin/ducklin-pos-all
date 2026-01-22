@@ -36,6 +36,9 @@ dependencies:
   # Barcode Scanner
   mobile_scanner: ^3.5.0
   
+  # Barcode Generation
+  barcode: ^2.2.0
+  
   # UI
   cupertino_icons: ^1.0.6
   flutter_svg: ^2.0.9
