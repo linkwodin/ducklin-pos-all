@@ -34,6 +34,7 @@ import { useSnackbar } from 'notistack';
 import type { Order, Store } from '../types';
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
+import UserDisplay from '../components/UserDisplay';
 
 export default function OrdersPage() {
   const { t } = useTranslation();
@@ -222,7 +223,7 @@ export default function OrdersPage() {
                   <TableCell>{order.order_number}</TableCell>
                   <TableCell>{order.store?.name || `Store ${order.store_id}`}</TableCell>
                   <TableCell>
-                    {order.user ? `${order.user.first_name} ${order.user.last_name}` : `User ${order.user_id}`}
+                    <UserDisplay user={order.user} showName={true} size="small" />
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -295,9 +296,7 @@ export default function OrdersPage() {
               </Typography>
               <Typography variant="subtitle2" gutterBottom>
                 <strong>{t('orders.user')}:</strong>{' '}
-                {selectedOrder.user
-                  ? `${selectedOrder.user.first_name} ${selectedOrder.user.last_name}`
-                  : `User ${selectedOrder.user_id}`}
+                <UserDisplay user={selectedOrder.user} showName={true} size="small" />
               </Typography>
               <Typography variant="subtitle2" gutterBottom>
                 <strong>{t('orders.status')}:</strong>{' '}

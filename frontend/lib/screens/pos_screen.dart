@@ -18,6 +18,7 @@ import 'report_screen.dart';
 import 'login_screen.dart';
 import 'printer_settings_screen.dart';
 import 'order_pickup_screen.dart';
+import 'user_profile_screen.dart';
 
 class POSScreen extends StatefulWidget {
   const POSScreen({super.key});
@@ -78,12 +79,22 @@ class _POSScreenState extends State<POSScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return Scaffold(
-      body: Row(
+    // Track user activity on any interaction
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    return Listener(
+      onPointerDown: (_) => authProvider.updateLastActivity(),
+      onPointerMove: (_) => authProvider.updateLastActivity(),
+      child: GestureDetector(
+        onTap: () => authProvider.updateLastActivity(),
+        child: Scaffold(
+          body: Row(
         children: <Widget>[
           NavigationRail(
             selectedIndex: _selectedIndex,
             onDestinationSelected: (int index) {
+              // Track activity on navigation
+              authProvider.updateLastActivity();
               setState(() {
                 _selectedIndex = index;
               });
@@ -133,6 +144,28 @@ class _POSScreenState extends State<POSScreen> {
                       ),
                       Text(
                         l10n.language,
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.person, color: Colors.grey),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const UserProfileScreen(),
+                            ),
+                          );
+                        },
+                        tooltip: l10n.profile ?? 'Profile',
+                      ),
+                      Text(
+                        l10n.profile ?? 'Profile',
                         style: const TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                     ],
@@ -218,6 +251,8 @@ class _POSScreenState extends State<POSScreen> {
             child: _pages[_selectedIndex],
           ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -354,17 +389,23 @@ class OrderScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+                child: Consumer<OrderProvider>(
+                  builder: (context, orderProvider, _) {
+                    return ElevatedButton(
+                      onPressed: orderProvider.cartItems.isEmpty
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                      child: Text(l10n.checkout),
                     );
                   },
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: Text(l10n.checkout),
                 ),
               ),
             ],

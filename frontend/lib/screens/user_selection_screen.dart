@@ -1,63 +1,56 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/auth_provider.dart';
 import 'pin_login_screen.dart';
 import 'username_login_screen.dart';
 
-class UserSelectionScreen extends StatelessWidget {
+class UserSelectionScreen extends StatefulWidget {
   final List<Map<String, dynamic>> users;
+  final VoidCallback? onSyncRequested;
 
-  const UserSelectionScreen({super.key, required this.users});
+  const UserSelectionScreen({super.key, required this.users, this.onSyncRequested});
 
-  Widget _buildUserAvatar(Map<String, dynamic> user) {
-    final firstName = user['first_name'] ?? '';
-    final lastName = user['last_name'] ?? '';
-    final initials = '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'.toUpperCase();
-    // Use consistent blue color instead of random
-    const iconColor = Color(0xFF2196F3); // Material blue
+  @override
+  State<UserSelectionScreen> createState() => _UserSelectionScreenState();
+}
 
-    if (user['icon_url'] != null && user['icon_url'].toString().isNotEmpty) {
-      return CircleAvatar(
-        radius: 20,
-        backgroundImage: CachedNetworkImageProvider(user['icon_url']),
-        backgroundColor: iconColor,
-      );
-    } else {
-      return CircleAvatar(
-        radius: 20,
-        backgroundColor: iconColor,
-        child: Text(
-          initials,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      );
-    }
-  }
+class _UserSelectionScreenState extends State<UserSelectionScreen> {
+  int _refreshKey = 0;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
         children: [
-          // Top bar with username login on right
-          Align(
-            alignment: Alignment.topRight,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: IconButton(
-                icon: const Icon(Icons.person),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UsernameLoginScreen()),
-                  );
-                },
-                tooltip: 'Login with Username/Password',
-              ),
+          // Top bar with sync and username login buttons
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Sync button on the left
+                if (widget.onSyncRequested != null)
+                  IconButton(
+                    icon: const Icon(Icons.sync),
+                    onPressed: widget.onSyncRequested,
+                    tooltip: 'Sync Users',
+                  ),
+                // Username login button on the right
+                IconButton(
+                  icon: const Icon(Icons.person),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UsernameLoginScreen()),
+                    );
+                  },
+                  tooltip: 'Login with Username/Password',
+                ),
+              ],
             ),
           ),
           // Grid layout for users (max 5 per row)
@@ -76,8 +69,111 @@ class UserSelectionScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildUserAvatar(Map<String, dynamic> user) {
+    final firstName = user['first_name'] ?? '';
+    final lastName = user['last_name'] ?? '';
+    final initials = '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'.toUpperCase();
+    // Use consistent blue color instead of random
+    const iconColor = Color(0xFF2196F3); // Material blue
+
+    final iconUrl = user['icon_url']?.toString();
+    if (iconUrl != null && iconUrl.isNotEmpty) {
+      // Check if it's a data URI
+      if (iconUrl.startsWith('data:image')) {
+        final svgWidget = _buildDataUriImage(iconUrl, 20);
+        if (svgWidget != null) {
+          // SVG image - ensure it's circular and centered
+          return ClipOval(
+            child: Container(
+              width: 40,
+              height: 40,
+              color: iconColor,
+              child: svgWidget,
+            ),
+          );
+        } else {
+          // PNG/JPEG data URI
+          try {
+            final commaIndex = iconUrl.indexOf(',');
+            if (commaIndex != -1) {
+              final base64Data = iconUrl.substring(commaIndex + 1);
+              final bytes = base64Decode(base64Data);
+              return CircleAvatar(
+                radius: 20,
+                backgroundImage: MemoryImage(bytes),
+                backgroundColor: iconColor,
+              );
+            }
+          } catch (e) {
+            print('Error loading data URI image: $e');
+          }
+        }
+      } else {
+        // Regular network URL - use the icon_url as-is
+        // CachedNetworkImageProvider will handle caching, but will refresh if URL changes
+        return CircleAvatar(
+          radius: 20,
+          backgroundImage: CachedNetworkImageProvider(iconUrl),
+          backgroundColor: iconColor,
+        );
+      }
+    }
+    // Fallback to initials
+    return CircleAvatar(
+      radius: 20,
+      backgroundColor: iconColor,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildDataUriImage(String dataUri, double size) {
+    try {
+      // Parse data URI: data:image/svg+xml;base64,<base64data>
+      if (dataUri.startsWith('data:image')) {
+        final commaIndex = dataUri.indexOf(',');
+        if (commaIndex == -1) return null;
+        
+        final base64Data = dataUri.substring(commaIndex + 1);
+        final bytes = base64Decode(base64Data);
+        
+        // For SVG, use flutter_svg to render
+        if (dataUri.contains('svg')) {
+          final svgString = utf8.decode(bytes);
+          // Ensure SVG has viewBox for proper centering
+          String processedSvg = svgString;
+          if (!svgString.contains('viewBox')) {
+            // Add viewBox if missing
+            processedSvg = svgString.replaceFirst(
+              '<svg',
+              '<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"',
+            );
+          }
+          return SvgPicture.string(
+            processedSvg,
+            width: size * 2,
+            height: size * 2,
+            fit: BoxFit.fill,
+            alignment: Alignment.center,
+          );
+        }
+        // For PNG/JPEG, return null to use MemoryImage in CircleAvatar
+        return null;
+      }
+    } catch (e) {
+      print('Error loading data URI image: $e');
+    }
+    return null;
+  }
+
   Widget _buildGridLayout(BuildContext context) {
-    if (users.isEmpty) {
+    if (widget.users.isEmpty) {
       return const Center(
         child: Text(
           'No users available',
@@ -97,9 +193,9 @@ class UserSelectionScreen extends StatelessWidget {
         mainAxisSpacing: 4,
         childAspectRatio: 0.9,
       ),
-      itemCount: users.length,
+      itemCount: widget.users.length,
       itemBuilder: (context, index) {
-        final user = users[index];
+        final user = widget.users[index];
         final firstName = user['first_name'] ?? '';
         final lastName = user['last_name'] ?? '';
         final fullName = '$firstName $lastName'.trim();

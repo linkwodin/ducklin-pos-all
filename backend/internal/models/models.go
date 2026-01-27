@@ -6,19 +6,21 @@ import (
 
 // User represents a system user
 type User struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	Username     string    `gorm:"uniqueIndex;not null" json:"username"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	PINHash      string    `json:"-"`
-	FirstName    string    `gorm:"not null" json:"first_name"`
-	LastName     string    `gorm:"not null" json:"last_name"`
-	Email        string    `json:"email"`
-	Role         string    `gorm:"type:enum('management','pos_user','supervisor');not null" json:"role"`
-	IconURL      string    `json:"icon_url"`
-	IconColor    string    `json:"icon_color"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	Username      string    `gorm:"uniqueIndex;not null" json:"username"`
+	PasswordHash  string    `gorm:"not null" json:"-"`
+	PINHash       string    `json:"-"`
+	FirstName     string    `gorm:"not null" json:"first_name"`
+	LastName      string    `gorm:"not null" json:"last_name"`
+	Email         string    `json:"email"`
+	Role          string    `gorm:"type:enum('management','pos_user','supervisor');not null" json:"role"`
+	IconURL       string    `json:"icon_url"`
+	IconColor     string    `json:"icon_color"`
+	IconBgColor   string    `json:"icon_bg_color"`   // Last selected background color for icon generation
+	IconTextColor string    `json:"icon_text_color"` // Last selected text color for icon generation
+	IsActive      bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Relationships
 	Stores []Store `gorm:"many2many:user_stores;" json:"stores,omitempty"`
@@ -173,21 +175,23 @@ type RestockOrderItem struct {
 
 // Order represents a POS order
 type Order struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	OrderNumber    string     `gorm:"uniqueIndex;not null" json:"order_number"`
-	StoreID        uint       `gorm:"not null;index" json:"store_id"`
-	UserID         uint       `gorm:"not null;index" json:"user_id"`
-	DeviceCode     string     `json:"device_code"`
-	SectorID       *uint      `json:"sector_id,omitempty"`
-	Subtotal       float64    `gorm:"type:decimal(10,2);not null" json:"subtotal"`
-	DiscountAmount float64    `gorm:"type:decimal(10,2);default:0" json:"discount_amount"`
-	TotalAmount    float64    `gorm:"type:decimal(10,2);not null" json:"total_amount"`
-	Status         string     `gorm:"type:enum('pending','paid','completed','cancelled','picked_up');default:'pending'" json:"status"`
-	QRCodeData     string     `gorm:"type:text" json:"qr_code_data"`
-	CreatedAt      time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	PaidAt         *time.Time `json:"paid_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	PickedUpAt     *time.Time `json:"picked_up_at,omitempty"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	OrderNumber      string     `gorm:"uniqueIndex;not null" json:"order_number"`
+	StoreID          uint       `gorm:"not null;index" json:"store_id"`
+	UserID           uint       `gorm:"not null;index" json:"user_id"`
+	DeviceCode       string     `json:"device_code"`
+	SectorID         *uint      `json:"sector_id,omitempty"`
+	Subtotal         float64    `gorm:"type:decimal(10,2);not null" json:"subtotal"`
+	DiscountAmount   float64    `gorm:"type:decimal(10,2);default:0" json:"discount_amount"`
+	TotalAmount      float64    `gorm:"type:decimal(10,2);not null" json:"total_amount"`
+	Status           string     `gorm:"type:enum('pending','paid','completed','cancelled','picked_up');default:'pending'" json:"status"`
+	QRCodeData       string     `gorm:"type:text" json:"qr_code_data"`
+	InvoiceCheckCode string     `gorm:"type:varchar(4)" json:"invoice_check_code,omitempty"`
+	ReceiptCheckCode string     `gorm:"type:varchar(4)" json:"receipt_check_code,omitempty"`
+	CreatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	PaidAt           *time.Time `json:"paid_at,omitempty"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	PickedUpAt       *time.Time `json:"picked_up_at,omitempty"`
 
 	// Relationships
 	Store  Store       `gorm:"foreignKey:StoreID" json:"store,omitempty"`

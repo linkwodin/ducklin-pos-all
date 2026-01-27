@@ -7,6 +7,8 @@ export interface User {
   role: 'management' | 'pos_user' | 'supervisor';
   icon_url?: string;
   icon_color?: string;
+  icon_bg_color?: string;
+  icon_text_color?: string;
   is_active: boolean;
   stores?: Store[];
 }
@@ -91,6 +93,7 @@ export interface Stock {
   quantity: number;
   low_stock_threshold: number;
   last_updated: string;
+  incoming_quantity?: number;
   product?: Product;
   store?: Store;
 }

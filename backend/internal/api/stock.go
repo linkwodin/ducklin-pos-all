@@ -33,7 +33,37 @@ func (h *StockHandler) ListStock(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, stock)
+	// Calculate incoming quantities for each stock item
+	type StockResponse struct {
+		models.Stock
+		IncomingQuantity float64 `json:"incoming_quantity"`
+	}
+
+	response := make([]StockResponse, len(stock))
+	for i, s := range stock {
+		// Get incoming quantity from restock orders (initiated or in_transit status)
+		var incomingQty float64
+		var results []struct {
+			Quantity float64
+		}
+		h.db.Table("restock_order_items").
+			Select("restock_order_items.quantity").
+			Joins("INNER JOIN restock_orders ON restock_order_items.restock_order_id = restock_orders.id").
+			Where("restock_order_items.product_id = ? AND restock_orders.store_id = ? AND restock_orders.status IN (?, ?)",
+				s.ProductID, s.StoreID, "initiated", "in_transit").
+			Scan(&results)
+
+		for _, result := range results {
+			incomingQty += result.Quantity
+		}
+
+		response[i] = StockResponse{
+			Stock:            s,
+			IncomingQuantity: incomingQty,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *StockHandler) GetStoreStock(c *gin.Context) {

@@ -55,3 +55,32 @@ func (h *AuditHandler) GetStockAuditLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, logs)
 }
+
+// GetOrderAuditLogs returns audit logs for a specific order
+func (h *AuditHandler) GetOrderAuditLogs(c *gin.Context) {
+	orderID := c.Query("order_id")
+	entityID := c.Query("entity_id")
+
+	if orderID == "" && entityID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "order_id or entity_id is required"})
+		return
+	}
+
+	var logs []models.AuditLog
+	query := h.db.Where("entity_type = ?", "order").
+		Preload("User").
+		Order("created_at DESC")
+
+	if entityID != "" {
+		query = query.Where("entity_id = ?", entityID)
+	} else if orderID != "" {
+		query = query.Where("entity_id = ?", orderID)
+	}
+
+	if err := query.Limit(100).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, logs)
+}

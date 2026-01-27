@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../services/receipt_printer.dart';
+import '../services/receipt_printer_helpers.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 
@@ -74,6 +75,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     });
 
     try {
+      // Confirm pickup without check codes (optional validation)
+      // Check codes are only required when scanning QR codes in the pickup screen
       await ApiService.instance.confirmOrderPickup(orderNumber);
       
       if (mounted) {

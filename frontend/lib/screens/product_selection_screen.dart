@@ -19,6 +19,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   String? _selectedCategory;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String? _notificationMessage;
 
   @override
@@ -28,12 +29,27 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final productProvider = Provider.of<ProductProvider>(context, listen: false);
       productProvider.loadProducts();
+      // Auto-focus the search field
+      _searchFocusNode.requestFocus();
+    });
+    
+    // Listen for focus changes and refocus if lost
+    _searchFocusNode.addListener(() {
+      if (!_searchFocusNode.hasFocus && mounted) {
+        // Use a small delay to allow other UI interactions to complete
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted && !_searchFocusNode.hasFocus) {
+            _searchFocusNode.requestFocus();
+          }
+        });
+      }
     });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -52,10 +68,18 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       products = productProvider.products;
     }
 
-    return Stack(
-      children: [
-        Column(
-          children: [
+    return GestureDetector(
+      onTap: () {
+        // Refocus the search field when tapping anywhere on the screen
+        if (!_searchFocusNode.hasFocus) {
+          _searchFocusNode.requestFocus();
+        }
+      },
+      behavior: HitTestBehavior.translucent,
+      child: Stack(
+        children: [
+          Column(
+            children: [
             // Search and filter bar
             Padding(
           padding: const EdgeInsets.all(8.0),
@@ -63,6 +87,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             children: [
               TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
+                autofocus: true,
                 decoration: InputDecoration(
                   hintText: l10n.searchProducts,
                   prefixIcon: const Icon(Icons.search),
@@ -75,6 +101,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
+                            _searchFocusNode.requestFocus();
                           },
                         ),
                       IconButton(
@@ -95,6 +122,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                   // When Enter is pressed, check if it's an exact barcode match
                   if (value.isNotEmpty) {
                     await _handleBarcodeEnter(value, orderProvider);
+                    // Refocus after handling barcode
+                    _searchFocusNode.requestFocus();
                   } else {
                     setState(() => _searchQuery = value);
                   }
@@ -227,6 +256,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
             ),
           ),
       ],
+      ),
     );
   }
 
@@ -417,10 +447,14 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       if (weight != null && weight > 0) {
         final l10n = AppLocalizations.of(context)!;
         orderProvider.addToCart(product, weight: weight, message: l10n.addedWeightToCart(weight));
+        // Refocus the search field after adding product
+        _searchFocusNode.requestFocus();
       }
     } else {
       final l10n = AppLocalizations.of(context)!;
       orderProvider.addToCart(product, quantity: 1, message: l10n.addedToCart);
+      // Refocus the search field after adding product
+      _searchFocusNode.requestFocus();
     }
   }
 
@@ -449,6 +483,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       // Clear search
       _searchController.clear();
       setState(() => _searchQuery = '');
+      // Refocus the search field for next barcode scan
+      _searchFocusNode.requestFocus();
       
       // Add to cart with message
       final productName = _getProductName(product, context);
@@ -459,9 +495,13 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
         );
         if (weight != null && weight > 0) {
           orderProvider.addToCart(product, weight: weight, message: l10n.productAddedToCart(productName));
+          // Refocus the search field after adding product
+          _searchFocusNode.requestFocus();
         }
       } else {
         orderProvider.addToCart(product, quantity: 1, message: l10n.productAddedToCart(productName));
+        // Refocus the search field after adding product
+        _searchFocusNode.requestFocus();
       }
     } else {
       // Not an exact barcode match, treat as search query

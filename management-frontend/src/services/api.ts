@@ -254,11 +254,26 @@ export const usersAPI = {
     const { data } = await api.put(`/users/${id}`, user);
     return data;
   },
-  updatePIN: async (id: number, pin: string): Promise<void> => {
-    await api.put(`/users/${id}/pin`, { pin });
+  updatePIN: async (id: number, currentPin: string, newPin: string): Promise<void> => {
+    await api.put(`/users/${id}/pin`, { current_pin: currentPin, pin: newPin });
   },
   updateIcon: async (id: number, iconUrl: string): Promise<void> => {
     await api.put(`/users/${id}/icon`, { icon_url: iconUrl });
+  },
+  updateIconFile: async (id: number, formData: FormData): Promise<{ icon_url: string }> => {
+    const { data } = await api.put(`/users/${id}/icon`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return data;
+  },
+  updateIconColors: async (id: number, bgColor: string, textColor: string): Promise<{ icon_url: string }> => {
+    const { data } = await api.put(`/users/${id}/icon`, {
+      bg_color: bgColor,
+      text_color: textColor,
+    });
+    return data;
   },
 };
 
@@ -327,6 +342,13 @@ export const auditAPI = {
     entity_id?: number;
   }): Promise<AuditLog[]> => {
     const { data } = await api.get('/audit/stock', { params });
+    return data;
+  },
+  getOrderAuditLogs: async (params: {
+    order_id?: number;
+    entity_id?: number;
+  }): Promise<AuditLog[]> => {
+    const { data } = await api.get('/audit/order', { params });
     return data;
   },
 };

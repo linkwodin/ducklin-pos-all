@@ -29,6 +29,7 @@
   "layout": {
     "title": "POS 管理系统",
     "logout": "登出",
+    "profile": "个人资料",
     "dashboard": "仪表板",
     "products": "产品",
     "costEditor": "成本与价格编辑器",

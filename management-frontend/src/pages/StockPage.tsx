@@ -33,6 +33,7 @@ import { useSnackbar } from 'notistack';
 import type { Stock, Store, Product, AuditLog } from '../types';
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
+import UserDisplay from '../components/UserDisplay';
 
 export default function StockPage() {
   const { t } = useTranslation();
@@ -147,7 +148,7 @@ export default function StockPage() {
           <Box component="ul" sx={{ pl: 2 }}>
             {lowStock.slice(0, 5).map((item) => (
               <li key={item.id}>
-                {item.product?.name} - {item.quantity} {item.product?.unit_type} ({t('stock.store')}:{' '}
+                {item.product?.name} - {item.quantity} {item.product?.unit_type === 'weight' ? 'g' : 'unit'} ({t('stock.store')}:{' '}
                 {item.store?.name})
               </li>
             ))}
@@ -207,9 +208,17 @@ export default function StockPage() {
                   <TableRow key={item.id} hover>
                     <TableCell>{item.product?.name || '-'}</TableCell>
                     <TableCell>{item.store?.name || '-'}</TableCell>
-                    <TableCell>{item.quantity} {item.product?.unit_type || ''}</TableCell>
                     <TableCell>
-                      {item.low_stock_threshold} {item.product?.unit_type || ''}
+                      {item.quantity}
+                      {item.incoming_quantity && item.incoming_quantity > 0 ? (
+                        <span style={{ color: '#1976d2', marginLeft: '4px' }}>
+                          (+{item.incoming_quantity})
+                        </span>
+                      ) : null}
+                      {' '}{item.product?.unit_type === 'weight' ? 'g' : 'unit'}
+                    </TableCell>
+                    <TableCell>
+                      {item.low_stock_threshold} {item.product?.unit_type === 'weight' ? 'g' : 'unit'}
                     </TableCell>
                     <TableCell>
                       <Chip
@@ -518,9 +527,7 @@ function AuditLogDialog({
                         {format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss')}
                       </TableCell>
                       <TableCell>
-                        {log.user
-                          ? `${log.user.first_name} ${log.user.last_name}`
-                          : 'System'}
+                        <UserDisplay user={log.user} showName={true} size="small" />
                       </TableCell>
                       <TableCell>{oldQty.toFixed(2)}</TableCell>
                       <TableCell>{newQty.toFixed(2)}</TableCell>

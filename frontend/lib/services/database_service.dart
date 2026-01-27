@@ -281,6 +281,16 @@ class DatabaseService {
     );
   }
 
+  Future<void> updateUserIcon(int userId, String iconUrl) async {
+    final db = await database;
+    await db.update(
+      'users',
+      {'icon_url': iconUrl, 'synced_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
   // Product methods
   Future<void> saveProducts(List<Map<String, dynamic>> products) async {
     final db = await database;

@@ -87,6 +87,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 		// Audit Logs
 		protected.GET("/audit/stock", auditHandler.GetStockAuditLogs)
+		protected.GET("/audit/order", auditHandler.GetOrderAuditLogs)
 
 		// Re-stock Orders
 		protected.GET("/restock-orders", stockHandler.ListRestockOrders)

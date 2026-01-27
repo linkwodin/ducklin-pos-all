@@ -11,6 +11,18 @@ import 'database_service.dart';
 
 /// Shared helper functions for all receipt printers
 class ReceiptPrinterHelpers {
+  /// Generate a check code from order number and total amount
+  /// Returns a 4-digit code for verification
+  /// [receiptType] - "receipt" or "invoice" to generate different codes
+  static String generateCheckCode(String orderNumber, double totalAmount, {String receiptType = 'receipt'}) {
+    // Create a deterministic hash from order number, total amount, and receipt type
+    // This ensures invoice and receipt have different check codes
+    final combined = '$orderNumber-${totalAmount.toStringAsFixed(2)}-$receiptType';
+    int hash = combined.hashCode;
+    // Ensure positive and get last 4 digits
+    final code = (hash.abs() % 10000).toString().padLeft(4, '0');
+    return code;
+  }
   /// Get printer configuration from SharedPreferences
   static Future<Map<String, dynamic>> getPrinterConfig() async {
     final prefs = await SharedPreferences.getInstance();

@@ -143,7 +143,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const SizedBox(height: 24),
           // Checkout button
           ElevatedButton(
-            onPressed: _isProcessing
+            onPressed: (_isProcessing || orderProvider.cartItems.isEmpty)
                 ? null
                 : () => _processCheckout(orderProvider, authProvider),
             style: ElevatedButton.styleFrom(

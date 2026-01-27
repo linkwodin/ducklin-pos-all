@@ -142,6 +142,12 @@ abstract class AppLocalizations {
   /// **'Password'**
   String get password;
 
+  /// Email label
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get email;
+
   /// PIN label
   ///
   /// In en, this message translates to:
@@ -658,10 +664,10 @@ abstract class AppLocalizations {
   /// **'Print'**
   String get print;
 
-  /// Print internal audit note button
+  /// Print audit note button
   ///
   /// In en, this message translates to:
-  /// **'Print Internal Audit Note'**
+  /// **'Print Audit Note'**
   String get printInternalAuditNote;
 
   /// Print invoice button
@@ -673,7 +679,7 @@ abstract class AppLocalizations {
   /// Print customer receipt button
   ///
   /// In en, this message translates to:
-  /// **'Print Customer Receipt'**
+  /// **'Print receipt'**
   String get printCustomerReceipt;
 
   /// Print all receipts button
@@ -865,8 +871,14 @@ abstract class AppLocalizations {
   /// Instructions for scanning QR code
   ///
   /// In en, this message translates to:
-  /// **'Scan the QR code on the invoice to confirm order pickup'**
+  /// **'Scan a QR code to confirm the pickup'**
   String get scanQRCodeToConfirmPickup;
+
+  /// Button to enter order information manually
+  ///
+  /// In en, this message translates to:
+  /// **'Enter it manually'**
+  String get enterItManually;
 
   /// Label for order number input field
   ///
@@ -957,6 +969,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Are you sure you want to cancel this order?'**
   String get cancelOrderConfirmation;
+
+  /// Profile button label
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profile;
+
+  /// User information section title
+  ///
+  /// In en, this message translates to:
+  /// **'User Information'**
+  String get userInfo;
+
+  /// First name label
+  ///
+  /// In en, this message translates to:
+  /// **'First Name'**
+  String get firstName;
+
+  /// Last name label
+  ///
+  /// In en, this message translates to:
+  /// **'Last Name'**
+  String get lastName;
+
+  /// User role label
+  ///
+  /// In en, this message translates to:
+  /// **'Role'**
+  String get role;
+
+  /// Profile icon section title
+  ///
+  /// In en, this message translates to:
+  /// **'Profile Icon'**
+  String get profileIcon;
+
+  /// Button to change profile icon
+  ///
+  /// In en, this message translates to:
+  /// **'Change Icon'**
+  String get changeIcon;
+
+  /// Section title for changing PIN
+  ///
+  /// In en, this message translates to:
+  /// **'Change PIN'**
+  String get changePIN;
+
+  /// Information about changing PIN
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your current PIN and a new PIN to change it.'**
+  String get pinInfo;
+
+  /// Label for current PIN input
+  ///
+  /// In en, this message translates to:
+  /// **'Current PIN'**
+  String get currentPIN;
+
+  /// Error message when current PIN is missing
+  ///
+  /// In en, this message translates to:
+  /// **'Current PIN is required'**
+  String get currentPINRequired;
+
+  /// Label for new PIN input
+  ///
+  /// In en, this message translates to:
+  /// **'New PIN'**
+  String get newPIN;
+
+  /// Error message when new PIN is missing
+  ///
+  /// In en, this message translates to:
+  /// **'New PIN is required'**
+  String get newPINRequired;
+
+  /// Label for confirm PIN input
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm New PIN'**
+  String get confirmPIN;
+
+  /// Error message when PINs don't match
+  ///
+  /// In en, this message translates to:
+  /// **'PINs do not match'**
+  String get pinMismatch;
+
+  /// Error message when PIN is too short
+  ///
+  /// In en, this message translates to:
+  /// **'PIN must be at least 4 characters'**
+  String get pinMinLength;
+
+  /// Success message after PIN update
+  ///
+  /// In en, this message translates to:
+  /// **'PIN updated successfully'**
+  String get pinUpdated;
+
+  /// Success message after icon update
+  ///
+  /// In en, this message translates to:
+  /// **'Icon updated successfully'**
+  String get iconUpdated;
+
+  /// Button to generate icon from colors
+  ///
+  /// In en, this message translates to:
+  /// **'Generate from Colors'**
+  String get generateFromColors;
+
+  /// Button to upload image
+  ///
+  /// In en, this message translates to:
+  /// **'Upload Image'**
+  String get uploadImage;
+
+  /// Label for background color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Background Color'**
+  String get backgroundColor;
+
+  /// Label for text color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Text Color'**
+  String get textColor;
+
+  /// Button to select image file
+  ///
+  /// In en, this message translates to:
+  /// **'Select Image'**
+  String get selectImage;
+
+  /// Button to update PIN
+  ///
+  /// In en, this message translates to:
+  /// **'Update PIN'**
+  String get updatePIN;
 }
 
 class _AppLocalizationsDelegate

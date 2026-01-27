@@ -28,6 +28,10 @@
   "@password": {
     "description": "Password label"
   },
+  "email": "Email",
+  "@email": {
+    "description": "Email label"
+  },
   "pin": "PIN",
   "@pin": {
     "description": "PIN label"
@@ -466,15 +470,15 @@
   "@print": {
     "description": "Print button"
   },
-  "printInternalAuditNote": "Print Internal Audit Note",
+  "printInternalAuditNote": "Print Audit Note",
   "@printInternalAuditNote": {
-    "description": "Print internal audit note button"
+    "description": "Print audit note button"
   },
   "printInvoice": "Print Invoice",
   "@printInvoice": {
     "description": "Print invoice button"
   },
-  "printCustomerReceipt": "Print Customer Receipt",
+  "printCustomerReceipt": "Print receipt",
   "@printCustomerReceipt": {
     "description": "Print customer receipt button"
   },
@@ -602,9 +606,13 @@
   "@scanOrderQRCode": {
     "description": "Scan order QR code title"
   },
-  "scanQRCodeToConfirmPickup": "Scan the QR code on the invoice to confirm order pickup",
+  "scanQRCodeToConfirmPickup": "Scan a QR code to confirm the pickup",
   "@scanQRCodeToConfirmPickup": {
     "description": "Instructions for scanning QR code"
+  },
+  "enterItManually": "Enter it manually",
+  "@enterItManually": {
+    "description": "Button to enter order information manually"
   },
   "enterOrderNumber": "Enter Order Number",
   "@enterOrderNumber": {
@@ -665,6 +673,102 @@
   "cancelOrderConfirmation": "Are you sure you want to cancel this order?",
   "@cancelOrderConfirmation": {
     "description": "Confirmation message for cancelling an order"
+  },
+  "profile": "Profile",
+  "@profile": {
+    "description": "Profile button label"
+  },
+  "userInfo": "User Information",
+  "@userInfo": {
+    "description": "User information section title"
+  },
+  "firstName": "First Name",
+  "@firstName": {
+    "description": "First name label"
+  },
+  "lastName": "Last Name",
+  "@lastName": {
+    "description": "Last name label"
+  },
+  "role": "Role",
+  "@role": {
+    "description": "User role label"
+  },
+  "profileIcon": "Profile Icon",
+  "@profileIcon": {
+    "description": "Profile icon section title"
+  },
+  "changeIcon": "Change Icon",
+  "@changeIcon": {
+    "description": "Button to change profile icon"
+  },
+  "changePIN": "Change PIN",
+  "@changePIN": {
+    "description": "Section title for changing PIN"
+  },
+  "pinInfo": "Enter your current PIN and a new PIN to change it.",
+  "@pinInfo": {
+    "description": "Information about changing PIN"
+  },
+  "currentPIN": "Current PIN",
+  "@currentPIN": {
+    "description": "Label for current PIN input"
+  },
+  "currentPINRequired": "Current PIN is required",
+  "@currentPINRequired": {
+    "description": "Error message when current PIN is missing"
+  },
+  "newPIN": "New PIN",
+  "@newPIN": {
+    "description": "Label for new PIN input"
+  },
+  "newPINRequired": "New PIN is required",
+  "@newPINRequired": {
+    "description": "Error message when new PIN is missing"
+  },
+  "confirmPIN": "Confirm New PIN",
+  "@confirmPIN": {
+    "description": "Label for confirm PIN input"
+  },
+  "pinMismatch": "PINs do not match",
+  "@pinMismatch": {
+    "description": "Error message when PINs don't match"
+  },
+  "pinMinLength": "PIN must be at least 4 characters",
+  "@pinMinLength": {
+    "description": "Error message when PIN is too short"
+  },
+  "pinUpdated": "PIN updated successfully",
+  "@pinUpdated": {
+    "description": "Success message after PIN update"
+  },
+  "iconUpdated": "Icon updated successfully",
+  "@iconUpdated": {
+    "description": "Success message after icon update"
+  },
+  "generateFromColors": "Generate from Colors",
+  "@generateFromColors": {
+    "description": "Button to generate icon from colors"
+  },
+  "uploadImage": "Upload Image",
+  "@uploadImage": {
+    "description": "Button to upload image"
+  },
+  "backgroundColor": "Background Color",
+  "@backgroundColor": {
+    "description": "Label for background color picker"
+  },
+  "textColor": "Text Color",
+  "@textColor": {
+    "description": "Label for text color picker"
+  },
+  "selectImage": "Select Image",
+  "@selectImage": {
+    "description": "Button to select image file"
+  },
+  "updatePIN": "Update PIN",
+  "@updatePIN": {
+    "description": "Button to update PIN"
   }
 }
 

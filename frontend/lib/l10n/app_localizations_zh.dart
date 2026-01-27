@@ -30,6 +30,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get password => '密碼';
 
   @override
+  String get email => 'Email';
+
+  @override
   String get pin => 'PIN';
 
   @override
@@ -322,13 +325,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get print => '列印';
 
   @override
-  String get printInternalAuditNote => 'Print Internal Audit Note';
+  String get printInternalAuditNote => 'Print Audit Note';
 
   @override
   String get printInvoice => 'Print Invoice';
 
   @override
-  String get printCustomerReceipt => 'Print Customer Receipt';
+  String get printCustomerReceipt => 'Print receipt';
 
   @override
   String get printAll => 'Print All';
@@ -426,7 +429,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scanQRCodeToConfirmPickup =>
-      'Scan the QR code on the invoice to confirm order pickup';
+      'Scan a QR code to confirm the pickup';
+
+  @override
+  String get enterItManually => 'Enter it manually';
 
   @override
   String get enterOrderNumber => 'Enter Order Number';
@@ -474,6 +480,78 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get cancelOrderConfirmation =>
       'Are you sure you want to cancel this order?';
+
+  @override
+  String get profile => 'Profile';
+
+  @override
+  String get userInfo => 'User Information';
+
+  @override
+  String get firstName => 'First Name';
+
+  @override
+  String get lastName => 'Last Name';
+
+  @override
+  String get role => 'Role';
+
+  @override
+  String get profileIcon => 'Profile Icon';
+
+  @override
+  String get changeIcon => 'Change Icon';
+
+  @override
+  String get changePIN => 'Change PIN';
+
+  @override
+  String get pinInfo => 'Enter your current PIN and a new PIN to change it.';
+
+  @override
+  String get currentPIN => 'Current PIN';
+
+  @override
+  String get currentPINRequired => 'Current PIN is required';
+
+  @override
+  String get newPIN => 'New PIN';
+
+  @override
+  String get newPINRequired => 'New PIN is required';
+
+  @override
+  String get confirmPIN => 'Confirm New PIN';
+
+  @override
+  String get pinMismatch => 'PINs do not match';
+
+  @override
+  String get pinMinLength => 'PIN must be at least 4 characters';
+
+  @override
+  String get pinUpdated => 'PIN updated successfully';
+
+  @override
+  String get iconUpdated => 'Icon updated successfully';
+
+  @override
+  String get generateFromColors => 'Generate from Colors';
+
+  @override
+  String get uploadImage => 'Upload Image';
+
+  @override
+  String get backgroundColor => 'Background Color';
+
+  @override
+  String get textColor => 'Text Color';
+
+  @override
+  String get selectImage => 'Select Image';
+
+  @override
+  String get updatePIN => 'Update PIN';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -500,6 +578,9 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get password => '密码';
+
+  @override
+  String get email => '电子邮件';
 
   @override
   String get pin => 'PIN';
@@ -789,13 +870,13 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get print => '打印';
 
   @override
-  String get printInternalAuditNote => '打印内部审计单';
+  String get printInternalAuditNote => '打印审计单';
 
   @override
   String get printInvoice => '打印发票';
 
   @override
-  String get printCustomerReceipt => '打印客户收据';
+  String get printCustomerReceipt => '打印收据';
 
   @override
   String get printAll => '打印全部';
@@ -892,7 +973,10 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get scanOrderQRCode => '扫描订单 QR 码';
 
   @override
-  String get scanQRCodeToConfirmPickup => '扫描发票上的 QR 码以确认订单取货';
+  String get scanQRCodeToConfirmPickup => '扫描二维码以确认取货';
+
+  @override
+  String get enterItManually => '手动输入';
 
   @override
   String get enterOrderNumber => '输入订单号码';
@@ -938,6 +1022,78 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get cancelOrderConfirmation => '您确定要取消此订单吗？';
+
+  @override
+  String get profile => '个人资料';
+
+  @override
+  String get userInfo => '用户信息';
+
+  @override
+  String get firstName => '名字';
+
+  @override
+  String get lastName => '姓氏';
+
+  @override
+  String get role => '角色';
+
+  @override
+  String get profileIcon => '个人资料图标';
+
+  @override
+  String get changeIcon => '更改图标';
+
+  @override
+  String get changePIN => '更改 PIN';
+
+  @override
+  String get pinInfo => '输入您当前的 PIN 和新 PIN 以进行更改。';
+
+  @override
+  String get currentPIN => '当前 PIN';
+
+  @override
+  String get currentPINRequired => '当前 PIN 是必需的';
+
+  @override
+  String get newPIN => '新 PIN';
+
+  @override
+  String get newPINRequired => '新 PIN 是必需的';
+
+  @override
+  String get confirmPIN => '确认新 PIN';
+
+  @override
+  String get pinMismatch => 'PIN 不匹配';
+
+  @override
+  String get pinMinLength => 'PIN 必须至少 4 个字符';
+
+  @override
+  String get pinUpdated => 'PIN 更新成功';
+
+  @override
+  String get iconUpdated => '图标更新成功';
+
+  @override
+  String get generateFromColors => '从颜色生成';
+
+  @override
+  String get uploadImage => '上传图片';
+
+  @override
+  String get backgroundColor => '背景颜色';
+
+  @override
+  String get textColor => '文字颜色';
+
+  @override
+  String get selectImage => '选择图片';
+
+  @override
+  String get updatePIN => '更新 PIN';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -964,6 +1120,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get password => '密碼';
+
+  @override
+  String get email => '電子郵件';
 
   @override
   String get pin => 'PIN';
@@ -1253,13 +1412,13 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get print => '列印';
 
   @override
-  String get printInternalAuditNote => '列印內部審計單';
+  String get printInternalAuditNote => '列印審計單';
 
   @override
   String get printInvoice => '列印發票';
 
   @override
-  String get printCustomerReceipt => '列印客戶收據';
+  String get printCustomerReceipt => '列印收據';
 
   @override
   String get printAll => '列印全部';
@@ -1356,7 +1515,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get scanOrderQRCode => '掃描訂單 QR 碼';
 
   @override
-  String get scanQRCodeToConfirmPickup => '掃描發票上的 QR 碼以確認訂單取貨';
+  String get scanQRCodeToConfirmPickup => '掃描二維碼以確認取貨';
+
+  @override
+  String get enterItManually => '手動輸入';
 
   @override
   String get enterOrderNumber => '輸入訂單號碼';
@@ -1402,4 +1564,76 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get cancelOrderConfirmation => '您確定要取消此訂單嗎？';
+
+  @override
+  String get profile => '個人資料';
+
+  @override
+  String get userInfo => '用戶資訊';
+
+  @override
+  String get firstName => '名字';
+
+  @override
+  String get lastName => '姓氏';
+
+  @override
+  String get role => '角色';
+
+  @override
+  String get profileIcon => '個人資料圖示';
+
+  @override
+  String get changeIcon => '更改圖示';
+
+  @override
+  String get changePIN => '更改 PIN';
+
+  @override
+  String get pinInfo => '輸入您當前的 PIN 和新 PIN 以進行更改。';
+
+  @override
+  String get currentPIN => '當前 PIN';
+
+  @override
+  String get currentPINRequired => '當前 PIN 是必需的';
+
+  @override
+  String get newPIN => '新 PIN';
+
+  @override
+  String get newPINRequired => '新 PIN 是必需的';
+
+  @override
+  String get confirmPIN => '確認新 PIN';
+
+  @override
+  String get pinMismatch => 'PIN 不匹配';
+
+  @override
+  String get pinMinLength => 'PIN 必須至少 4 個字符';
+
+  @override
+  String get pinUpdated => 'PIN 更新成功';
+
+  @override
+  String get iconUpdated => '圖示更新成功';
+
+  @override
+  String get generateFromColors => '從顏色生成';
+
+  @override
+  String get uploadImage => '上傳圖片';
+
+  @override
+  String get backgroundColor => '背景顏色';
+
+  @override
+  String get textColor => '文字顏色';
+
+  @override
+  String get selectImage => '選擇圖片';
+
+  @override
+  String get updatePIN => '更新 PIN';
 }

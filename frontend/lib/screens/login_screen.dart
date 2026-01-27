@@ -81,6 +81,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Reload users from database
       await _loadUsers();
+      
+      // Force refresh of user selection screen if it's displayed
+      setState(() {
+        // This will trigger a rebuild of UserSelectionScreen with updated users
+      });
     } catch (e) {
       final l10n = AppLocalizations.of(context)!;
       setState(() {
@@ -110,17 +115,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.loginTitle),
-        leading: IconButton(
-          icon: _isSyncing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.sync),
-          onPressed: _isSyncing ? null : _syncUsers,
-          tooltip: l10n.sync,
-        ),
       ),
       body: SafeArea(
         child: Column(
@@ -150,7 +144,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : _users.isEmpty
                       ? _buildNoUsersView()
-                      : UserSelectionScreen(users: _users),
+                      : UserSelectionScreen(
+                          users: _users,
+                          onSyncRequested: _syncUsers,
+                        ),
             ),
           ],
         ),

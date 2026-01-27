@@ -30,6 +30,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get password => 'Password';
 
   @override
+  String get email => 'Email';
+
+  @override
   String get pin => 'PIN';
 
   @override
@@ -326,13 +329,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get print => 'Print';
 
   @override
-  String get printInternalAuditNote => 'Print Internal Audit Note';
+  String get printInternalAuditNote => 'Print Audit Note';
 
   @override
   String get printInvoice => 'Print Invoice';
 
   @override
-  String get printCustomerReceipt => 'Print Customer Receipt';
+  String get printCustomerReceipt => 'Print receipt';
 
   @override
   String get printAll => 'Print All';
@@ -431,7 +434,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scanQRCodeToConfirmPickup =>
-      'Scan the QR code on the invoice to confirm order pickup';
+      'Scan a QR code to confirm the pickup';
+
+  @override
+  String get enterItManually => 'Enter it manually';
 
   @override
   String get enterOrderNumber => 'Enter Order Number';
@@ -479,4 +485,76 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get cancelOrderConfirmation =>
       'Are you sure you want to cancel this order?';
+
+  @override
+  String get profile => 'Profile';
+
+  @override
+  String get userInfo => 'User Information';
+
+  @override
+  String get firstName => 'First Name';
+
+  @override
+  String get lastName => 'Last Name';
+
+  @override
+  String get role => 'Role';
+
+  @override
+  String get profileIcon => 'Profile Icon';
+
+  @override
+  String get changeIcon => 'Change Icon';
+
+  @override
+  String get changePIN => 'Change PIN';
+
+  @override
+  String get pinInfo => 'Enter your current PIN and a new PIN to change it.';
+
+  @override
+  String get currentPIN => 'Current PIN';
+
+  @override
+  String get currentPINRequired => 'Current PIN is required';
+
+  @override
+  String get newPIN => 'New PIN';
+
+  @override
+  String get newPINRequired => 'New PIN is required';
+
+  @override
+  String get confirmPIN => 'Confirm New PIN';
+
+  @override
+  String get pinMismatch => 'PINs do not match';
+
+  @override
+  String get pinMinLength => 'PIN must be at least 4 characters';
+
+  @override
+  String get pinUpdated => 'PIN updated successfully';
+
+  @override
+  String get iconUpdated => 'Icon updated successfully';
+
+  @override
+  String get generateFromColors => 'Generate from Colors';
+
+  @override
+  String get uploadImage => 'Upload Image';
+
+  @override
+  String get backgroundColor => 'Background Color';
+
+  @override
+  String get textColor => 'Text Color';
+
+  @override
+  String get selectImage => 'Select Image';
+
+  @override
+  String get updatePIN => 'Update PIN';
 }

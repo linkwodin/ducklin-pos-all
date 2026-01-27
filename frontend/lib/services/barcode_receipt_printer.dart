@@ -64,6 +64,17 @@ class BarcodeReceiptPrinter {
       bytes += generator.feed(1);
     }
 
+    // Print receipt name if available
+    final receiptName = order['receipt_name']?.toString() ?? '';
+    if (receiptName.isNotEmpty) {
+      bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+        generator,
+        receiptName,
+        baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size1),
+      );
+      bytes += generator.feed(1);
+    }
+
     // Print order number
     if (orderNumber.isNotEmpty) {
       final orderNumText = l10n.orderNumber(orderNumber);
@@ -75,10 +86,40 @@ class BarcodeReceiptPrinter {
       bytes += generator.feed(1);
     }
 
+    // Print check code (for invoice) - use from database if available, otherwise generate
+    String checkCode;
+    if (order['invoice_check_code'] != null && order['invoice_check_code'].toString().isNotEmpty) {
+      // Use check code from database
+      checkCode = order['invoice_check_code'].toString();
+    } else {
+      // Fallback: generate check code (for backward compatibility)
+      final totalAmountValue = order['total_amount'];
+      final totalAmountNum = (totalAmountValue != null ? (totalAmountValue as num).toDouble() : 0.0);
+      checkCode = ReceiptPrinterHelpers.generateCheckCode(orderNumber, totalAmountNum, receiptType: 'invoice');
+    }
+    final checkCodeText = 'Check Code: $checkCode';
+    bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+      generator,
+      checkCodeText,
+      baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true),
+    );
+    bytes += generator.feed(1);
+
     bytes += generator.hr();
     bytes += generator.feed(1);
 
     // Header with Product and Qty
+    // Print receipt name in header (use receipt name if available, otherwise use default)
+    final headerName = receiptName.isNotEmpty ? receiptName : '發票 Invoice';
+    bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+      generator,
+      headerName,
+      baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+    bytes += generator.hr();
+    bytes += generator.feed(1);
+    
     final productHeader = 'Product 產品'.padRight(40, ' ');
     final qtyHeader = 'Qty';
     final headerSpacing = ' ' * 6;
@@ -159,12 +200,27 @@ class BarcodeReceiptPrinter {
     bytes += generator.hr();
     bytes += generator.feed(1);
 
-    // Generate and print QR code with order number
+    // Generate and print QR code with order number and check code
     Uint8List? qrImage;
     if (orderNumber.isNotEmpty) {
       try {
+        // Use check code from database for invoice, otherwise generate
+        String checkCode;
+        if (order['invoice_check_code'] != null && order['invoice_check_code'].toString().isNotEmpty) {
+          // Use check code from database
+          checkCode = order['invoice_check_code'].toString();
+        } else {
+          // Fallback: generate check code (for backward compatibility)
+          final totalAmountValue = order['total_amount'];
+          final totalAmountNum = (totalAmountValue != null ? (totalAmountValue as num).toDouble() : 0.0);
+          checkCode = ReceiptPrinterHelpers.generateCheckCode(orderNumber, totalAmountNum, receiptType: 'invoice');
+        }
+        
+        // QR code data format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE"
+        final qrData = '$orderNumber|$checkCode|invoice';
+        
         final qrPainter = QrPainter(
-          data: orderNumber,
+          data: qrData,
           version: QrVersions.auto,
           errorCorrectionLevel: QrErrorCorrectLevel.M,
           color: Colors.black,

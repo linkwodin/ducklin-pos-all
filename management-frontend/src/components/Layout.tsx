@@ -27,6 +27,7 @@ import {
   ShoppingCart as ShoppingCartIcon,
   MenuBook as MenuBookIcon,
   CurrencyExchange as CurrencyExchangeIcon,
+  Person as PersonIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
@@ -104,6 +105,12 @@ export default function Layout() {
               open={Boolean(anchorEl)}
               onClose={handleMenuClose}
             >
+              <MenuItem onClick={() => { navigate('/profile'); handleMenuClose(); }}>
+                <ListItemIcon>
+                  <PersonIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('layout.profile')}</ListItemText>
+              </MenuItem>
               <MenuItem onClick={handleLogout}>
                 <ListItemIcon>
                   <LogoutIcon fontSize="small" />

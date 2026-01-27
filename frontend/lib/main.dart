@@ -178,10 +178,25 @@ class _AuthWrapperState extends State<AuthWrapper> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         authProvider.checkAuth();
+        
+        // Listen for logout events
+        authProvider.addListener(() {
+          if (!authProvider.isAuthenticated && mounted) {
+            setState(() {
+              _isAuthenticated = false;
+            });
+          }
+        });
       });
     }
 
     return _isAuthenticated ? const POSScreen() : const LoginScreen();
+  }
+  
+  @override
+  void dispose() {
+    // Clean up any timers if needed
+    super.dispose();
   }
 }
 

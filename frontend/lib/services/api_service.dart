@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._init();
@@ -41,9 +42,50 @@ class ApiService {
         }
         handler.next(options);
       },
-      onResponse: (response, handler) {
+      onResponse: (response, handler) async {
         print('API Service: Response - ${response.statusCode} ${response.requestOptions.uri}');
         print('API Service: Response data: ${response.data}');
+        
+        // Update last activity time on any successful API response
+        if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('last_activity_time', DateTime.now().millisecondsSinceEpoch);
+            
+            // Check if response contains a new token (for token refresh scenarios)
+            final responseData = response.data;
+            if (responseData is Map<String, dynamic>) {
+              if (responseData.containsKey('token')) {
+                final newToken = responseData['token'] as String?;
+                if (newToken != null && newToken.isNotEmpty) {
+                  print('API Service: Received new token in response, updating...');
+                  await prefs.setString('jwt_token', newToken);
+                  
+                  // Also update user info if provided
+                  if (responseData.containsKey('user')) {
+                    final user = responseData['user'] as Map<String, dynamic>?;
+                    if (user != null) {
+                      if (user['role'] != null) {
+                        await prefs.setString('user_role', user['role'].toString());
+                      }
+                      if (user['id'] != null) {
+                        final userId = user['id'];
+                        if (userId is int) {
+                          await prefs.setInt('user_id', userId);
+                        } else if (userId is String) {
+                          await prefs.setInt('user_id', int.parse(userId));
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            print('API Service: Error updating activity time or token: $e');
+          }
+        }
+        
         handler.next(response);
       },
       onError: (error, handler) async {
@@ -53,9 +95,27 @@ class ApiService {
         print('API Service: Error status code: ${error.response?.statusCode}');
         
         if (error.response?.statusCode == 401) {
-          // Token expired, clear and redirect to login
+          // Token expired or unauthorized, clear token and activity
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('jwt_token');
+          await prefs.remove('last_activity_time');
+          await prefs.remove('user_role');
+          await prefs.remove('user_id');
+          
+          // Notify AuthProvider to logout
+          // This will be handled by the AuthProvider's session monitoring
+        } else {
+          // For non-401 errors, still update activity time (user is still active)
+          // This helps distinguish between network errors and actual inactivity
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final token = prefs.getString('jwt_token');
+            if (token != null && token.isNotEmpty) {
+              await prefs.setInt('last_activity_time', DateTime.now().millisecondsSinceEpoch);
+            }
+          } catch (e) {
+            // Ignore errors
+          }
         }
         handler.next(error);
       },
@@ -206,8 +266,35 @@ class ApiService {
     return response.data;
   }
 
-  Future<Map<String, dynamic>> confirmOrderPickup(String orderNumber) async {
-    final response = await _dio.put('/orders/pickup/$orderNumber');
+  Future<Map<String, dynamic>> confirmOrderPickup(
+    String orderNumber, {
+    String? checkCode,
+    String? receiptType,
+    String? invoiceCheckCode,
+    String? receiptCheckCode,
+  }) async {
+    String url = '/orders/pickup/$orderNumber';
+    final params = <String>[];
+    
+    // New format: send both check codes if provided
+    if (invoiceCheckCode != null && invoiceCheckCode.isNotEmpty && 
+        receiptCheckCode != null && receiptCheckCode.isNotEmpty) {
+      params.add('invoice_check_code=$invoiceCheckCode');
+      params.add('receipt_check_code=$receiptCheckCode');
+    } else {
+      // Old format: single check code (backward compatibility)
+      if (checkCode != null && checkCode.isNotEmpty) {
+        params.add('check_code=$checkCode');
+      }
+      if (receiptType != null && receiptType.isNotEmpty) {
+        params.add('receipt_type=$receiptType');
+      }
+    }
+    
+    if (params.isNotEmpty) {
+      url += '?${params.join('&')}';
+    }
+    final response = await _dio.put(url);
     return response.data;
   }
 
@@ -259,6 +346,41 @@ class ApiService {
 
   Future<Map<String, dynamic>> receiveRestockOrder(int orderId) async {
     final response = await _dio.put('/restock-orders/$orderId/receive');
+    return response.data;
+  }
+
+  // User endpoints
+  Future<Map<String, dynamic>> getUser(int userId) async {
+    final response = await _dio.get('/users/$userId');
+    return response.data;
+  }
+
+  Future<void> updateUserPIN(int userId, String currentPin, String newPin) async {
+    await _dio.put('/users/$userId/pin', data: {
+      'current_pin': currentPin,
+      'pin': newPin,
+    });
+  }
+
+  Future<Map<String, dynamic>> updateUserIconFile(int userId, XFile imageFile) async {
+    final formData = FormData.fromMap({
+      'icon': await MultipartFile.fromFile(imageFile.path, filename: imageFile.name),
+    });
+    final response = await _dio.put(
+      '/users/$userId/icon',
+      data: formData,
+      options: Options(
+        headers: {'Content-Type': 'multipart/form-data'},
+      ),
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> updateUserIconColors(int userId, String bgColor, String textColor) async {
+    final response = await _dio.put('/users/$userId/icon', data: {
+      'bg_color': bgColor,
+      'text_color': textColor,
+    });
     return response.data;
   }
 }

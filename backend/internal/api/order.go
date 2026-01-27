@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -116,6 +117,10 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 
 	totalAmount := subtotal - discountAmount
 
+	// Generate check codes for invoice and receipt
+	invoiceCheckCode := h.generateCheckCode(orderNumber, totalAmount, "invoice")
+	receiptCheckCode := h.generateCheckCode(orderNumber, totalAmount, "receipt")
+
 	// Generate QR code data
 	qrData := map[string]interface{}{
 		"order_number": orderNumber,
@@ -126,17 +131,19 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	order := models.Order{
-		OrderNumber:    orderNumber,
-		StoreID:        req.StoreID,
-		UserID:         userID,
-		DeviceCode:     req.DeviceCode,
-		SectorID:       req.SectorID,
-		Subtotal:       subtotal,
-		DiscountAmount: discountAmount,
-		TotalAmount:    totalAmount,
-		Status:         "pending",
-		QRCodeData:     fmt.Sprintf("%v", qrData),
-		CreatedAt:      now,
+		OrderNumber:      orderNumber,
+		StoreID:          req.StoreID,
+		UserID:           userID,
+		DeviceCode:       req.DeviceCode,
+		SectorID:         req.SectorID,
+		Subtotal:         subtotal,
+		DiscountAmount:   discountAmount,
+		TotalAmount:      totalAmount,
+		Status:           "pending",
+		QRCodeData:       fmt.Sprintf("%v", qrData),
+		InvoiceCheckCode: invoiceCheckCode,
+		ReceiptCheckCode: receiptCheckCode,
+		CreatedAt:        now,
 	}
 
 	if err := h.db.Create(&order).Error; err != nil {
@@ -334,10 +341,54 @@ func (h *OrderHandler) MarkCancelled(c *gin.Context) {
 	c.JSON(http.StatusOK, order)
 }
 
+// generateCheckCode generates a 4-digit check code from order number, total amount, and receipt type
+// This matches the Flutter implementation in ReceiptPrinterHelpers.generateCheckCode
+// receiptType should be "receipt" or "invoice" to generate different codes
+func (h *OrderHandler) generateCheckCode(orderNumber string, totalAmount float64, receiptType string) string {
+	// Create a deterministic hash from order number, total amount, and receipt type
+	// Format: "ORDER-123.45-receipt" or "ORDER-123.45-invoice" (matching Flutter's format)
+	combined := fmt.Sprintf("%s-%.2f-%s", orderNumber, totalAmount, receiptType)
+
+	// Simple hash function matching Dart's hashCode behavior
+	hash := int64(0)
+	for _, char := range combined {
+		hash = hash*31 + int64(char)
+	}
+
+	// Ensure positive and get last 4 digits
+	code := hash % 10000
+	if code < 0 {
+		code = -code
+	}
+
+	return fmt.Sprintf("%04d", code)
+}
+
 // MarkPickedUp marks an order as picked up by scanning QR code
 func (h *OrderHandler) MarkPickedUp(c *gin.Context) {
 	var order models.Order
 	orderNumber := c.Param("order_number")
+
+	// Get check codes from query parameter or request body
+	var invoiceCheckCode string
+	var receiptCheckCode string
+
+	if c.Query("invoice_check_code") != "" || c.Query("receipt_check_code") != "" {
+		// Both check codes provided via query parameters
+		invoiceCheckCode = c.Query("invoice_check_code")
+		receiptCheckCode = c.Query("receipt_check_code")
+	} else {
+		// Try request body
+		var reqBody map[string]interface{}
+		if err := c.ShouldBindJSON(&reqBody); err == nil {
+			if invCode, ok := reqBody["invoice_check_code"].(string); ok {
+				invoiceCheckCode = invCode
+			}
+			if recCode, ok := reqBody["receipt_check_code"].(string); ok {
+				receiptCheckCode = recCode
+			}
+		}
+	}
 
 	// Normalize order number to uppercase for case-insensitive lookup
 	// Order numbers are generated as "ORD-YYYYMMDD-XXXX" but QR codes might be lowercase
@@ -351,6 +402,32 @@ func (h *OrderHandler) MarkPickedUp(c *gin.Context) {
 			return
 		}
 	}
+
+	// Verify check codes against database values if provided (optional)
+	if invoiceCheckCode != "" && receiptCheckCode != "" {
+		// Validate both check codes against stored values in database
+		if order.InvoiceCheckCode == "" || order.ReceiptCheckCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Order check codes not found in database. Please ensure order was created properly.",
+			})
+			return
+		}
+
+		if invoiceCheckCode != order.InvoiceCheckCode {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid invoice check code. Expected: %s, Got: %s", order.InvoiceCheckCode, invoiceCheckCode),
+			})
+			return
+		}
+
+		if receiptCheckCode != order.ReceiptCheckCode {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid receipt check code. Expected: %s, Got: %s", order.ReceiptCheckCode, receiptCheckCode),
+			})
+			return
+		}
+	}
+	// If check codes are not provided, allow pickup without validation (for backward compatibility)
 
 	// Log order details for debugging
 	fmt.Printf("Order found: ID=%d, Status=%s, PaidAt=%v, PickedUpAt=%v\n", order.ID, order.Status, order.PaidAt, order.PickedUpAt)
@@ -373,6 +450,14 @@ func (h *OrderHandler) MarkPickedUp(c *gin.Context) {
 		return
 	}
 
+	// Get user ID from context (set by auth middleware)
+	userIDInterface, exists := c.Get("user_id")
+	var userID *uint
+	if exists {
+		uid := userIDInterface.(uint)
+		userID = &uid
+	}
+
 	now := time.Now()
 	order.Status = "completed"
 	order.PickedUpAt = &now
@@ -381,6 +466,25 @@ func (h *OrderHandler) MarkPickedUp(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Record audit log for order pickup
+	changes := map[string]interface{}{
+		"order_id":     order.ID,
+		"order_number": order.OrderNumber,
+		"status":       "picked_up",
+		"picked_up_at": now.Format(time.RFC3339),
+	}
+	changesJSON, _ := json.Marshal(changes)
+	auditLog := models.AuditLog{
+		UserID:     userID,
+		Action:     "order_pickup",
+		EntityType: "order",
+		EntityID:   &order.ID,
+		Changes:    string(changesJSON),
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+	}
+	h.db.Create(&auditLog)
 
 	// Reload order with all relationships
 	h.db.Preload("Store").Preload("User").Preload("Sector").

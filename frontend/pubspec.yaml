@@ -39,6 +39,12 @@ dependencies:
   # Barcode Generation
   barcode: ^2.2.0
   
+  # Image Picker
+  image_picker: ^1.0.7
+  
+  # Color Picker
+  flutter_colorpicker: ^1.0.3
+  
   # UI
   cupertino_icons: ^1.0.6
   flutter_svg: ^2.0.9

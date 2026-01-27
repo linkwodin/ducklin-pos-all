@@ -2,7 +2,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart' as esc_pos_utils;
 import 'package:pos_system/l10n/app_localizations.dart';
 import 'receipt_printer_helpers.dart';
@@ -61,16 +60,18 @@ class FullReceiptPrinter {
       bytes += generator.feed(1);
     }
 
-    bytes += generator.hr();
-    bytes += generator.feed(1);
+    // Print receipt name if available
+    final receiptName = order['receipt_name']?.toString() ?? '';
+    if (receiptName.isNotEmpty) {
+      bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+        generator,
+        receiptName,
+        baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size1),
+      );
+      bytes += generator.feed(1);
+    }
 
-    // Print receipt title
-    final receiptTitle = '訂單收據 Order Receipt';
-    bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
-      generator,
-      receiptTitle,
-      baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
-    );
+    bytes += generator.hr();
     bytes += generator.feed(1);
 
     // Order number and date
@@ -91,6 +92,17 @@ class FullReceiptPrinter {
     bytes += generator.hr();
 
     // Items header
+    // Print receipt name in header (use receipt name if available, otherwise use receipt title)
+    final headerName = receiptName.isNotEmpty ? receiptName : '訂單收據 Order Receipt';
+    bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+      generator,
+      headerName,
+      baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+    bytes += generator.hr();
+    bytes += generator.feed(1);
+    
     final productHeader = 'Product 產品'.padRight(40, ' ');
     final qtyHeader = 'Qty';
     final subtotalHeader = 'Subtotal';
@@ -213,69 +225,6 @@ class FullReceiptPrinter {
       ]);
     }
     bytes += generator.feed(2);
-
-    // QR Code
-    Uint8List? qrImage;
-
-    if (orderNumber.isNotEmpty) {
-      try {
-        final qrCode = QrCode.fromData(
-          data: orderNumber,
-          errorCorrectLevel: QrErrorCorrectLevel.M,
-        );
-        final qrPainter = QrPainter(
-          data: orderNumber,
-          version: QrVersions.auto,
-          errorCorrectionLevel: QrErrorCorrectLevel.M,
-          color: Colors.black,
-          emptyColor: Colors.white,
-        );
-
-        final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder);
-        qrPainter.paint(canvas, const Size(200, 200));
-        final picture = recorder.endRecording();
-        final qrImageUi = await picture.toImage(200, 200);
-        final qrByteData = await qrImageUi.toByteData(format: ui.ImageByteFormat.png);
-        qrImage = qrByteData?.buffer.asUint8List();
-      } catch (e) {
-        debugPrint('Error generating QR code: $e');
-      }
-    }
-
-    bytes += generator.text(
-      'Scan to confirm collection',
-      styles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, height: esc_pos_utils.PosTextSize.size1),
-    );
-    bytes += generator.feed(1);
-
-    if (qrImage != null) {
-      try {
-        final qrImg = await ReceiptPrinterHelpers.convertImageToEscPos(qrImage);
-        if (qrImg != null) {
-          bytes += generator.feed(1);
-          bytes += generator.image(qrImg, align: esc_pos_utils.PosAlign.center);
-          bytes += generator.feed(1);
-        } else {
-          bytes += generator.text(
-            'QR: $orderNumber',
-            styles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center),
-          );
-        }
-      } catch (e) {
-        debugPrint('Error printing QR code: $e');
-        bytes += generator.text(
-          'QR: $orderNumber',
-          styles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center),
-        );
-      }
-    } else {
-      bytes += generator.text(
-        'QR: $orderNumber',
-        styles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center),
-      );
-    }
-    bytes += generator.feed(1);
 
     bytes += generator.feed(2);
     bytes += generator.cut();
