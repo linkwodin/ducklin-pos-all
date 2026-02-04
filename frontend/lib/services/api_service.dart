@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import '../config/api_config.dart';
+import 'api_logger.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._init();
@@ -13,7 +15,17 @@ class ApiService {
   ApiService._init();
 
   Future<void> initialize() async {
-    _baseUrl = 'http://127.0.0.1:8868/api/v1'; // Replace with actual API URL
+    // Initialize API logger
+    await ApiLogger.instance.initialize();
+    final logPath = ApiLogger.instance.getLogFilePath();
+    if (logPath != null) {
+      print('API Service: Logging to file: $logPath');
+    }
+    
+    // Use environment-based configuration
+    // Can be overridden with --dart-define=API_BASE_URL=...
+    const apiBaseUrlEnv = String.fromEnvironment('API_BASE_URL');
+    _baseUrl = apiBaseUrlEnv.isNotEmpty ? apiBaseUrlEnv : ApiConfig.baseUrl;
     
     print('API Service: Initializing with base URL: $_baseUrl');
     
@@ -31,18 +43,34 @@ class ApiService {
     // Add interceptor for JWT token and logging
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        print('API Service: Request - ${options.method} ${options.uri}');
-        print('API Service: Request headers: ${options.headers}');
-        print('API Service: Request data: ${options.data}');
-        
         final prefs = await SharedPreferences.getInstance();
         final token = prefs.getString('jwt_token');
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
+        
+        // Log request to file
+        await ApiLogger.instance.logRequest(
+          options.method,
+          options.uri.toString(),
+          headers: options.headers,
+          data: options.data,
+        );
+        
+        print('API Service: Request - ${options.method} ${options.uri}');
+        print('API Service: Request headers: ${options.headers}');
+        print('API Service: Request data: ${options.data}');
+        
         handler.next(options);
       },
       onResponse: (response, handler) async {
+        // Log response to file
+        await ApiLogger.instance.logResponse(
+          response.statusCode,
+          response.requestOptions.uri.toString(),
+          data: response.data,
+        );
+        
         print('API Service: Response - ${response.statusCode} ${response.requestOptions.uri}');
         print('API Service: Response data: ${response.data}');
         
@@ -89,6 +117,15 @@ class ApiService {
         handler.next(response);
       },
       onError: (error, handler) async {
+        // Log error to file
+        await ApiLogger.instance.logError(
+          error.type.toString(),
+          error.message ?? 'Unknown error',
+          error.requestOptions.uri.toString(),
+          statusCode: error.response?.statusCode,
+          responseData: error.response?.data,
+        );
+        
         print('API Service: Error in interceptor - ${error.type}');
         print('API Service: Error message: ${error.message}');
         print('API Service: Error response: ${error.response?.data}');
@@ -128,6 +165,15 @@ class ApiService {
   Future<void> _initializeDeviceCode() async {
     try {
       print('API Service: Initializing device code...');
+      
+      // Check if device ID is provided via dart-define
+      const deviceIdOverride = String.fromEnvironment('DEVICE_ID');
+      if (deviceIdOverride.isNotEmpty) {
+        _deviceCode = deviceIdOverride;
+        print('API Service: Using device ID from DEVICE_ID environment: $_deviceCode');
+        return;
+      }
+      
       // Generate from device info
       final deviceInfo = DeviceInfoPlugin();
       if (Platform.isAndroid) {

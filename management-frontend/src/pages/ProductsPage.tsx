@@ -266,6 +266,7 @@ export default function ProductsPage() {
             <Typography variant="body2">• Unit ("weight" or leave blank for quantity)</Typography>
             <Typography variant="body2">• Barcode</Typography>
             <Typography variant="body2">• Retail Price (Direct Retail Price)</Typography>
+            <Typography variant="body2">• Category (optional)</Typography>
             <Typography variant="body2">• Sector - Loog Fung Retail (optional)</Typography>
           </Box>
           <Button

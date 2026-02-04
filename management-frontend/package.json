@@ -5,8 +5,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:uat": "tsc && vite build --mode uat",
+    "build:prod": "tsc && vite build --mode production",
+    "build:firebase": "DEPLOY_TARGET=firebase tsc && DEPLOY_TARGET=firebase vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
+    "deploy:firebase:uat": "DEPLOY_TARGET=firebase npm run build:uat && firebase deploy --only hosting"
   },
   "dependencies": {
     "react": "^18.2.0",

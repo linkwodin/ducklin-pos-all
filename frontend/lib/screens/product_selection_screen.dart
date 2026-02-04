@@ -15,6 +15,9 @@ class ProductSelectionScreen extends StatefulWidget {
   State<ProductSelectionScreen> createState() => _ProductSelectionScreenState();
 }
 
+// Global key to access ProductSelectionScreen state
+final GlobalKey<_ProductSelectionScreenState> productSelectionScreenKey = GlobalKey<_ProductSelectionScreenState>();
+
 class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   String? _selectedCategory;
   String _searchQuery = '';
@@ -456,6 +459,12 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       // Refocus the search field after adding product
       _searchFocusNode.requestFocus();
     }
+  }
+
+  // Public method to process barcode from global listener
+  Future<void> processBarcode(String barcode) async {
+    final orderProvider = Provider.of<OrderProvider>(context, listen: false);
+    await _handleBarcodeEnter(barcode, orderProvider);
   }
 
   Future<void> _handleBarcodeEnter(

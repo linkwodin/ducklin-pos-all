@@ -228,6 +228,49 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
+// UpdateUserStores updates the store assignments for a user
+func (h *UserHandler) UpdateUserStores(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var req struct {
+		StoreIDs []uint `json:"store_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify user exists
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Remove all existing store assignments
+	h.db.Exec("DELETE FROM user_stores WHERE user_id = ?", userID)
+
+	// Add new store assignments
+	if len(req.StoreIDs) > 0 {
+		for _, storeID := range req.StoreIDs {
+			h.db.Exec("INSERT INTO user_stores (user_id, store_id) VALUES (?, ?)", userID, storeID)
+		}
+	}
+
+	// Reload user with stores
+	h.db.Preload("Stores").First(&user, userID)
+
+	// Clear sensitive data
+	user.PasswordHash = ""
+	user.PINHash = ""
+
+	c.JSON(http.StatusOK, user)
+}
+
 func (h *UserHandler) UpdatePIN(c *gin.Context) {
 	userID, _ := strconv.ParseUint(c.Param("id"), 10, 32)
 	currentUserIDInterface, _ := c.Get("user_id")

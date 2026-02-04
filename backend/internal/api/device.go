@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"pos-system/backend/internal/models"
@@ -18,6 +19,27 @@ func NewDeviceHandler(db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{db: db}
 }
 
+// normalizeDeviceCodeForStorage wraps device code with braces for database storage
+// Input: "xxxxx" -> Output: "{xxxxx}"
+// If already wrapped, returns as-is
+func normalizeDeviceCodeForStorage(deviceCode string) string {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if strings.HasPrefix(deviceCode, "{") && strings.HasSuffix(deviceCode, "}") {
+		return deviceCode
+	}
+	return "{" + deviceCode + "}"
+}
+
+// normalizeDeviceCodeForLookup strips braces from device code for URL parameter
+// Input: "{xxxxx}" or "xxxxx" -> Output: "xxxxx"
+func normalizeDeviceCodeForLookup(deviceCode string) string {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if strings.HasPrefix(deviceCode, "{") && strings.HasSuffix(deviceCode, "}") {
+		return deviceCode[1 : len(deviceCode)-1]
+	}
+	return deviceCode
+}
+
 type RegisterDeviceRequest struct {
 	DeviceCode string `json:"device_code" binding:"required"`
 	StoreID    uint   `json:"store_id" binding:"required"`
@@ -31,15 +53,18 @@ func (h *DeviceHandler) RegisterDevice(c *gin.Context) {
 		return
 	}
 
+	// Normalize device code for storage (wrap with braces)
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(req.DeviceCode)
+
 	// Check if device already exists
 	var device models.POSDevice
-	if err := h.db.Where("device_code = ?", req.DeviceCode).First(&device).Error; err == nil {
+	if err := h.db.Where("device_code = ?", normalizedDeviceCode).First(&device).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Device already registered"})
 		return
 	}
 
 	device = models.POSDevice{
-		DeviceCode: req.DeviceCode,
+		DeviceCode: normalizedDeviceCode,
 		StoreID:    req.StoreID,
 		DeviceName: req.DeviceName,
 		IsActive:   true,
@@ -54,10 +79,13 @@ func (h *DeviceHandler) RegisterDevice(c *gin.Context) {
 }
 
 func (h *DeviceHandler) GetUsersForDevice(c *gin.Context) {
-	deviceCode := c.Param("device_code")
+	// Get device code from URL parameter and normalize it (strip braces if present)
+	rawDeviceCode := c.Param("device_code")
+	// Normalize for lookup: strip braces from URL parameter, then wrap for database lookup
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(rawDeviceCode))
 
 	var device models.POSDevice
-	if err := h.db.Where("device_code = ? AND is_active = ?", deviceCode, true).
+	if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).
 		Preload("Store").First(&device).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
 		return
@@ -67,8 +95,8 @@ func (h *DeviceHandler) GetUsersForDevice(c *gin.Context) {
 	var users []models.User
 	if err := h.db.Table("users").
 		Joins("JOIN user_stores ON users.id = user_stores.user_id").
-		Where("user_stores.store_id = ? AND users.is_active = ? AND users.role IN (?, ?)",
-			device.StoreID, true, "pos_user", "supervisor").
+		Where("user_stores.store_id = ? AND users.is_active = ? AND users.role IN (?, ?, ?)",
+			device.StoreID, true, "pos_user", "supervisor", "management").
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -84,10 +112,13 @@ func (h *DeviceHandler) GetUsersForDevice(c *gin.Context) {
 }
 
 func (h *DeviceHandler) GetProductsForDevice(c *gin.Context) {
-	deviceCode := c.Param("device_code")
+	// Get device code from URL parameter and normalize it (strip braces if present)
+	rawDeviceCode := c.Param("device_code")
+	// Normalize for lookup: strip braces from URL parameter, then wrap for database lookup
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(rawDeviceCode))
 
 	var device models.POSDevice
-	if err := h.db.Where("device_code = ? AND is_active = ?", deviceCode, true).First(&device).Error; err != nil {
+	if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).First(&device).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
 		return
 	}
@@ -150,4 +181,38 @@ func (h *DeviceHandler) GetProductsForDevice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, productResponses)
+}
+
+// ListDevices lists all devices (protected endpoint for management)
+func (h *DeviceHandler) ListDevices(c *gin.Context) {
+	var devices []models.POSDevice
+	if err := h.db.Preload("Store").Find(&devices).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, devices)
+}
+
+// GetDevice gets a device by ID (protected endpoint for management)
+func (h *DeviceHandler) GetDevice(c *gin.Context) {
+	var device models.POSDevice
+	if err := h.db.Preload("Store").First(&device, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, device)
+}
+
+// ListDevicesByStore lists devices for a specific store
+func (h *DeviceHandler) ListDevicesByStore(c *gin.Context) {
+	storeID := c.Param("store_id")
+	var devices []models.POSDevice
+	if err := h.db.Where("store_id = ?", storeID).Preload("Store").Find(&devices).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, devices)
 }

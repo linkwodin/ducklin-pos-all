@@ -7,10 +7,38 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:esc_pos_utils/esc_pos_utils.dart' as esc_pos_utils;
+// Windows printer library (only available on Windows)
+import 'package:windows_printer/windows_printer.dart' if (dart.library.html) 'package:windows_printer/windows_printer_stub.dart' as windows_printer;
 import 'database_service.dart';
+import 'printer_logger.dart';
 
 /// Shared helper functions for all receipt printers
 class ReceiptPrinterHelpers {
+  /// Log message to both console and file
+  static void _log(String message) {
+    debugPrint(message);
+    PrinterLogger.instance.log(message);
+  }
+  
+  /// Log error to both console and file
+  static void _logError(String message, [Object? error, StackTrace? stackTrace]) {
+    debugPrint('ERROR: $message');
+    if (error != null) debugPrint('Exception: $error');
+    if (stackTrace != null) debugPrint('Stack trace: $stackTrace');
+    PrinterLogger.instance.logError(message, error, stackTrace);
+  }
+  
+  /// Log debug message to both console and file
+  static void _logDebug(String message) {
+    debugPrint('DEBUG: $message');
+    PrinterLogger.instance.logDebug(message);
+  }
+  
+  /// Log success message to both console and file
+  static void _logSuccess(String message) {
+    debugPrint('SUCCESS: $message');
+    PrinterLogger.instance.logSuccess(message);
+  }
   /// Generate a check code from order number and total amount
   /// Returns a 4-digit code for verification
   /// [receiptType] - "receipt" or "invoice" to generate different codes
@@ -88,7 +116,7 @@ class ReceiptPrinterHelpers {
           }
         }
       } catch (e) {
-        debugPrint('Error getting store info: $e');
+        _logError('Error getting store info', e);
       }
     }
 
@@ -174,15 +202,15 @@ class ReceiptPrinterHelpers {
         } catch (e2) {
           final englishText = getEnglishFallback(text);
           if (englishText.isNotEmpty) {
-            debugPrint('Chinese code page not supported, using English fallback: $text -> $englishText');
+            _logDebug('Chinese code page not supported, using English fallback: $text -> $englishText');
             final englishStyles = baseStyles ?? esc_pos_utils.PosStyles();
             return generator.text(englishText, styles: englishStyles);
           }
-          debugPrint('Chinese code page not supported and no fallback, skipping: $text');
+          _logDebug('Chinese code page not supported and no fallback, skipping: $text');
           return [];
         }
       } else {
-        debugPrint('Code page $codeTable failed, trying default: $e');
+        _logDebug('Code page $codeTable failed, trying default: $e');
         return generator.text(text, styles: baseStyles ?? esc_pos_utils.PosStyles());
       }
     }
@@ -223,7 +251,7 @@ class ReceiptPrinterHelpers {
 
       return byteData?.buffer.asUint8List();
     } catch (e) {
-      debugPrint('Error rendering text as image: $e');
+      _logError('Error rendering text as image', e);
       return null;
     }
   }
@@ -234,7 +262,7 @@ class ReceiptPrinterHelpers {
       final decodedImage = img.decodeImage(imageBytes);
       return decodedImage;
     } catch (e) {
-      debugPrint('Error converting image to ESC/POS format: $e');
+      _logError('Error converting image to ESC/POS format', e);
       return null;
     }
   }
@@ -276,12 +304,28 @@ class ReceiptPrinterHelpers {
   ) async {
     final printerType = config['type'] as String;
     final printerIP = config['ip'] as String?;
-    final printerPort = config['port'] as int;
+    final printerPort = config['port'] as int? ?? 9100; // Default to 9100 if not provided
     final printerUsbSerialPort = config['usb_serial_port'] as String?;
     final isCups = isCupsPrinter(printerUsbSerialPort);
+    
+    // Log print attempt
+    _log('=== Starting Print Job ===');
+    _log('Printer type: $printerType');
+    _log('Data size: ${bytes.length} bytes');
+    if (printerType == 'network') {
+      _log('Network printer: $printerIP:$printerPort');
+    } else if (printerType == 'usb') {
+      _log('USB printer: $printerUsbSerialPort');
+      _log('Is CUPS printer: $isCups');
+      _log('Platform: ${Platform.isWindows ? "Windows" : Platform.isMacOS ? "macOS" : "Linux"}');
+    }
 
     if (printerType == 'usb') {
-      if (isCups) {
+      if (Platform.isWindows) {
+        // Windows USB printing
+        await _printToWindowsPrinter(bytes, printerUsbSerialPort);
+      } else if (isCups) {
+        // macOS/Linux CUPS printing
         final env = Map<String, String>.from(Platform.environment);
         env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin';
 
@@ -326,25 +370,44 @@ class ReceiptPrinterHelpers {
           }
         } catch (e) {
           errorMsg = e.toString();
-          debugPrint('lp command via shell failed: $e');
+          _logError('lp command via shell failed', e);
         }
 
         if (result == null || result.exitCode != 0) {
-          throw Exception('Print failed: ${errorMsg ?? "Unknown error"}');
+          final errorOutput = errorMsg ?? result?.stderr.toString() ?? result?.stdout.toString() ?? 'Unknown error';
+          _logError('CUPS print failed - exit code: ${result?.exitCode}, error: $errorOutput');
+          throw Exception('Print failed: $errorOutput');
+        }
+        
+        // Verify print was actually sent - check for success message
+        final output = result.stdout.toString();
+        if (output.isNotEmpty) {
+          _logDebug('CUPS print output: $output');
         }
       } else {
-        // Serial port printing
+        // Serial port printing (macOS/Linux direct device)
         final serialFile = File(printerUsbSerialPort!);
+        if (!await serialFile.exists()) {
+          throw Exception('Serial port device not found: $printerUsbSerialPort');
+        }
         try {
           final sink = serialFile.openWrite();
           sink.add(bytes);
+          await sink.flush(); // Ensure data is flushed
           await sink.close();
+          // Small delay to ensure data is sent
+          await Future.delayed(const Duration(milliseconds: 100));
+          _logSuccess('Successfully wrote ${bytes.length} bytes to serial port: $printerUsbSerialPort');
         } catch (e) {
+          _logError('Serial port write failed', e);
           throw Exception('Print failed: $e');
         }
       }
     } else {
-      // Network printing
+      // Network printing (works on all platforms)
+      if (printerIP == null || printerIP.isEmpty) {
+        throw Exception('Network printer IP address is required');
+      }
       try {
         final socket = await Socket.connect(printerIP, printerPort);
         socket.add(bytes);
@@ -353,6 +416,416 @@ class ReceiptPrinterHelpers {
       } catch (e) {
         throw Exception('Print failed: $e');
       }
+    }
+  }
+
+  /// Print to Windows printer using print spooler
+  static Future<void> _printToWindowsPrinter(
+    List<int> bytes,
+    String? printerName,
+  ) async {
+    _log('=== Windows USB Printer ===');
+    _log('Printer name: $printerName');
+    _log('Data size: ${bytes.length} bytes');
+    
+    if (printerName == null || printerName.isEmpty) {
+      _logError('Windows printer name is required');
+      throw Exception('Windows printer name is required');
+    }
+
+    // Try windows_printer library first (most reliable method)
+    if (Platform.isWindows) {
+      try {
+        _log('Attempting to print using windows_printer library...');
+        await windows_printer.WindowsPrinter.printRawData(
+          printerName: printerName,
+          data: Uint8List.fromList(bytes),
+          useRawDatatype: true, // Critical for ESC/POS printers - sends raw data without Windows processing
+        );
+        _logSuccess('Successfully printed via windows_printer library');
+        await Future.delayed(const Duration(milliseconds: 200));
+        return; // Success!
+      } catch (e) {
+        _logError('windows_printer library failed, falling back to manual methods', e);
+        // Fall through to manual methods below
+      }
+    }
+
+    // Fallback to manual methods (PowerShell, copy command, etc.)
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}\\escpos_${DateTime.now().millisecondsSinceEpoch}.raw');
+      
+      try {
+        await tempFile.writeAsBytes(bytes);
+
+        if (!await tempFile.exists()) {
+          throw Exception('Failed to create temporary file');
+        }
+
+        // Method 1: Try using PowerShell to send raw data to printer
+        // This works for network printers and printers with raw port support
+        try {
+          // Use PowerShell to send raw bytes to printer
+          final printerNameEscaped = printerName.replaceAll('"', '\\"');
+          final filePathEscaped = tempFile.path.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+          
+          // PowerShell command to send raw data to printer
+          final psScript = '''
+\$printerName = "$printerNameEscaped"
+\$filePath = "$filePathEscaped"
+\$bytes = [System.IO.File]::ReadAllBytes(\$filePath)
+\$printer = New-Object System.Drawing.Printing.PrintDocument
+\$printer.PrinterSettings.PrinterName = \$printerName
+\$printer.PrintPage += {
+    param(\$sender, \$e)
+    \$e.Graphics.DrawImage([System.Drawing.Image]::FromStream([System.IO.MemoryStream]\$bytes), 0, 0)
+}
+\$printer.Print()
+''';
+
+          // Try simpler method: Use copy command to printer port
+          // For ESC/POS printers, we need to send raw data
+          // Check if printer name is a COM port (COM1, COM2, etc.)
+          if (printerName.toUpperCase().startsWith('COM')) {
+            // Direct COM port access
+            final comFile = File(printerName);
+            try {
+              final sink = comFile.openWrite();
+              sink.add(bytes);
+              await sink.flush(); // Ensure data is flushed
+              await sink.close();
+              // Small delay to ensure data is sent
+              await Future.delayed(const Duration(milliseconds: 100));
+              _logSuccess('Successfully wrote ${bytes.length} bytes to COM port: $printerName');
+              return; // Success
+            } catch (e) {
+              _logError('Direct COM port access failed', e);
+              // Fall through to try print spooler method
+            }
+          }
+
+          // Method 2: Use Windows print command (works for installed printers)
+          // First, try to find the printer in Windows print queue
+          ProcessResult? listResult;
+          bool printerFound = false;
+          try {
+            // Try PowerShell first (more reliable and available on all modern Windows)
+            try {
+              final psListPrinters = '''
+\$printers = Get-Printer -ErrorAction SilentlyContinue
+\$printerNames = \$printers | ForEach-Object { \$_.Name }
+\$printerNames -join "`n"
+''';
+              
+              listResult = await Process.run(
+                'powershell',
+                ['-Command', psListPrinters],
+                runInShell: true,
+              );
+              
+              if (listResult.exitCode == 0) {
+                final output = listResult.stdout.toString();
+                printerFound = output.contains(printerName);
+                _logDebug('PowerShell found printer: $printerFound');
+              }
+            } catch (e) {
+              _logDebug('PowerShell Get-Printer failed, trying wmic: $e');
+              
+              // Fallback to wmic if PowerShell fails
+              try {
+                listResult = await Process.run(
+                  'wmic',
+                  ['printer', 'get', 'name'],
+                  runInShell: true,
+                );
+                
+                if (listResult.exitCode == 0) {
+                  final output = listResult.stdout.toString();
+                  printerFound = output.contains(printerName);
+                  _logDebug('WMIC found printer: $printerFound');
+                }
+              } catch (e2) {
+                _logError('Both PowerShell and WMIC failed to list printers', e2);
+                // Continue anyway - printer might still work
+              }
+            }
+            
+            if (!printerFound && listResult != null) {
+              _logError('Printer "$printerName" not found in Windows printer list');
+              throw Exception('Printer "$printerName" not found in Windows. Please check the exact printer name in Windows Settings > Printers & scanners.');
+            }
+          } catch (e) {
+            // Only throw if it's our custom exception, otherwise continue
+            if (e.toString().contains('not found in Windows')) {
+              rethrow;
+            }
+            _logError('Failed to list printers', e);
+            // Continue anyway - printer might still work
+          }
+
+          // Try using copy command to send raw data to printer
+          // This requires the printer to be set up with a raw port (like FILE: or LPT1:)
+          // For most ESC/POS printers, we'll use a different approach
+          
+          // Method 3: Use PowerShell to send raw bytes to printer port
+          // This is the most reliable method for ESC/POS printers on Windows
+          final psCommand = '''
+\$port = New-Object System.IO.Ports.SerialPort("$printerNameEscaped", 9600, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
+\$port.Open()
+\$bytes = [System.IO.File]::ReadAllBytes("$filePathEscaped")
+\$port.Write(\$bytes, 0, \$bytes.Length)
+\$port.Close()
+''';
+
+          // If printer name looks like a COM port, try serial port method
+          if (printerName.toUpperCase().startsWith('COM')) {
+            // Already tried direct file access above, if that failed, try PowerShell serial
+            try {
+              final psResult = await Process.run(
+                'powershell',
+                ['-Command', psCommand],
+                runInShell: true,
+              );
+              
+              if (psResult.exitCode == 0) {
+                return; // Success
+              } else {
+                final errorMsg = psResult.stderr.toString().isNotEmpty 
+                    ? psResult.stderr.toString() 
+                    : psResult.stdout.toString();
+                throw Exception('Failed to print to COM port: $errorMsg');
+              }
+            } catch (e) {
+              _logError('PowerShell serial port method failed', e);
+              throw Exception('Failed to print to COM port $printerName. Make sure the COM port exists and the printer is connected. Error: $e');
+            }
+          } else {
+            // For named printers, we need to send raw data to the printer port
+            // Method 1: Get printer port and send raw data directly
+            ProcessResult? portResult;
+            String? portName;
+            try {
+              // Use PowerShell to get printer port (more reliable than wmic)
+              final psGetPort = '''
+\$printer = Get-Printer -Name "$printerNameEscaped" -ErrorAction SilentlyContinue
+if (\$printer) {
+    Write-Output \$printer.PortName
+} else {
+    Write-Error "Printer not found"
+}
+''';
+              
+              portResult = await Process.run(
+                'powershell',
+                ['-Command', psGetPort],
+                runInShell: true,
+              );
+              
+              if (portResult.exitCode == 0) {
+                portName = portResult.stdout.toString().trim();
+                _logDebug('Found printer port via PowerShell: $portName');
+              } else {
+                // Fallback to wmic (only if PowerShell is not available)
+                try {
+                  final wmicPrinterName = printerName.replaceAll('"', '\\"');
+                  final wmicResult = await Process.run(
+                    'wmic',
+                    ['printer', 'where', 'name="$wmicPrinterName"', 'get', 'portname'],
+                    runInShell: true,
+                  );
+                  
+                  if (wmicResult.exitCode == 0) {
+                    final portOutput = wmicResult.stdout.toString();
+                    final lines = portOutput.split('\n');
+                    for (var line in lines) {
+                      final trimmed = line.trim();
+                      if (trimmed.isNotEmpty && 
+                          trimmed != 'PortName' && 
+                          !trimmed.contains('PortName')) {
+                        final match = RegExp(r'(\S+)').firstMatch(trimmed);
+                        if (match != null) {
+                          portName = match.group(1);
+                          break;
+                        }
+                      }
+                    }
+                    _logDebug('Found printer port via wmic: $portName');
+                  }
+                } catch (e) {
+                  _logDebug('WMIC also failed to get printer port: $e');
+                  // Continue without port name
+                }
+              }
+            } catch (e) {
+              _logError('Failed to get printer port', e);
+            }
+            
+            // Method 2: Send raw data to printer port
+            if (portName != null && portName.isNotEmpty) {
+              // If port is a COM port, use serial port method
+              if (portName.toUpperCase().startsWith('COM')) {
+                try {
+                  final psSerialPrint = '''
+\$port = New-Object System.IO.Ports.SerialPort("$portName", 9600, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
+\$port.Open()
+\$bytes = [System.IO.File]::ReadAllBytes("$filePathEscaped")
+\$port.Write(\$bytes, 0, \$bytes.Length)
+\$port.Close()
+''';
+                  
+                  final psResult = await Process.run(
+                    'powershell',
+                    ['-Command', psSerialPrint],
+                    runInShell: true,
+                  );
+                  
+                  if (psResult.exitCode == 0) {
+                    _logSuccess('Successfully printed to COM port via PowerShell: $portName');
+                    await Future.delayed(const Duration(milliseconds: 200));
+                    return; // Success
+                  } else {
+                    final errorMsg = psResult.stderr.toString().isNotEmpty 
+                        ? psResult.stderr.toString() 
+                        : psResult.stdout.toString();
+                    _logError('PowerShell COM port print failed: $errorMsg');
+                  }
+                } catch (e) {
+                  _logError('PowerShell COM port method failed', e);
+                }
+              }
+              
+              // Try copy command to port (works for USB001, LPT1, etc.)
+              // Use cmd /c to ensure we use Windows copy command, not PowerShell's Copy-Item
+              try {
+                final copySource = tempFile.path.replaceAll('/', '\\');
+                // Log file info for debugging
+                final fileSize = await tempFile.length();
+                _logDebug('Copying ${fileSize} bytes from $copySource to $portName');
+                
+                // Build command string to properly handle paths with spaces
+                // cmd /c expects the full command as a string when paths might have spaces
+                final copyCommand = 'copy /b "$copySource" "$portName"';
+                _logDebug('Executing: cmd /c $copyCommand');
+                
+                final copyResult = await Process.run(
+                  'cmd',
+                  ['/c', copyCommand],
+                  runInShell: true,
+                );
+                
+                _logDebug('Copy command exit code: ${copyResult.exitCode}');
+                _logDebug('Copy command stdout: ${copyResult.stdout}');
+                if (copyResult.stderr.toString().isNotEmpty) {
+                  _logDebug('Copy command stderr: ${copyResult.stderr}');
+                }
+                
+                if (copyResult.exitCode == 0) {
+                  _logSuccess('Successfully copied ${fileSize} bytes to port: $portName');
+                  _log('Note: If nothing prints, verify printer is online and has paper. The data was sent successfully.');
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  return; // Success
+                } else {
+                  final copyError = copyResult.stderr.toString().isNotEmpty 
+                      ? copyResult.stderr.toString() 
+                      : copyResult.stdout.toString();
+                  _logError('Copy command failed: $copyError');
+                }
+              } catch (e) {
+                _logError('Copy command exception', e);
+              }
+              
+              // Try PowerShell FileStream to port (more reliable than WriteAllBytes)
+              try {
+                // Use FileStream.OpenWrite instead of WriteAllBytes
+                // WriteAllBytes may create a file instead of writing to the port
+                final psFileStream = '''
+\$bytes = [System.IO.File]::ReadAllBytes("$filePathEscaped")
+\$stream = [System.IO.File]::OpenWrite("$portName")
+\$stream.Write(\$bytes, 0, \$bytes.Length)
+\$stream.Flush()
+\$stream.Close()
+''';
+                
+                final psResult = await Process.run(
+                  'powershell',
+                  ['-Command', psFileStream],
+                  runInShell: true,
+                );
+                
+                if (psResult.exitCode == 0) {
+                  _logSuccess('Successfully printed via PowerShell FileStream to port: $portName');
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  return; // Success
+                } else {
+                  final errorMsg = psResult.stderr.toString().isNotEmpty 
+                      ? psResult.stderr.toString() 
+                      : psResult.stdout.toString();
+                  _logError('PowerShell FileStream failed: $errorMsg');
+                }
+              } catch (e) {
+                _logError('PowerShell FileStream exception', e);
+              }
+            }
+            
+            // Final fallback: Try using raw print via Windows API
+            try {
+              // Use PowerShell to send raw bytes using .NET PrintDocument with raw mode
+              final psRawPrint = '''
+Add-Type -AssemblyName System.Drawing
+\$printerName = "$printerNameEscaped"
+\$filePath = "$filePathEscaped"
+\$bytes = [System.IO.File]::ReadAllBytes(\$filePath)
+
+# Try to send raw data using Windows print spooler
+\$printer = Get-Printer -Name \$printerName -ErrorAction Stop
+\$port = \$printer.PortName
+
+# Write bytes directly to port
+\$stream = [System.IO.File]::OpenWrite(\$port)
+\$stream.Write(\$bytes, 0, \$bytes.Length)
+\$stream.Flush()
+\$stream.Close()
+''';
+              
+              final psResult = await Process.run(
+                'powershell',
+                ['-Command', psRawPrint],
+                runInShell: true,
+              );
+              
+              if (psResult.exitCode == 0) {
+                _logSuccess('Successfully printed via PowerShell raw stream');
+                await Future.delayed(const Duration(milliseconds: 200));
+                return; // Success
+              } else {
+                final errorMsg = psResult.stderr.toString().isNotEmpty 
+                    ? psResult.stderr.toString() 
+                    : psResult.stdout.toString();
+                _logError('PowerShell raw stream failed: $errorMsg');
+                throw Exception('Print failed: $errorMsg\n\nTroubleshooting:\n1. Verify printer name matches exactly in Windows Settings\n2. Check printer is online and ready\n3. Try using network printing instead\n4. For USB printers, ensure printer driver supports raw printing');
+              }
+            } catch (e) {
+              _logError('All Windows print methods failed', e);
+              throw Exception('Print failed. For ESC/POS USB printers on Windows:\n\n1. Verify the printer name matches exactly in Windows Settings > Printers & scanners\n2. Check the printer is online and has paper\n3. Try using network printing if available\n4. Ensure the printer driver supports raw/ESC-POS printing\n\nError: $e');
+            }
+          }
+        } catch (e) {
+          _logError('Windows print method failed', e);
+          rethrow;
+        }
+      } finally {
+        // Clean up temp file
+        try {
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } catch (e) {
+          _logError('Failed to delete temp file', e);
+        }
+      }
+    } catch (e) {
+      throw Exception('Windows print failed: $e');
     }
   }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -14,6 +14,7 @@ import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 
 export default function LoginPage() {
+  console.log('LoginPage component rendering...');
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +23,10 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  
+  useEffect(() => {
+    console.log('LoginPage mounted');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

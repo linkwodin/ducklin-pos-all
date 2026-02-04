@@ -11,7 +11,7 @@ class ProductProvider with ChangeNotifier {
   List<String> get categories => _categories;
   bool get isLoading => _isLoading;
 
-  Future<void> syncProducts() async {
+  Future<bool> syncProducts() async {
     _isLoading = true;
     notifyListeners();
 
@@ -25,14 +25,22 @@ class ProductProvider with ChangeNotifier {
       final products = await ApiService.instance.getProductsForDevice(deviceCode);
 
       // Save to local database
-      await DatabaseService.instance.saveProducts(
-        products.cast<Map<String, dynamic>>(),
-      );
+      try {
+        await DatabaseService.instance.saveProducts(
+          products.cast<Map<String, dynamic>>(),
+        );
+      } catch (saveError) {
+        debugPrint('Error saving products to database: $saveError');
+        rethrow; // Re-throw to be caught by outer catch
+      }
 
       // Load from local database
       await loadProducts();
+      
+      return true; // Success
     } catch (e) {
       debugPrint('Error syncing products: $e');
+      return false; // Failure
     } finally {
       _isLoading = false;
       notifyListeners();

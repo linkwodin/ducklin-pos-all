@@ -1,37 +1,154 @@
 # Google Cloud Build configuration
 steps:
-  # Build the Go application
-  - name: 'gcr.io/cloud-builders/go'
-    args: ['build', '-o', 'main', './main.go']
-    env:
-      - 'CGO_ENABLED=0'
-      - 'GOOS=linux'
-
   # Build Docker image
+  # Use BUILD_ID as tag (always available, even when not using git)
+  # Build date will be set automatically during Docker build
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/pos-backend:$COMMIT_SHA', '.']
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/pos-backend:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/pos-backend:latest'
+      - '.'
 
   # Push Docker image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/pos-backend:$COMMIT_SHA']
+    args: ['push', 'gcr.io/$PROJECT_ID/pos-backend:$BUILD_ID']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/pos-backend:latest']
+
+  # Create and configure GCP bucket for uploads (if it doesn't exist)
+  # Also ensure service account has Cloud SQL Client role
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BUCKET_NAME="$$PROJECT_ID-pos-uploads"
+        echo "Checking if bucket exists: gs://$$BUCKET_NAME"
+        if ! gsutil ls -b "gs://$$BUCKET_NAME" &>/dev/null; then
+          echo "Creating bucket: gs://$$BUCKET_NAME"
+          gsutil mb -p "$$PROJECT_ID" -c STANDARD -l "europe-west1" "gs://$$BUCKET_NAME"
+          echo "✅ Bucket created"
+        else
+          echo "✅ Bucket already exists"
+        fi
+        echo "Setting bucket permissions..."
+        # Make bucket publicly readable for user icons
+        gsutil iam ch allUsers:objectViewer "gs://$$BUCKET_NAME" 2>/dev/null || echo "⚠️  Public read permissions may already be set"
+        # Ensure Cloud Run service account can write to bucket
+        PROJECT_NUMBER=$$(gcloud projects describe "$$PROJECT_ID" --format="value(projectNumber)")
+        SERVICE_ACCOUNT="$$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+        gsutil iam ch "serviceAccount:$$SERVICE_ACCOUNT:roles/storage.objectCreator" "gs://$$BUCKET_NAME" 2>/dev/null || echo "⚠️  Service account permissions may already be set"
+        echo "✅ Bucket configured: gs://$$BUCKET_NAME"
+        # Ensure service account has Cloud SQL Client role
+        echo "Ensuring Cloud SQL Client role..."
+        gcloud projects add-iam-policy-binding "$$PROJECT_ID" \
+          --member="serviceAccount:$$SERVICE_ACCOUNT" \
+          --role="roles/cloudsql.client" \
+          --condition=None 2>/dev/null || echo "⚠️  Cloud SQL Client role may already be granted"
+        echo "✅ Service account permissions configured"
 
   # Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'deploy'
-      - 'pos-backend'
-      - '--image'
-      - 'gcr.io/$PROJECT_ID/pos-backend:$COMMIT_SHA'
-      - '--region'
-      - 'us-central1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
+      - '-c'
+      - |
+        set -e
+        # Get project ID from gcloud config (Cloud Build sets this automatically)
+        PROJ_ID=$$(gcloud config get-value project 2>/dev/null || echo "ducklin-uk-uat")
+        # BUILD_ID is set by Cloud Build as an environment variable
+        # Use it directly - it's available in the build environment
+        BUILD_ID_VAL="$$BUILD_ID"
+        # If BUILD_ID is empty, try to get it from the image that was just built
+        if [ -z "$$BUILD_ID_VAL" ]; then
+          # Get the latest image tag from the build
+          BUILD_ID_VAL=$$(gcloud container images list-tags gcr.io/$$PROJ_ID/pos-backend --limit=1 --format="value(tags[0])" --sort-by=~timestamp 2>/dev/null | head -1 || echo "")
+        fi
+        IMAGE_TAG="gcr.io/$$PROJ_ID/pos-backend:$$BUILD_ID_VAL"
+        
+        echo "Project ID: $$PROJ_ID"
+        echo "Build ID: $$BUILD_ID_VAL"
+        echo "Image: $$IMAGE_TAG"
+        
+        # Validate image tag
+        if [ -z "$$BUILD_ID_VAL" ] || [ "$$BUILD_ID_VAL" = "" ]; then
+          echo "ERROR: BUILD_ID is empty, cannot deploy"
+          exit 1
+        fi
+        
+        # Construct Cloud SQL connection name
+        CONNECTION_NAME="$$PROJ_ID:europe-west1:pos-database"
+        
+        # Construct DATABASE_URL with URL-encoded password
+        # Password: BDcm]R1bGe<DrNq0
+        # ] = %5D, < = %3C
+        DATABASE_URL="mysql://pos_user:BDcm%5DR1bGe%3CDrNq0@/pos_system?unix_socket=/cloudsql/$$CONNECTION_NAME"
+        
+        # Always deploy to pos-backend service
+        SERVICE_NAME="pos-backend"
+        
+        # Determine environment based on project
+        if echo "$$PROJ_ID" | grep -qi "uat"; then
+          ENVIRONMENT="uat"
+          BASE_URL="https://pos-backend-28040503481.europe-west1.run.app"
+          echo "✅ Detected UAT project - deploying to pos-backend with ENVIRONMENT=uat"
+        else
+          ENVIRONMENT="production"
+          # Get the actual service URL for production
+          BASE_URL="https://$$SERVICE_NAME-$$(echo $$PROJ_ID | cut -c1-11).europe-west1.run.app"
+          echo "✅ Detected production project - deploying to pos-backend with ENVIRONMENT=production"
+        fi
+        
+        echo "Deploying to Cloud Run..."
+        echo "Project: $$PROJ_ID"
+        echo "Service: $$SERVICE_NAME"
+        echo "Environment: $$ENVIRONMENT"
+        echo "Connection name: $$CONNECTION_NAME"
+        
+        # Deploy the service first with basic env vars (without DATABASE_URL)
+        echo "Step 1: Deploying service with basic configuration..."
+        echo "Deploying image: $$IMAGE_TAG"
+        gcloud run deploy $$SERVICE_NAME \
+          --image=$$IMAGE_TAG \
+          --region=europe-west1 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --cpu=1 \
+          --timeout=300 \
+          --max-instances=10 \
+          --cpu-boost \
+          --set-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL" \
+          --no-cpu-throttling \
+          --project=$$PROJ_ID
+        
+        # Then update with DATABASE_URL separately to avoid issues with special characters
+        echo "Step 2: Setting DATABASE_URL..."
+        gcloud run services update $$SERVICE_NAME \
+          --region=europe-west1 \
+          --update-env-vars="DATABASE_URL=$$DATABASE_URL" \
+          --project=$$PROJ_ID
+        
+        echo "✅ Service deployed successfully"
+        
+        # Then add Cloud SQL connection (this will work even if already exists)
+        echo "Adding Cloud SQL connection..."
+        gcloud run services update $$SERVICE_NAME \
+          --region=europe-west1 \
+          --add-cloudsql-instances=$$CONNECTION_NAME \
+          --project=$$PROJ_ID 2>&1 || echo "⚠️  Cloud SQL connection may already be configured or failed to add"
+        
+        echo "✅ Deployment completed"
 
 images:
-  - 'gcr.io/$PROJECT_ID/pos-backend:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/pos-backend:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/pos-backend:latest'
 
 options:
-  machineType: 'N1_HIGHCPU_8'
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
 

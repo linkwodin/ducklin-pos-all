@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "ducklin-uk-uat"
+  },
+  "targets": {
+    "ducklin-uk-uat": {
+      "hosting": {
+        "uat": [
+          "default"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

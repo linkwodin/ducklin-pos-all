@@ -7,8 +7,8 @@ import (
 // User represents a system user
 type User struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
-	Username      string    `gorm:"uniqueIndex;not null" json:"username"`
-	PasswordHash  string    `gorm:"not null" json:"-"`
+	Username      string    `gorm:"type:varchar(100);uniqueIndex;not null" json:"username"`
+	PasswordHash  string    `gorm:"type:varchar(255);not null" json:"-"`
 	PINHash       string    `json:"-"`
 	FirstName     string    `gorm:"not null" json:"first_name"`
 	LastName      string    `gorm:"not null" json:"last_name"`
@@ -44,9 +44,9 @@ type Store struct {
 // POSDevice represents a POS device/computer
 type POSDevice struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
-	DeviceCode string    `gorm:"uniqueIndex;not null" json:"device_code"`
+	DeviceCode string    `gorm:"type:varchar(100);uniqueIndex;not null" json:"device_code"`
 	StoreID    uint      `gorm:"not null" json:"store_id"`
-	DeviceName string    `json:"device_name"`
+	DeviceName string    `gorm:"type:varchar(255)" json:"device_name"`
 	IsActive   bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -58,8 +58,8 @@ type POSDevice struct {
 // Sector represents a customer sector (wholesaler, restaurant, etc.)
 type Sector struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
-	Name         string    `gorm:"uniqueIndex;not null" json:"name"`
-	Description  string    `json:"description"`
+	Name         string    `gorm:"type:varchar(255);uniqueIndex;not null" json:"name"`
+	Description  string    `gorm:"type:text" json:"description"`
 	DiscountRate float64   `gorm:"type:decimal(5,2);default:0" json:"discount_rate"` // Base discount rate for this sector (%)
 	IsActive     bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -69,12 +69,12 @@ type Sector struct {
 // Product represents a product/item
 type Product struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	Name        string    `gorm:"not null" json:"name"`
-	NameChinese string    `json:"name_chinese"`
-	Barcode     string    `gorm:"uniqueIndex" json:"barcode"`
-	SKU         string    `gorm:"uniqueIndex" json:"sku"`
-	Category    string    `json:"category"`
-	ImageURL    string    `json:"image_url"`
+	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
+	NameChinese string    `gorm:"type:varchar(255)" json:"name_chinese"`
+	Barcode     string    `gorm:"type:varchar(100);uniqueIndex" json:"barcode"`
+	SKU         string    `gorm:"type:varchar(100);uniqueIndex" json:"sku"`
+	Category    string    `gorm:"type:varchar(255)" json:"category"`
+	ImageURL    string    `gorm:"type:varchar(500)" json:"image_url"`
 	UnitType    string    `gorm:"type:enum('quantity','weight');default:'quantity'" json:"unit_type"`
 	IsActive    bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -107,8 +107,8 @@ type ProductCost struct {
 	PackagingGBP                    float64    `gorm:"type:decimal(10,2);default:0" json:"packaging_gbp"`
 	WholesaleCostGBP                float64    `gorm:"type:decimal(10,2);not null" json:"wholesale_cost_gbp"`
 	DirectRetailOnlineStorePriceGBP float64    `gorm:"type:decimal(10,2);default:0" json:"direct_retail_online_store_price_gbp"` // Direct Retail Online Store price
-	EffectiveFrom                   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"effective_from"`
-	EffectiveTo                     *time.Time `json:"effective_to,omitempty"`
+	EffectiveFrom                   *time.Time `gorm:"type:datetime" json:"effective_from,omitempty"`
+	EffectiveTo                     *time.Time `gorm:"type:datetime" json:"effective_to,omitempty"`
 	CreatedAt                       time.Time  `json:"created_at"`
 
 	// Relationships
@@ -121,8 +121,8 @@ type ProductSectorDiscount struct {
 	ProductID       uint       `gorm:"not null;index" json:"product_id"`
 	SectorID        uint       `gorm:"not null;index" json:"sector_id"`
 	DiscountPercent float64    `gorm:"type:decimal(5,2);not null;default:0" json:"discount_percent"`
-	EffectiveFrom   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"effective_from"`
-	EffectiveTo     *time.Time `json:"effective_to,omitempty"`
+	EffectiveFrom   time.Time  `gorm:"type:datetime" json:"effective_from"`
+	EffectiveTo     *time.Time `gorm:"type:datetime" json:"effective_to,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 
 	// Relationships
@@ -137,7 +137,7 @@ type Stock struct {
 	StoreID           uint      `gorm:"not null;index" json:"store_id"`
 	Quantity          float64   `gorm:"type:decimal(10,3);not null;default:0" json:"quantity"`
 	LowStockThreshold float64   `gorm:"type:decimal(10,3);default:0" json:"low_stock_threshold"`
-	LastUpdated       time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"last_updated"`
+	LastUpdated       time.Time `gorm:"type:datetime" json:"last_updated"`
 
 	// Relationships
 	Product Product `gorm:"foreignKey:ProductID" json:"product,omitempty"`
@@ -151,8 +151,8 @@ type RestockOrder struct {
 	InitiatedBy    uint       `gorm:"not null" json:"initiated_by"`
 	TrackingNumber string     `json:"tracking_number"`
 	Status         string     `gorm:"type:enum('initiated','in_transit','received','cancelled');default:'initiated'" json:"status"`
-	InitiatedAt    time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"initiated_at"`
-	ReceivedAt     *time.Time `json:"received_at,omitempty"`
+	InitiatedAt    time.Time  `gorm:"type:datetime" json:"initiated_at"`
+	ReceivedAt     *time.Time `gorm:"type:datetime" json:"received_at,omitempty"`
 	Notes          string     `json:"notes"`
 
 	// Relationships
@@ -176,7 +176,7 @@ type RestockOrderItem struct {
 // Order represents a POS order
 type Order struct {
 	ID               uint       `gorm:"primaryKey" json:"id"`
-	OrderNumber      string     `gorm:"uniqueIndex;not null" json:"order_number"`
+	OrderNumber      string     `gorm:"type:varchar(100);uniqueIndex;not null" json:"order_number"`
 	StoreID          uint       `gorm:"not null;index" json:"store_id"`
 	UserID           uint       `gorm:"not null;index" json:"user_id"`
 	DeviceCode       string     `json:"device_code"`
@@ -188,10 +188,10 @@ type Order struct {
 	QRCodeData       string     `gorm:"type:text" json:"qr_code_data"`
 	InvoiceCheckCode string     `gorm:"type:varchar(4)" json:"invoice_check_code,omitempty"`
 	ReceiptCheckCode string     `gorm:"type:varchar(4)" json:"receipt_check_code,omitempty"`
-	CreatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	PaidAt           *time.Time `json:"paid_at,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	PickedUpAt       *time.Time `json:"picked_up_at,omitempty"`
+	CreatedAt        time.Time  `gorm:"type:datetime" json:"created_at"`
+	PaidAt           *time.Time `gorm:"type:datetime" json:"paid_at,omitempty"`
+	CompletedAt      *time.Time `gorm:"type:datetime" json:"completed_at,omitempty"`
+	PickedUpAt       *time.Time `gorm:"type:datetime" json:"picked_up_at,omitempty"`
 
 	// Relationships
 	Store  Store       `gorm:"foreignKey:StoreID" json:"store,omitempty"`
@@ -224,7 +224,7 @@ type PriceHistory struct {
 	WholesaleCostGBP float64   `gorm:"type:decimal(10,2);not null" json:"wholesale_cost_gbp"`
 	DiscountPercent  float64   `gorm:"type:decimal(5,2);default:0" json:"discount_percent"`
 	FinalPriceGBP    float64   `gorm:"type:decimal(10,2);not null" json:"final_price_gbp"`
-	RecordedAt       time.Time `gorm:"default:CURRENT_TIMESTAMP;index" json:"recorded_at"`
+	RecordedAt       time.Time `gorm:"type:datetime;index" json:"recorded_at"`
 
 	// Relationships
 	Product Product `gorm:"foreignKey:ProductID" json:"product,omitempty"`
@@ -237,7 +237,7 @@ type CurrencyRate struct {
 	CurrencyCode string    `gorm:"uniqueIndex;not null;size:3" json:"currency_code"` // ISO 4217 code (e.g., USD, EUR, HKD, GBP)
 	RateToGBP    float64   `gorm:"type:decimal(10,6);not null" json:"rate_to_gbp"`   // Rate to convert to GBP (base currency)
 	IsPinned     bool      `gorm:"default:false" json:"is_pinned"`                   // Pin currency to show at top (for main purchasing currencies: CNY, USD, HKD, JPY)
-	LastUpdated  time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"last_updated"`
+	LastUpdated  time.Time `gorm:"type:datetime" json:"last_updated"`
 	UpdatedBy    string    `json:"updated_by"` // "manual" or "api_sync"
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -253,7 +253,7 @@ type AuditLog struct {
 	Changes    string    `gorm:"type:json" json:"changes"`
 	IPAddress  string    `json:"ip_address"`
 	UserAgent  string    `json:"user_agent"`
-	CreatedAt  time.Time `gorm:"default:CURRENT_TIMESTAMP;index" json:"created_at"`
+	CreatedAt  time.Time `gorm:"type:datetime;index" json:"created_at"`
 
 	// Relationships
 	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`

@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
@@ -12,6 +13,7 @@ import StockPage from './pages/StockPage';
 import RestockOrdersPage from './pages/RestockOrdersPage';
 import UsersPage from './pages/UsersPage';
 import StoresPage from './pages/StoresPage';
+import DevicesPage from './pages/DevicesPage';
 import CatalogPage from './pages/CatalogPage';
 import CurrencyRatesPage from './pages/CurrencyRatesPage';
 import OrdersPage from './pages/OrdersPage';
@@ -66,6 +68,7 @@ function AppRoutes() {
         <Route path="restock-orders" element={<RestockOrdersPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="stores" element={<StoresPage />} />
+        <Route path="devices" element={<DevicesPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="catalogs" element={<CatalogPage />} />
         <Route path="currency-rates" element={<CurrencyRatesPage />} />
@@ -76,18 +79,34 @@ function AppRoutes() {
 }
 
 function App() {
-  return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <SnackbarProvider maxSnack={3}>
-        <AuthProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </AuthProvider>
-      </SnackbarProvider>
-    </ThemeProvider>
-  );
+  console.log('App component rendering...');
+  
+  // Add error boundary
+  React.useEffect(() => {
+    console.log('App component mounted');
+  }, []);
+  
+  try {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <SnackbarProvider maxSnack={3}>
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </AuthProvider>
+        </SnackbarProvider>
+      </ThemeProvider>
+    );
+  } catch (error) {
+    console.error('Error in App component:', error);
+    return (
+      <div style={{ padding: '20px', color: 'red' }}>
+        Error in App: {String(error)}
+      </div>
+    );
+  }
 }
 
 export default App;

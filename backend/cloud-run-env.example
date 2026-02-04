@@ -1,0 +1,28 @@
+# Cloud Run Environment Variables Example
+# Use these when deploying with gcloud run deploy
+
+# Storage Configuration
+STORAGE_PROVIDER=gcp
+GCP_BUCKET_NAME=YOUR_PROJECT_ID-pos-uploads
+ENVIRONMENT=production
+
+# Database Configuration
+# DATABASE_URL will be constructed from Cloud SQL connection
+# Format: mysql://USER:PASSWORD@/DATABASE?unix_socket=/cloudsql/CONNECTION_NAME
+
+# JWT Configuration
+# JWT_SECRET should be stored in Secret Manager and referenced as:
+# --set-secrets="JWT_SECRET=jwt-secret:latest"
+
+# Base URL (for serving uploaded files)
+BASE_URL=https://YOUR-BACKEND-URL.run.app
+
+# Example deployment command:
+# gcloud run deploy pos-backend \
+#   --source . \
+#   --region=europe-west1 \
+#   --set-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=YOUR_PROJECT_ID-pos-uploads,ENVIRONMENT=production,BASE_URL=https://YOUR-BACKEND-URL.run.app" \
+#   --set-secrets="JWT_SECRET=jwt-secret:latest" \
+#   --add-cloudsql-instances=YOUR_PROJECT_ID:europe-west1:pos-database \
+#   --allow-unauthenticated
+

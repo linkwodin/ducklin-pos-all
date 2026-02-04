@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -45,9 +46,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Check if database is available
+	if h.db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available. Please try again later."})
+		return
+	}
+
 	var user models.User
 	if err := h.db.Where("username = ? AND is_active = ?", req.Username, true).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		} else {
+			// Log the actual error for debugging
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
+		}
 		return
 	}
 
@@ -94,10 +106,18 @@ func (h *AuthHandler) PINLogin(c *gin.Context) {
 		return
 	}
 
+	// Check if database is available
+	if h.db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available. Please try again later."})
+		return
+	}
+
 	// Verify device code if provided
 	if req.DeviceCode != "" {
+		// Normalize device code for lookup (wrap with braces for database)
+		normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(req.DeviceCode))
 		var device models.POSDevice
-		if err := h.db.Where("device_code = ? AND is_active = ?", req.DeviceCode, true).First(&device).Error; err != nil {
+		if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).First(&device).Error; err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid device code"})
 			return
 		}
@@ -105,7 +125,11 @@ func (h *AuthHandler) PINLogin(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Where("username = ? AND is_active = ?", req.Username, true).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
+		}
 		return
 	}
 

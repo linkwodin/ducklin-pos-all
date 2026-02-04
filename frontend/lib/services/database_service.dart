@@ -29,12 +29,35 @@ class DatabaseService {
     // Open database
     // Note: SQLite encryption requires SQLCipher extension
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
-    return await openDatabase(
+    final db = await openDatabase(
       dbPath,
       version: 5, // Incremented version to add picked_up_at column to orders
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
+    
+    // Ensure schema is correct (safety check for missing columns)
+    await _ensureSchema(db);
+    
+    return db;
+  }
+
+  // Ensure database schema has all required columns (safety check)
+  Future<void> _ensureSchema(Database db) async {
+    try {
+      // Check if pos_price column exists in products table
+      final result = await db.rawQuery('PRAGMA table_info(products)');
+      final hasPosPrice = result.any((column) => column['name'] == 'pos_price');
+      
+      if (!hasPosPrice) {
+        print('DatabaseService: pos_price column missing, adding it...');
+        await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
+        print('DatabaseService: pos_price column added successfully');
+      }
+    } catch (e) {
+      print('DatabaseService: Error ensuring schema: $e');
+      // Don't throw - continue with existing schema
+    }
   }
 
   Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
@@ -106,6 +129,15 @@ class DatabaseService {
       print('DatabaseService: Orders table upgrade to v5 completed');
     }
     
+    // Safety check: Ensure pos_price column exists (in case database was created at v5 without it)
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
+      print('DatabaseService: Added pos_price column (safety check)');
+    } catch (e) {
+      // Column already exists, which is fine
+      print('DatabaseService: pos_price column already exists (safety check)');
+    }
+    
     print('DatabaseService: Database upgrade completed');
   }
 
@@ -148,6 +180,7 @@ class DatabaseService {
         is_active INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT,
+        pos_price REAL DEFAULT 0,
         synced_at INTEGER
       )
     ''');
@@ -431,8 +464,84 @@ class DatabaseService {
   }
 
   Future<void> close() async {
-    final db = await database;
-    await db.close();
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+  }
+
+  // Backup database to a timestamped file
+  Future<String?> backupDatabase() async {
+    try {
+      final dbPath = await _getDatabasePath();
+      final dbFile = File(dbPath);
+      
+      if (!await dbFile.exists()) {
+        print('DatabaseService: No database file to backup');
+        return null;
+      }
+
+      // Get backup directory
+      final directory = await getApplicationDocumentsDirectory();
+      final backupDir = Directory(path.join(directory.path, 'pos_system', 'backups'));
+      
+      // Create backup directory if it doesn't exist
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+      }
+
+      // Create backup file with timestamp
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+      final backupFileName = 'pos_system_backup_$timestamp.db';
+      final backupPath = path.join(backupDir.path, backupFileName);
+      final backupFile = File(backupPath);
+
+      // Copy database file to backup location
+      await dbFile.copy(backupPath);
+      
+      print('DatabaseService: Database backed up to: $backupPath');
+      return backupPath;
+    } catch (e) {
+      print('DatabaseService: Failed to backup database: $e');
+      return null;
+    }
+  }
+
+  // Get database path (public method)
+  Future<String> getDatabasePath() async {
+    return await _getDatabasePath();
+  }
+
+  // Clear/reset database - deletes the database file and recreates it
+  Future<void> clearDatabase() async {
+    try {
+      // Close existing database connection
+      await close();
+      
+      // Get database path
+      final dbPath = await _getDatabasePath();
+      final dbFile = File(dbPath);
+      
+      // Delete database file if it exists
+      if (await dbFile.exists()) {
+        await dbFile.delete();
+        print('DatabaseService: Database file deleted');
+      }
+      
+      // Reset database instance so it will be recreated on next access
+      _database = null;
+      
+      print('DatabaseService: Database cleared. New database will be created on next access.');
+    } catch (e) {
+      print('DatabaseService: Failed to clear database: $e');
+      rethrow;
+    }
+  }
+
+  // Get backup directory path
+  Future<String> getBackupDirectory() async {
+    final directory = await getApplicationDocumentsDirectory();
+    return path.join(directory.path, 'pos_system', 'backups');
   }
 }
 

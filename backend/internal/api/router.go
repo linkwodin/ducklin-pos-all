@@ -7,6 +7,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// BuildDate is set at compile time using -ldflags
+// Example: go build -ldflags "-X 'pos-system/backend/internal/api.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+var BuildDate string
+
 // SetupRouter configures and returns the Gin router
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router := gin.Default()
@@ -113,6 +117,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		protected.PUT("/users/:id", userHandler.UpdateUser)
 		protected.PUT("/users/:id/pin", userHandler.UpdatePIN)
 		protected.PUT("/users/:id/icon", userHandler.UpdateIcon)
+		protected.PUT("/users/:id/stores", userHandler.UpdateUserStores)
+
+		// Devices (protected endpoints for management)
+		protected.GET("/devices", deviceHandler.ListDevices)
+		protected.GET("/devices/:id", deviceHandler.GetDevice)
+		protected.GET("/stores/:store_id/devices", deviceHandler.ListDevicesByStore)
 
 		// Stores
 		protected.GET("/stores", stockHandler.ListStores)
@@ -152,5 +162,16 @@ func corsMiddleware() gin.HandlerFunc {
 }
 
 func healthCheck(c *gin.Context) {
-	c.JSON(200, gin.H{"status": "ok"})
+	// Health check doesn't require database - just verify server is running
+	response := gin.H{
+		"status":  "ok",
+		"service": "pos-backend",
+	}
+
+	// Add build date if available
+	if BuildDate != "" {
+		response["build_date"] = BuildDate
+	}
+
+	c.JSON(200, response)
 }

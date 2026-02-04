@@ -67,12 +67,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Save to local database
       if (users.isNotEmpty) {
-        await DatabaseService.instance.saveUsers(
-          users.cast<Map<String, dynamic>>(),
-        );
-        setState(() {
-          _syncMessage = l10n.syncedUsers(users.length);
-        });
+        try {
+          await DatabaseService.instance.saveUsers(
+            users.cast<Map<String, dynamic>>(),
+          );
+          setState(() {
+            _syncMessage = l10n.syncedUsers(users.length);
+          });
+        } catch (saveError) {
+          // If save fails, show error message
+          setState(() {
+            _syncMessage = l10n.syncFailed('Failed to save users: $saveError');
+          });
+          return; // Don't reload users if save failed
+        }
       } else {
         setState(() {
           _syncMessage = l10n.noUsersFoundForDevice;

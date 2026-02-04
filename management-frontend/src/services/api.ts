@@ -275,6 +275,10 @@ export const usersAPI = {
     });
     return data;
   },
+  updateStores: async (id: number, storeIds: number[]): Promise<User> => {
+    const { data } = await api.put(`/users/${id}/stores`, { store_ids: storeIds });
+    return data;
+  },
 };
 
 // Devices API
@@ -285,6 +289,22 @@ export const devicesAPI = {
     device_name?: string;
   }): Promise<POSDevice> => {
     const { data } = await api.post('/device/register', device);
+    return data;
+  },
+  list: async (): Promise<POSDevice[]> => {
+    const { data } = await api.get('/devices');
+    return data;
+  },
+  get: async (id: number): Promise<POSDevice> => {
+    const { data } = await api.get(`/devices/${id}`);
+    return data;
+  },
+  listByStore: async (storeId: number): Promise<POSDevice[]> => {
+    const { data } = await api.get(`/stores/${storeId}/devices`);
+    return data;
+  },
+  getUsers: async (deviceCode: string): Promise<User[]> => {
+    const { data } = await api.get(`/device/${deviceCode}/users`);
     return data;
   },
 };

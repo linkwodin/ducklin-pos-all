@@ -69,13 +69,13 @@ export default function Dashboard() {
         ]);
 
         setStats({
-          totalProducts: products.length,
-          lowStockItems: lowStock.length,
-          pendingRestocks: restocks.length,
-          totalUsers: users.length,
+          totalProducts: products?.length || 0,
+          lowStockItems: lowStock?.length || 0,
+          pendingRestocks: restocks?.length || 0,
+          totalUsers: users?.length || 0,
         });
-        setRevenueStats(revenue);
-        setProductSalesStats(productSales);
+        setRevenueStats(revenue || []);
+        setProductSalesStats(productSales || []);
       } catch (error) {
         console.error('Failed to fetch stats:', error);
       } finally {
@@ -87,7 +87,7 @@ export default function Dashboard() {
   }, []);
 
   // Aggregate product sales by date and product
-  const productSalesByDate = productSalesStats.reduce((acc, stat) => {
+  const productSalesByDate = (productSalesStats || []).reduce((acc, stat) => {
     const key = stat.date;
     if (!acc[key]) {
       acc[key] = {};
@@ -101,7 +101,7 @@ export default function Dashboard() {
   }, {} as Record<string, Record<string, number>>);
 
   // Get top products by total sales
-  const productTotals = productSalesStats.reduce((acc, stat) => {
+  const productTotals = (productSalesStats || []).reduce((acc, stat) => {
     const productKey = stat.product_name || stat.product_name_chinese || `Product ${stat.product_id}`;
     if (!acc[productKey]) {
       acc[productKey] = 0;
@@ -116,7 +116,7 @@ export default function Dashboard() {
     .map(([name, quantity]) => ({ name, quantity }));
 
   // Format revenue chart data
-  const revenueChartData = revenueStats.map(stat => ({
+  const revenueChartData = (revenueStats || []).map(stat => ({
     date: new Date(stat.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     revenue: parseFloat(stat.revenue.toFixed(2)),
     orders: stat.order_count,

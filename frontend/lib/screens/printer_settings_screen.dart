@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart' as bt;
@@ -6,6 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart' as esc_pos_utils;
+// Windows printer library (only available on Windows)
+import 'package:windows_printer/windows_printer.dart' if (dart.library.html) 'package:windows_printer/windows_printer_stub.dart' as windows_printer;
+import '../services/receipt_printer_helpers.dart';
 
 class PrinterSettingsScreen extends StatefulWidget {
   const PrinterSettingsScreen({super.key});
@@ -148,58 +152,185 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
 
     try {
       List<Map<String, String>> printers = [];
-      final env = Map<String, String>.from(Platform.environment);
-      env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin';
 
-      // Try to get all printers using lpstat
-      try {
-        // Try lpstat -p first
-        ProcessResult? result;
+      // Windows printer detection
+      if (Platform.isWindows) {
         try {
-          result = await Process.run('/usr/bin/lpstat', ['-p'], environment: env);
-        } catch (e) {
-          debugPrint('lpstat -p failed: $e');
-          // Try without -p flag
+          // Try windows_printer library first (most reliable)
           try {
-            result = await Process.run('/usr/bin/lpstat', [], environment: env);
-          } catch (e2) {
-            debugPrint('lpstat failed: $e2');
-          }
-        }
-
-        if (result != null && result.exitCode == 0) {
-          final lines = result.stdout.toString().split('\n');
-          for (var line in lines) {
-            String? printerName;
+            final availablePrinters = await windows_printer.WindowsPrinter.getAvailablePrinters();
+            debugPrint('windows_printer library found ${availablePrinters.length} printers');
             
-            if (line.startsWith('printer ')) {
-              final parts = line.split(' ');
-              if (parts.length >= 2) {
-                printerName = parts[1];
-              }
-            } else if (line.trim().isNotEmpty && 
-                       !line.startsWith('system') && 
-                       !line.startsWith('scheduler') &&
-                       !line.startsWith('device for')) {
-              // Try to extract printer name from other formats
-              final nameMatch = RegExp(r'^(\S+)').firstMatch(line.trim());
-              if (nameMatch != null) {
-                printerName = nameMatch.group(1);
-              }
-            }
-            
-            if (printerName != null && printerName.isNotEmpty) {
-              // Add all printers, not just USB ones
+            for (var printerName in availablePrinters) {
               printers.add({
                 'name': printerName,
-                'path': printerName, // Use printer name as path for CUPS
-                'cups': 'true',
+                'path': printerName,
+                'port': '', // windows_printer handles ports internally
+                'cups': 'false',
+                'type': 'windows',
               });
+              debugPrint('Found Windows printer (windows_printer): $printerName');
+            }
+            
+            // If we got printers from the library, use them
+            if (printers.isNotEmpty) {
+              setState(() {
+                _usbPrinters = printers;
+                _isScanningUsb = false;
+              });
+              return;
+            }
+          } catch (e) {
+            debugPrint('windows_printer library failed, falling back to PowerShell: $e');
+          }
+          
+          // Fallback to PowerShell Get-Printer
+          ProcessResult? result;
+          try {
+            // PowerShell command to get all printers with details
+            result = await Process.run(
+              'powershell',
+              [
+                '-Command',
+                'Get-Printer | Select-Object Name, PortName, DriverName, PrinterStatus | ConvertTo-Json'
+              ],
+              runInShell: true,
+            );
+            debugPrint('PowerShell Get-Printer (JSON) succeeded');
+          } catch (e) {
+            debugPrint('PowerShell Get-Printer (JSON) failed: $e');
+            // Fallback to wmic if PowerShell fails
+            try {
+              result = await Process.run(
+                'wmic',
+                ['printer', 'get', 'name,portname'],
+                runInShell: true,
+              );
+              debugPrint('WMIC succeeded as fallback');
+            } catch (e2) {
+              debugPrint('Both PowerShell and WMIC failed: $e2');
             }
           }
+
+          if (result != null && result.exitCode == 0) {
+            final output = result.stdout.toString();
+            
+            // Try to parse JSON first (PowerShell output)
+            if (output.trim().startsWith('[') || output.trim().startsWith('{')) {
+              try {
+                final jsonData = output.trim();
+                // Handle both array and single object
+                final jsonStr = jsonData.startsWith('[') ? jsonData : '[$jsonData]';
+                final List<dynamic> printerList = json.decode(jsonStr) as List<dynamic>;
+                
+                for (var printer in printerList) {
+                  final printerMap = printer as Map<String, dynamic>;
+                  final printerName = printerMap['Name']?.toString() ?? '';
+                  final portName = printerMap['PortName']?.toString() ?? '';
+                  
+                  if (printerName.isNotEmpty) {
+                    printers.add({
+                      'name': printerName,
+                      'path': printerName,
+                      'port': portName,
+                      'cups': 'false',
+                      'type': 'windows',
+                    });
+                    debugPrint('Found Windows printer (PowerShell): $printerName (Port: $portName)');
+                  }
+                }
+              } catch (e) {
+                debugPrint('Failed to parse PowerShell JSON: $e');
+                // Fall through to text parsing
+              }
+            }
+            
+            // If JSON parsing failed or output is text format (wmic), parse as text
+            if (printers.isEmpty) {
+              final lines = output.split('\n');
+              for (var line in lines) {
+                final trimmed = line.trim();
+                if (trimmed.isEmpty || trimmed.contains('Name') || trimmed.contains('PortName')) {
+                  continue;
+                }
+
+                final parts = trimmed.split(RegExp(r'\s{2,}'));
+                if (parts.isNotEmpty) {
+                  final printerName = parts[0].trim();
+                  final portName = parts.length > 1 ? parts[1].trim() : '';
+                  
+                  if (printerName.isNotEmpty && printerName != 'Name') {
+                    printers.add({
+                      'name': printerName,
+                      'path': printerName,
+                      'port': portName,
+                      'cups': 'false',
+                      'type': 'windows',
+                    });
+                    debugPrint('Found Windows printer (wmic): $printerName (Port: $portName)');
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error listing Windows printers: $e');
         }
-      } catch (e) {
-        debugPrint('Error listing printers: $e');
+      } else {
+        // macOS/Linux printer detection
+        final env = Map<String, String>.from(Platform.environment);
+        env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin';
+
+        // Try to get all printers using lpstat
+        try {
+          // Try lpstat -p first
+          ProcessResult? result;
+          try {
+            result = await Process.run('/usr/bin/lpstat', ['-p'], environment: env);
+          } catch (e) {
+            debugPrint('lpstat -p failed: $e');
+            // Try without -p flag
+            try {
+              result = await Process.run('/usr/bin/lpstat', [], environment: env);
+            } catch (e2) {
+              debugPrint('lpstat failed: $e2');
+            }
+          }
+
+          if (result != null && result.exitCode == 0) {
+            final lines = result.stdout.toString().split('\n');
+            for (var line in lines) {
+              String? printerName;
+              
+              if (line.startsWith('printer ')) {
+                final parts = line.split(' ');
+                if (parts.length >= 2) {
+                  printerName = parts[1];
+                }
+              } else if (line.trim().isNotEmpty && 
+                         !line.startsWith('system') && 
+                         !line.startsWith('scheduler') &&
+                         !line.startsWith('device for')) {
+                // Try to extract printer name from other formats
+                final nameMatch = RegExp(r'^(\S+)').firstMatch(line.trim());
+                if (nameMatch != null) {
+                  printerName = nameMatch.group(1);
+                }
+              }
+              
+              if (printerName != null && printerName.isNotEmpty) {
+                // Add all printers, not just USB ones
+                printers.add({
+                  'name': printerName,
+                  'path': printerName, // Use printer name as path for CUPS
+                  'cups': 'true',
+                });
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error listing printers: $e');
+        }
       }
 
       setState(() {
@@ -227,8 +358,151 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
     try {
       List<Map<String, String>> printers = [];
 
-      // Method 1: Get printers from CUPS (macOS Printers & Scanners)
-      try {
+      // Windows printer detection
+      if (Platform.isWindows) {
+        try {
+          // Method 1: Try windows_printer library first (most reliable)
+          try {
+            final availablePrinters = await windows_printer.WindowsPrinter.getAvailablePrinters();
+            debugPrint('windows_printer library found ${availablePrinters.length} printers');
+            
+            for (var printerName in availablePrinters) {
+              printers.add({
+                'name': printerName,
+                'path': printerName,
+                'port': '', // windows_printer handles ports internally
+                'cups': 'false',
+              });
+              debugPrint('Found Windows printer (windows_printer): $printerName');
+            }
+            
+            // If we got printers from the library, use them
+            if (printers.isNotEmpty) {
+              setState(() {
+                _usbPrinters = printers;
+                _isScanningUsb = false;
+              });
+              return;
+            }
+          } catch (e) {
+            debugPrint('windows_printer library failed, falling back to PowerShell: $e');
+          }
+          
+          // Method 2: Fallback to PowerShell Get-Printer
+          ProcessResult? result;
+          try {
+            // Try PowerShell first (more reliable and available on all modern Windows)
+            result = await Process.run(
+              'powershell',
+              ['-Command', 'Get-Printer | Select-Object Name,PortName | Format-Table -HideTableHeaders'],
+              runInShell: true,
+            );
+            debugPrint('PowerShell Get-Printer succeeded');
+          } catch (e) {
+            debugPrint('PowerShell Get-Printer failed: $e');
+            // Fallback to wmic if PowerShell fails
+            try {
+              result = await Process.run(
+                'wmic',
+                ['printer', 'get', 'name,portname'],
+                runInShell: true,
+              );
+              debugPrint('WMIC succeeded as fallback');
+            } catch (e2) {
+              debugPrint('Both PowerShell and WMIC failed: $e2');
+            }
+          }
+
+          if (result != null && result.exitCode == 0) {
+            final lines = result.stdout.toString().split('\n');
+            for (var line in lines) {
+              final trimmed = line.trim();
+              if (trimmed.isEmpty || trimmed.contains('Name') || trimmed.contains('PortName')) {
+                continue;
+              }
+
+              // Parse printer name and port
+              // Format can vary: "PrinterName  PortName" or just "PrinterName"
+              final parts = trimmed.split(RegExp(r'\s{2,}'));
+              if (parts.isNotEmpty) {
+                final printerName = parts[0].trim();
+                final portName = parts.length > 1 ? parts[1].trim() : '';
+                
+                if (printerName.isNotEmpty && printerName != 'Name') {
+                  printers.add({
+                    'name': printerName,
+                    'path': printerName, // Use printer name for Windows
+                    'port': portName,
+                    'cups': 'false',
+                  });
+                  debugPrint('Found Windows printer: $printerName (Port: $portName)');
+                }
+              }
+            }
+          }
+
+          // Method 2: Also check for COM ports (for direct serial/USB printers)
+          try {
+            // Try PowerShell first to list COM ports
+            ProcessResult? comResult;
+            try {
+              comResult = await Process.run(
+                'powershell',
+                ['-Command', 'Get-WmiObject Win32_SerialPort | Select-Object DeviceID,Name | Format-Table -HideTableHeaders'],
+                runInShell: true,
+              );
+              debugPrint('PowerShell Get-WmiObject Win32_SerialPort succeeded');
+            } catch (e) {
+              debugPrint('PowerShell Get-WmiObject failed: $e');
+              // Fallback to wmic if PowerShell fails
+              try {
+                comResult = await Process.run(
+                  'wmic',
+                  ['path', 'win32_serialport', 'get', 'deviceid,name'],
+                  runInShell: true,
+                );
+                debugPrint('WMIC succeeded as fallback for COM ports');
+              } catch (e2) {
+                debugPrint('Both PowerShell and WMIC failed for COM ports: $e2');
+              }
+            }
+            
+            if (comResult != null && comResult.exitCode == 0) {
+              final comLines = comResult.stdout.toString().split('\n');
+              for (var line in comLines) {
+                final trimmed = line.trim();
+                if (trimmed.isEmpty || trimmed.contains('DeviceID') || trimmed.contains('Name')) {
+                  continue;
+                }
+                
+                // Extract COM port (e.g., "COM3" from "COM3  USB Serial Port")
+                final comMatch = RegExp(r'(COM\d+)', caseSensitive: false).firstMatch(trimmed);
+                if (comMatch != null) {
+                  final comPort = comMatch.group(1)!.toUpperCase();
+                  // Extract name if available
+                  final nameMatch = RegExp(r'COM\d+\s+(.+)').firstMatch(trimmed);
+                  final portName = nameMatch?.group(1)?.trim() ?? comPort;
+                  
+                  printers.add({
+                    'name': '$portName ($comPort)',
+                    'path': comPort, // Use COM port as path for direct access
+                    'port': comPort,
+                    'cups': 'false',
+                  });
+                  debugPrint('Found COM port: $comPort ($portName)');
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Failed to list COM ports: $e');
+          }
+        } catch (e) {
+          debugPrint('Error scanning Windows printers: $e');
+        }
+      } else {
+        // macOS/Linux printer detection
+        // Method 1: Get printers from CUPS (macOS Printers & Scanners)
+        try {
         // Try using lpstat with full path and proper environment
         // On macOS, we need to set up the environment properly
         final env = Map<String, String>.from(Platform.environment);
@@ -309,7 +583,15 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                 debugPrint('lpstat -v $printerName output: ${deviceResult.stdout}');
               } catch (e) {
                 debugPrint('lpstat -v $printerName failed: $e');
-                // Continue to next printer
+                // If we can't get details, still add the printer with just the name
+                printers.add({
+                  'name': printerName,
+                  'path': printerName,
+                  'uri': '',
+                  'cups': 'true',
+                  'type': 'unknown',
+                });
+                debugPrint('Added printer $printerName (details unavailable)');
                 continue;
               }
               
@@ -336,6 +618,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                 
                 debugPrint('Printer URI for $printerName: $printerUri');
                 
+                // Show ALL printers (USB, local, and network)
+                // Users can select any printer they want to use
                 // Check if it's a USB printer or any local printer
                 // USB printers can have: usb://, usb, or be local printers
                 final isUsbPrinter = deviceOutput.contains('usb://') || 
@@ -349,8 +633,16 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                                       !printerUri.startsWith('lpd://') &&
                                       !printerUri.startsWith('socket://');
                 
-                if (isUsbPrinter || isLocalPrinter) {
-                  debugPrint('Adding printer $printerName (USB: $isUsbPrinter, Local: $isLocalPrinter)');
+                // Include network printers too (ipp://, http://, socket://, lpd://)
+                final isNetworkPrinter = printerUri != null && 
+                                        (printerUri.startsWith('ipp://') ||
+                                         printerUri.startsWith('http://') ||
+                                         printerUri.startsWith('lpd://') ||
+                                         printerUri.startsWith('socket://'));
+                
+                // Show all printers - USB, local, and network
+                if (isUsbPrinter || isLocalPrinter || isNetworkPrinter || printerUri == null) {
+                  debugPrint('Adding printer $printerName (USB: $isUsbPrinter, Local: $isLocalPrinter, Network: $isNetworkPrinter)');
                   
                   // Try to find the raw device path
                   String? devicePath;
@@ -419,25 +711,43 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                     'path': devicePath ?? printerName, // Use printer name as path for CUPS if no device
                     'uri': printerUri ?? '',
                     'cups': devicePath == null ? 'true' : 'false',
+                    'type': isNetworkPrinter ? 'network' : (isUsbPrinter ? 'usb' : 'local'),
                   });
                   debugPrint('Added printer: $printerName with path: ${devicePath ?? printerName}');
                 } else {
-                  debugPrint('Skipping printer $printerName (not USB or local)');
+                  // Even if we can't determine the type, add it anyway
+                  debugPrint('Adding printer $printerName (unknown type)');
+                  printers.add({
+                    'name': printerName,
+                    'path': printerName,
+                    'uri': printerUri ?? '',
+                    'cups': 'true',
+                    'type': 'unknown',
+                  });
                 }
               } else {
                 debugPrint('Failed to get device info for $printerName: ${deviceResult.stderr}');
+                // Still add the printer even if we can't get details
+                printers.add({
+                  'name': printerName,
+                  'path': printerName,
+                  'uri': '',
+                  'cups': 'true',
+                  'type': 'unknown',
+                });
+                debugPrint('Added printer $printerName (device info unavailable)');
               }
             }
           }
         } else {
           debugPrint('lpstat -p failed: ${result?.stderr}');
         }
-      } catch (e, stackTrace) {
-        debugPrint('Error getting CUPS printers: $e');
-        debugPrint('Stack trace: $stackTrace');
-      }
+        } catch (e, stackTrace) {
+          debugPrint('Error getting CUPS printers: $e');
+          debugPrint('Stack trace: $stackTrace');
+        }
 
-      // Method 2: Scan /dev directory for USB serial ports (fallback)
+        // Method 2: Scan /dev directory for USB serial ports (fallback)
       if (printers.isEmpty) {
         try {
           final devDir = Directory('/dev');
@@ -466,6 +776,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
           debugPrint('Error scanning /dev directory: $e');
         }
       }
+      } // Close else block for macOS/Linux
 
       setState(() {
         _usbPrinters = printers;
@@ -516,139 +827,147 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
         // For now, throw an error
         throw Exception('Bluetooth printing not yet supported. Please use network or USB printing.');
       } else if (_printerType == 'usb') {
-        // USB printer via serial port or CUPS
+        // USB printer via serial port or CUPS (macOS) or Windows printer
         if (_selectedUsbPrinterPath == null || _selectedUsbPrinterPath!.isEmpty) {
           throw Exception('Please select a USB printer');
         }
         
-        // Check if this is a CUPS printer name (doesn't start with /dev/)
-        final isCupsPrinter = !_selectedUsbPrinterPath!.startsWith('/dev/');
-        
-        if (isCupsPrinter) {
-          // Use CUPS lp command to print raw data
-          final env = Map<String, String>.from(Platform.environment);
-          env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin';
-          
-          // Try to pipe data directly to lp via stdin
-          // This avoids file permission issues
-          ProcessResult? result;
-          String? errorMsg;
-          
-          try {
-            // Try with temp file first (more reliable with sandbox)
-            final tempDir = await getTemporaryDirectory();
-            final tempFile = File('${tempDir.path}/escpos_test_${DateTime.now().millisecondsSinceEpoch}.raw');
-            try {
-              await tempFile.writeAsBytes(bytes);
-              
-              // Verify file was written
-              if (!await tempFile.exists()) {
-                throw Exception('Failed to create temporary file');
-              }
-              
-              // Try using shell to execute lp (may help with sandbox)
-              final printerName = _selectedUsbPrinterPath!.trim();
-              final filePath = tempFile.path;
-              
-              // Ensure file path is properly encoded and doesn't contain special characters
-              // Escape any special characters in the file path
-              final escapedFilePath = filePath.replaceAll("'", "'\\''");
-              final escapedPrinterName = printerName.replaceAll("'", "'\\''");
-              
-              // Use shell to execute lp command with proper escaping
-              result = await Process.run(
-                '/bin/sh',
-                [
-                  '-c',
-                  "/usr/bin/lp -d '$escapedPrinterName' -o raw '$escapedFilePath'",
-                ],
-                environment: env,
-                runInShell: false,
-              );
-              
-              if (result.exitCode != 0) {
-                final stderrMsg = result.stderr.toString();
-                final stdoutMsg = result.stdout.toString();
-                errorMsg = stderrMsg.isNotEmpty ? stderrMsg : stdoutMsg;
-              }
-            } finally {
-              if (await tempFile.exists()) {
-                await tempFile.delete();
-              }
-            }
-          } catch (e) {
-            errorMsg = e.toString();
-            debugPrint('lp command via shell failed: $e');
-            
-            // Fallback: try direct Process.start with stdin
-            try {
-              final process = await Process.start('/usr/bin/lp', [
-                '-d', _selectedUsbPrinterPath!.trim(),
-                '-o', 'raw',
-              ], environment: env, mode: ProcessStartMode.normal);
-              
-              // Read stderr in parallel
-              final stderrFuture = process.stderr.toList();
-              
-              // Write bytes to stdin
-              process.stdin.add(bytes);
-              await process.stdin.close();
-              
-              // Wait for process to complete
-              final exitCode = await process.exitCode;
-              final stderr = await stderrFuture;
-              final stderrStr = String.fromCharCodes(stderr.expand((list) => list));
-              
-              result = ProcessResult(
-                process.pid,
-                exitCode,
-                '',
-                stderrStr,
-              );
-              
-              if (exitCode != 0) {
-                errorMsg = stderrStr;
-              }
-            } catch (e2) {
-              debugPrint('lp with stdin also failed: $e2');
-              throw Exception('Failed to execute lp command: $errorMsg. Please ensure CUPS is installed and the app has necessary permissions. You may need to rebuild the app after adding print entitlements.');
-            }
-          }
-          
-          if (result == null) {
-            throw Exception('lp command returned null result');
-          }
-          
-          if (result.exitCode != 0) {
-            final stderrMsg = errorMsg ?? result.stderr.toString();
-            final stdoutMsg = result.stdout.toString();
-            final finalErrorMsg = stderrMsg.isNotEmpty ? stderrMsg : stdoutMsg;
-            
-            debugPrint('lp command failed with exit code ${result.exitCode}');
-            debugPrint('stderr: $stderrMsg');
-            debugPrint('stdout: $stdoutMsg');
-            
-            // Check for common error messages
-            if (finalErrorMsg.contains('does not exist') || 
-                finalErrorMsg.contains('not found') ||
-                finalErrorMsg.contains('unknown destination')) {
-              throw Exception('Printer "${_selectedUsbPrinterPath}" not found. Please check the exact printer name in macOS Printers & Scanners. The name must match exactly (case-sensitive).');
-            }
-            throw Exception('Print failed: $finalErrorMsg');
-          }
+        if (Platform.isWindows) {
+          // Windows USB printing - use the helper function
+          await ReceiptPrinterHelpers.sendToPrinter(
+            bytes,
+            {
+              'type': 'usb',
+              'usb_serial_port': _selectedUsbPrinterPath,
+            },
+          );
         } else {
-          // Direct device access
-          final file = File(_selectedUsbPrinterPath!);
-          if (!await file.exists()) {
-            throw Exception('USB serial port not found: $_selectedUsbPrinterPath');
-          }
+          // macOS/Linux USB printing
+          // Check if this is a CUPS printer name (doesn't start with /dev/)
+          final isCupsPrinter = !_selectedUsbPrinterPath!.startsWith('/dev/');
           
-          final raf = await file.open(mode: FileMode.write);
-          try {
-            await raf.writeFrom(bytes);
-            await raf.flush();
-          } finally {
-            await raf.close();
+          if (isCupsPrinter) {
+            // Use CUPS lp command to print raw data
+            final env = Map<String, String>.from(Platform.environment);
+            env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin';
+            
+            // Try to pipe data directly to lp via stdin
+            // This avoids file permission issues
+            ProcessResult? result;
+            String? errorMsg;
+            
+            try {
+              // Try with temp file first (more reliable with sandbox)
+              final tempDir = await getTemporaryDirectory();
+              final tempFile = File('${tempDir.path}/escpos_test_${DateTime.now().millisecondsSinceEpoch}.raw');
+              try {
+                await tempFile.writeAsBytes(bytes);
+                
+                // Verify file was written
+                if (!await tempFile.exists()) {
+                  throw Exception('Failed to create temporary file');
+                }
+                
+                // Try using shell to execute lp (may help with sandbox)
+                final printerName = _selectedUsbPrinterPath!.trim();
+                final filePath = tempFile.path;
+                
+                // Ensure file path is properly encoded and doesn't contain special characters
+                // Escape any special characters in the file path
+                final escapedFilePath = filePath.replaceAll("'", "'\\''");
+                final escapedPrinterName = printerName.replaceAll("'", "'\\''");
+                
+                // Use shell to execute lp command with proper escaping
+                result = await Process.run(
+                  '/bin/sh',
+                  [
+                    '-c',
+                    "/usr/bin/lp -d '$escapedPrinterName' -o raw '$escapedFilePath'",
+                  ],
+                  environment: env,
+                  runInShell: false,
+                );
+                
+                if (result.exitCode != 0) {
+                  final stderrMsg = result.stderr.toString();
+                  final stdoutMsg = result.stdout.toString();
+                  errorMsg = stderrMsg.isNotEmpty ? stderrMsg : stdoutMsg;
+                }
+              } finally {
+                if (await tempFile.exists()) {
+                  await tempFile.delete();
+                }
+              }
+            } catch (e) {
+              errorMsg = e.toString();
+              debugPrint('lp command via shell failed: $e');
+              
+              // Fallback: try direct Process.start with stdin
+              try {
+                final process = await Process.start('/usr/bin/lp', [
+                  '-d', _selectedUsbPrinterPath!.trim(),
+                  '-o', 'raw',
+                ], environment: env, mode: ProcessStartMode.normal);
+                
+                // Read stderr in parallel
+                final stderrFuture = process.stderr.toList();
+                
+                // Write bytes to stdin
+                process.stdin.add(bytes);
+                await process.stdin.close();
+                
+                // Wait for process to complete
+                final exitCode = await process.exitCode;
+                final stderr = await stderrFuture;
+                final stderrStr = String.fromCharCodes(stderr.expand((list) => list));
+                
+                result = ProcessResult(
+                  process.pid,
+                  exitCode,
+                  '',
+                  stderrStr,
+                );
+                
+                if (exitCode != 0) {
+                  errorMsg = stderrStr;
+                }
+              } catch (e2) {
+                debugPrint('lp with stdin also failed: $e2');
+                errorMsg = e2.toString();
+              }
+            }
+
+            if (result == null || result.exitCode != 0) {
+              final stderrMsg = errorMsg ?? result?.stderr.toString() ?? '';
+              final stdoutMsg = result?.stdout.toString() ?? '';
+              final finalErrorMsg = stderrMsg.isNotEmpty ? stderrMsg : stdoutMsg;
+              
+              debugPrint('lp command failed with exit code ${result?.exitCode ?? -1}');
+              debugPrint('stderr: $stderrMsg');
+              debugPrint('stdout: $stdoutMsg');
+              
+              // Check for common error messages
+              if (finalErrorMsg.contains('does not exist') || 
+                  finalErrorMsg.contains('not found') ||
+                  finalErrorMsg.contains('unknown destination')) {
+                throw Exception('Printer "${_selectedUsbPrinterPath}" not found. Please check the exact printer name in macOS Printers & Scanners. The name must match exactly (case-sensitive).');
+              }
+              throw Exception('Print failed: $finalErrorMsg');
+            }
+          } else {
+            // Direct device access (macOS/Linux serial port)
+            final file = File(_selectedUsbPrinterPath!);
+            if (!await file.exists()) {
+              throw Exception('USB serial port not found: $_selectedUsbPrinterPath');
+            }
+            
+            final raf = await file.open(mode: FileMode.write);
+            try {
+              await raf.writeFrom(bytes);
+              await raf.flush();
+            } finally {
+              await raf.close();
+            }
           }
         }
       } else {
@@ -667,9 +986,12 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
         }
       }
 
+      // Add a small delay to ensure print job is sent
+      await Future.delayed(const Duration(milliseconds: 500));
+      
       setState(() {
         _isTesting = false;
-        _testMessage = 'Test print successful!';
+        _testMessage = 'Test print sent! Check your printer. If nothing prints, verify the printer is connected and the name matches exactly.';
       });
     } catch (e) {
       setState(() {
@@ -815,7 +1137,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                                       )
                                     : const Icon(Icons.list),
                                 onPressed: _isScanningUsb ? null : _listAllPrinters,
-                                tooltip: 'List all printers',
+                                tooltip: 'List all printers (quick scan)',
                               ),
                               IconButton(
                                 icon: _isScanningUsb
@@ -826,7 +1148,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                                       )
                                     : const Icon(Icons.refresh),
                                 onPressed: _isScanningUsb ? null : _scanUsbPrinters,
-                                tooltip: l10n.scanDevices,
+                                tooltip: 'Scan for all printers (detailed scan)',
                               ),
                             ],
                           ),
@@ -839,10 +1161,10 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(l10n.noUsbPrintersFound),
+                              Text('No printers found'),
                               const SizedBox(height: 8),
                               Text(
-                                'You can manually enter your printer name from macOS Printers & Scanners:',
+                                'Try clicking the refresh button above to scan for printers, or manually enter your printer name from macOS Printers & Scanners:',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 8),
@@ -907,9 +1229,25 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
                       else
                         ..._usbPrinters.map((printer) {
                           final isSelected = _selectedUsbPrinterPath == printer['path'];
+                          final printerType = printer['type'] ?? 'unknown';
+                          final typeLabel = printerType == 'network' ? 'Network' : 
+                                          printerType == 'usb' ? 'USB' : 
+                                          printerType == 'local' ? 'Local' : '';
                           return ListTile(
                             title: Text(printer['name'] ?? 'Unknown Printer'),
-                            subtitle: Text(printer['path'] ?? ''),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(printer['path'] ?? ''),
+                                if (typeLabel.isNotEmpty)
+                                  Text(
+                                    typeLabel,
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.6),
+                                    ),
+                                  ),
+                              ],
+                            ),
                             leading: Icon(
                               isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
                               color: isSelected ? Theme.of(context).primaryColor : null,
@@ -1034,10 +1372,11 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white, // Explicit white text color
               ),
               child: Text(
                 l10n.saveSettings,
-                style: const TextStyle(fontSize: 16),
+                style: const TextStyle(fontSize: 16, color: Colors.white),
               ),
             ),
           ],
@@ -1046,4 +1385,5 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
     );
   }
 }
+
 

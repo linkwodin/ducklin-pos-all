@@ -39,6 +39,7 @@
     "shipment": "Shipment",
     "users": "Users",
     "stores": "Stores",
+    "devices": "Devices",
     "orders": "Orders",
     "catalogs": "Catalogs",
     "currencyRates": "Currency Rates"

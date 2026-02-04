@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -18,6 +20,7 @@ import (
 	"pos-system/backend/internal/config"
 	"pos-system/backend/internal/models"
 
+	"cloud.google.com/go/storage"
 	"github.com/disintegration/imaging"
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
@@ -256,7 +259,7 @@ func (h *ProductHandler) DeleteProduct(c *gin.Context) {
 
 // ImportProductsFromExcel handles bulk product creation from an Excel file.
 // Expected headers (first row):
-// Chinese Name | English name | Unit | Barcode | Retail Price | Sector - Loog Fung Retail
+// Chinese Name | English name | Unit | Barcode | Retail Price | Category (optional) | Sector - Loog Fung Retail (optional)
 func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -316,6 +319,8 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 			headerIndex["retail_price"] = i
 		case strings.ToLower("Sector - Loog Fung Retail"):
 			headerIndex["sector"] = i
+		case strings.ToLower("Category"):
+			headerIndex["category"] = i
 		}
 	}
 
@@ -354,6 +359,7 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 		barcode := get("barcode")
 		retailStr := get("retail_price")
 		sectorName := get("sector")
+		category := get("category")
 
 		if nameEn == "" && nameZh == "" {
 			rowErrors = append(rowErrors, fmt.Sprintf("row %d: missing product name", rowNum))
@@ -397,10 +403,18 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 				continue
 			}
 			// New product
+			// Use barcode as SKU if barcode is provided
+			sku := ""
+			if barcode != "" {
+				sku = barcode
+			}
+
 			product = models.Product{
 				Name:        nameEn,
 				NameChinese: nameZh,
 				Barcode:     barcode,
+				SKU:         sku,
+				Category:    category,
 				UnitType:    unit,
 				IsActive:    true,
 			}
@@ -420,6 +434,13 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 			product.UnitType = unit
 			if barcode != "" {
 				product.Barcode = barcode
+				// Use barcode as SKU if SKU is empty
+				if product.SKU == "" {
+					product.SKU = barcode
+				}
+			}
+			if category != "" {
+				product.Category = category
 			}
 			if err := h.db.Save(&product).Error; err != nil {
 				rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to update product: %v", rowNum, err))
@@ -440,19 +461,31 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 				continue
 			}
 
-			cost.ProductID = product.ID
-			cost.DirectRetailOnlineStorePriceGBP = retail
-
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// Minimal required fields for a new cost record
-				cost.ExchangeRate = 1
-				cost.UnitWeightG = 1
-				cost.WeightG = 1
-				cost.FreightRateHKDPerKG = 0
+				// Create new cost record with all required fields
+				now := time.Now()
+				cost = models.ProductCost{
+					ProductID:                       product.ID,
+					ExchangeRate:                    1,
+					UnitWeightG:                     1,
+					WeightG:                         1,
+					FreightRateHKDPerKG:             0,
+					DirectRetailOnlineStorePriceGBP: retail,
+					EffectiveFrom:                   &now, // Always set to current time
+					EffectiveTo:                     nil,  // NULL means currently active
+				}
 				if err := h.db.Create(&cost).Error; err != nil {
 					rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to create cost: %v", rowNum, err))
 				}
 			} else {
+				// Update existing cost
+				cost.ProductID = product.ID
+				cost.DirectRetailOnlineStorePriceGBP = retail
+				// Ensure EffectiveFrom is set if it's nil (shouldn't happen, but safety check)
+				if cost.EffectiveFrom == nil {
+					now := time.Now()
+					cost.EffectiveFrom = &now
+				}
 				if err := h.db.Save(&cost).Error; err != nil {
 					rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to update cost: %v", rowNum, err))
 				}
@@ -543,6 +576,7 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 	isNewRecord := false
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create new cost with minimal required fields
+		now := time.Now()
 		cost = models.ProductCost{
 			ProductID:                       product.ID,
 			ExchangeRate:                    1,
@@ -551,7 +585,7 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 			FreightRateHKDPerKG:             0,
 			WholesaleCostGBP:                0,
 			DirectRetailOnlineStorePriceGBP: 0,
-			EffectiveFrom:                   time.Now(),
+			EffectiveFrom:                   &now,
 		}
 		isNewRecord = true
 	} else if err != nil {
@@ -574,7 +608,7 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 			// Create new cost record with updated value
 			cost.ID = 0 // Reset ID for new record
 			cost.WholesaleCostGBP = *req.WholesaleCostGBP
-			cost.EffectiveFrom = time.Now()
+			cost.EffectiveFrom = &now
 			cost.EffectiveTo = nil
 			isNewRecord = true
 		} else {
@@ -593,7 +627,7 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 				Update("effective_to", now)
 
 			cost.ID = 0 // Reset ID for new record
-			cost.EffectiveFrom = time.Now()
+			cost.EffectiveFrom = &now
 			cost.EffectiveTo = nil
 			isNewRecord = true
 		}
@@ -642,6 +676,7 @@ func (h *ProductHandler) calculateProductCost(productID uint, req SetCostRequest
 	// Calculate wholesale cost
 	wholesaleCostGBP := adjustedPurchasingCostGBP + freightGBP + importDutyGBP + req.PackagingGBP
 
+	now := time.Now()
 	return models.ProductCost{
 		ProductID:                       productID,
 		ExchangeRate:                    req.ExchangeRate,
@@ -662,7 +697,7 @@ func (h *ProductHandler) calculateProductCost(productID uint, req SetCostRequest
 		PackagingGBP:                    req.PackagingGBP,
 		WholesaleCostGBP:                wholesaleCostGBP,
 		DirectRetailOnlineStorePriceGBP: req.DirectRetailOnlineStorePriceGBP,
-		EffectiveFrom:                   time.Now(),
+		EffectiveFrom:                   &now,
 	}
 }
 
@@ -787,24 +822,6 @@ func (h *ProductHandler) uploadImage(file *multipart.FileHeader, c *gin.Context)
 		return "", fmt.Errorf("invalid file type. Allowed: %v", allowedExts)
 	}
 
-	// No file size limit - we'll resize large images
-
-	// Create uploads directory if it doesn't exist
-	uploadDir := h.cfg.UploadDir
-	if uploadDir == "" {
-		uploadDir = "./uploads"
-	}
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create upload directory: %w", err)
-	}
-
-	// Generate unique filename (always save as JPEG for consistency and smaller file size)
-	// Extract original extension for reference, but save as .jpg
-	originalExt := strings.ToLower(filepath.Ext(file.Filename))
-	baseName := strings.TrimSuffix(filepath.Base(file.Filename), originalExt)
-	filename := fmt.Sprintf("%d_%s.jpg", time.Now().UnixNano(), baseName)
-	filePath := filepath.Join(uploadDir, filename)
-
 	// Open and decode image
 	src, err := file.Open()
 	if err != nil {
@@ -841,18 +858,80 @@ func (h *ProductHandler) uploadImage(file *multipart.FileHeader, c *gin.Context)
 		resizedImg = imaging.Resize(img, newWidth, newHeight, imaging.Lanczos)
 	}
 
-	// Save resized image
-	dst, err := os.Create(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create file: %w", err)
-	}
-	defer dst.Close()
-
-	// Always save as JPEG for consistency and smaller file size
-	// Convert all formats (PNG, GIF, WebP) to JPEG
-	err = jpeg.Encode(dst, resizedImg, &jpeg.Options{Quality: 85})
+	// Encode resized image to JPEG buffer
+	var imgBuf bytes.Buffer
+	err = jpeg.Encode(&imgBuf, resizedImg, &jpeg.Options{Quality: 85})
 	if err != nil {
 		return "", fmt.Errorf("failed to encode image: %w", err)
+	}
+
+	// Generate unique filename (always save as JPEG for consistency and smaller file size)
+	originalExt := strings.ToLower(filepath.Ext(file.Filename))
+	baseName := strings.TrimSuffix(filepath.Base(file.Filename), originalExt)
+	filename := fmt.Sprintf("%d_%s.jpg", time.Now().UnixNano(), baseName)
+
+	// Upload based on storage provider
+	if h.cfg.StorageProvider == "gcp" && h.cfg.GCPBucketName != "" {
+		// Upload to GCP Cloud Storage
+		return h.uploadToGCP(filename, imgBuf.Bytes())
+	}
+
+	// Default: Save locally
+	return h.saveLocally(filename, imgBuf.Bytes())
+}
+
+// uploadToGCP uploads image to GCP Cloud Storage bucket
+func (h *ProductHandler) uploadToGCP(filename string, imageData []byte) (string, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCP storage client: %w", err)
+	}
+	defer client.Close()
+
+	bucket := client.Bucket(h.cfg.GCPBucketName)
+	obj := bucket.Object("user-icons/" + filename) // Store in user-icons/ subfolder
+
+	writer := obj.NewWriter(ctx)
+	writer.ContentType = "image/jpeg"
+	writer.CacheControl = "public, max-age=31536000" // Cache for 1 year
+
+	if _, err := writer.Write(imageData); err != nil {
+		writer.Close()
+		return "", fmt.Errorf("failed to write to GCP bucket: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("failed to close GCP bucket writer: %w", err)
+	}
+
+	// Make the object publicly readable
+	if err := obj.ACL().Set(ctx, storage.AllUsers, storage.RoleReader); err != nil {
+		// Log but don't fail - object might already be public
+		fmt.Printf("Warning: Failed to set public ACL: %v\n", err)
+	}
+
+	// Return public URL
+	imageURL := fmt.Sprintf("https://storage.googleapis.com/%s/user-icons/%s", h.cfg.GCPBucketName, filename)
+	return imageURL, nil
+}
+
+// saveLocally saves image to local filesystem
+func (h *ProductHandler) saveLocally(filename string, imageData []byte) (string, error) {
+	// Create uploads directory if it doesn't exist
+	uploadDir := h.cfg.UploadDir
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create upload directory: %w", err)
+	}
+
+	filePath := filepath.Join(uploadDir, filename)
+
+	// Save image data to file
+	if err := os.WriteFile(filePath, imageData, 0644); err != nil {
+		return "", fmt.Errorf("failed to save file: %w", err)
 	}
 
 	// Return URL

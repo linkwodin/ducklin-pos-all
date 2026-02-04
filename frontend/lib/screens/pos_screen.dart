@@ -19,6 +19,7 @@ import 'login_screen.dart';
 import 'printer_settings_screen.dart';
 import 'order_pickup_screen.dart';
 import 'user_profile_screen.dart';
+import 'product_selection_screen.dart' show productSelectionScreenKey;
 
 class POSScreen extends StatefulWidget {
   const POSScreen({super.key});
@@ -35,10 +36,35 @@ class _POSScreenState extends State<POSScreen> {
   // Global keys to access state of screens that need refreshing
   final GlobalKey<OrderHistoryScreenState> _orderHistoryKey = GlobalKey<OrderHistoryScreenState>();
   
+  // Global barcode scanner listener
+  final TextEditingController _globalBarcodeController = TextEditingController();
+  final FocusNode _globalBarcodeFocus = FocusNode();
+  String _lastProcessedBarcode = '';
+  String? _pendingBarcode; // Barcode to process after navigation
+  
   // List of pages for navigation
   List<Widget> get _pages => [
     OrderScreen(),
-    OrderPickupScreen(),
+    OrderPickupScreen(
+      onProductBarcodeScanned: (barcode) {
+        // Navigate to create order page when product barcode is scanned on order pickup page
+        _pendingBarcode = barcode;
+        setState(() {
+          _selectedIndex = 0;
+        });
+        // Process barcode after navigation
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pendingBarcode != null) {
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted && _pendingBarcode != null && productSelectionScreenKey.currentState != null) {
+                productSelectionScreenKey.currentState!.processBarcode(_pendingBarcode!);
+                _pendingBarcode = null;
+              }
+            });
+          }
+        });
+      },
+    ),
     OrderHistoryScreen(key: _orderHistoryKey),
     InventoryScreen(),
     UserManagementScreen(),
@@ -50,6 +76,43 @@ class _POSScreenState extends State<POSScreen> {
     super.initState();
     _initializeData();
     _loadUserRole();
+    _setupGlobalBarcodeListener();
+  }
+  
+  bool _shouldMaintainGlobalBarcodeFocus() {
+    // Only maintain focus on screens that don't have their own barcode scanning
+    // Index 0 = OrderScreen (has ProductSelectionScreen with its own barcode input)
+    // Index 1 = OrderPickupScreen (has its own QR code scanning)
+    // Other screens (inventory, order history, etc.) should use global listener
+    return _selectedIndex != 0 && _selectedIndex != 1;
+  }
+  
+  void _setupGlobalBarcodeListener() {
+    // Focus the global barcode field after initialization (only on screens that need it)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _shouldMaintainGlobalBarcodeFocus()) {
+        _globalBarcodeFocus.requestFocus();
+      }
+    });
+    
+    // Listen for focus changes to maintain focus (only on screens that need it)
+    _globalBarcodeFocus.addListener(() {
+      if (!_globalBarcodeFocus.hasFocus && mounted && _shouldMaintainGlobalBarcodeFocus()) {
+        // Re-focus after a short delay to allow other interactions
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted && _shouldMaintainGlobalBarcodeFocus() && !_globalBarcodeFocus.hasFocus) {
+            _globalBarcodeFocus.requestFocus();
+          }
+        });
+      }
+    });
+  }
+  
+  @override
+  void dispose() {
+    _globalBarcodeController.dispose();
+    _globalBarcodeFocus.dispose();
+    super.dispose();
   }
 
   Future<void> _initializeData() async {
@@ -76,6 +139,61 @@ class _POSScreenState extends State<POSScreen> {
     });
   }
 
+  void _handleGlobalBarcode(String barcode) {
+    // Ignore if it's the same barcode (duplicate scan)
+    if (barcode == _lastProcessedBarcode) {
+      return;
+    }
+    
+    // Ignore if barcode is empty or too short (likely not a real barcode)
+    if (barcode.trim().isEmpty || barcode.trim().length < 3) {
+      return;
+    }
+    
+    // Ignore if it contains pipe characters (likely a QR code from order pickup, not a product barcode)
+    if (barcode.contains('|') || barcode.contains('｜')) {
+      return;
+    }
+    
+    _lastProcessedBarcode = barcode;
+    
+    // Only process if we're NOT on the create order page
+    // If we're on the create order page, let ProductSelectionScreen handle it
+    if (_selectedIndex != 0) {
+      _pendingBarcode = barcode; // Store barcode to process after navigation
+      setState(() {
+        _selectedIndex = 0;
+      });
+      
+      // Clear the controller for next scan
+      _globalBarcodeController.clear();
+      
+      // Process barcode after navigation
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pendingBarcode != null) {
+          // Wait a bit for the screen to be fully built
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted && _pendingBarcode != null && productSelectionScreenKey.currentState != null) {
+              productSelectionScreenKey.currentState!.processBarcode(_pendingBarcode!);
+              _pendingBarcode = null;
+            }
+          });
+        }
+        
+        // Re-focus the global barcode field after a delay
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _globalBarcodeFocus.requestFocus();
+          }
+        });
+      });
+    } else {
+      // Already on create order page - clear the global field and let ProductSelectionScreen handle it
+      _globalBarcodeController.clear();
+      // Don't process here, let the ProductSelectionScreen's search field handle it
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -87,8 +205,10 @@ class _POSScreenState extends State<POSScreen> {
       onPointerMove: (_) => authProvider.updateLastActivity(),
       child: GestureDetector(
         onTap: () => authProvider.updateLastActivity(),
-        child: Scaffold(
-          body: Row(
+        child: Stack(
+          children: [
+            Scaffold(
+              body: Row(
         children: <Widget>[
           NavigationRail(
             selectedIndex: _selectedIndex,
@@ -102,6 +222,19 @@ class _POSScreenState extends State<POSScreen> {
               if (index == 2 && _orderHistoryKey.currentState != null) {
                 _orderHistoryKey.currentState!.refreshOrders();
               }
+              // Update global barcode field focus based on current page
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  if (index == 0) {
+                    // On create order page - unfocus global field to let ProductSelectionScreen handle barcodes
+                    _globalBarcodeFocus.unfocus();
+                  } else if (_shouldMaintainGlobalBarcodeFocus()) {
+                    // On other pages (including order pickup) - focus global field to capture product barcodes
+                    // On order pickup page, both fields can work: pickup page handles QR codes, global handles product barcodes
+                    _globalBarcodeFocus.requestFocus();
+                  }
+                }
+              });
             },
             groupAlignment: groupAlignment,
             labelType: NavigationRailLabelType.all,
@@ -253,6 +386,33 @@ class _POSScreenState extends State<POSScreen> {
         ],
           ),
         ),
+            // Hidden global barcode scanner input (always focused, invisible)
+            Positioned(
+              left: -1000,
+              top: -1000,
+              child: SizedBox(
+                width: 1,
+                height: 1,
+                child: Opacity(
+                  opacity: 0,
+                  child: TextField(
+                    controller: _globalBarcodeController,
+                    focusNode: _globalBarcodeFocus,
+                    autofocus: true,
+                    onSubmitted: (value) {
+                      // Process barcodes on all screens except create order page
+                      // On order pickup page, QR codes (with pipes) will be handled by that screen's field
+                      // Product barcodes (no pipes) should navigate to create order page
+                      if (value.trim().isNotEmpty && _selectedIndex != 0) {
+                        _handleGlobalBarcode(value.trim());
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -260,11 +420,17 @@ class _POSScreenState extends State<POSScreen> {
       Future<void> _syncData() async {
         final l10n = AppLocalizations.of(context)!;
         final productProvider = Provider.of<ProductProvider>(context, listen: false);
-        await productProvider.syncProducts();
+        final success = await productProvider.syncProducts();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.dataSyncedSuccessfully)),
+            SnackBar(
+              content: Text(success ? l10n.dataSyncedSuccessfully : l10n.syncFailed('Failed to sync products')),
+              action: SnackBarAction(
+                label: 'Close',
+                onPressed: () {},
+              ),
+            ),
           );
         }
       }
@@ -366,7 +532,7 @@ class OrderScreen extends StatelessWidget {
         // Left: Product Selection (70%)
         Expanded(
           flex: 7,
-          child: const ProductSelectionScreen(),
+          child: ProductSelectionScreen(key: productSelectionScreenKey),
         ),
         const VerticalDivider(thickness: 1, width: 1),
         // Right: Cart (30%)

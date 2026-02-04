@@ -7,7 +7,9 @@ import '../services/api_service.dart';
 import '../services/database_service.dart';
 
 class OrderPickupScreen extends StatefulWidget {
-  const OrderPickupScreen({super.key});
+  final Function(String)? onProductBarcodeScanned;
+  
+  const OrderPickupScreen({super.key, this.onProductBarcodeScanned});
 
   @override
   State<OrderPickupScreen> createState() => _OrderPickupScreenState();
@@ -626,16 +628,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                 ),
                 if (_useCamera)
                   IconButton(
-                    icon: ValueListenableBuilder(
-                      valueListenable: controller.torchState,
-                      builder: (context, state, child) {
-                        if (state == TorchState.on) {
-                          return const Icon(Icons.flash_on, color: Colors.yellow);
-                        } else {
-                          return const Icon(Icons.flash_off, color: Colors.grey);
-                        }
-                      },
-                    ),
+                    icon: const Icon(Icons.flash_off, color: Colors.grey),
                     onPressed: () => controller.toggleTorch(),
                   ),
               ],
@@ -693,6 +686,17 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                   // Parse QR code format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE"
                   // Handle both '|' and '｜' (full-width pipe) as separators
                   final normalizedValue = value.replaceAll('｜', '|');
+                  
+                  // If it doesn't contain pipes, it's likely a product barcode - navigate to create order page
+                  if (!normalizedValue.contains('|') && value.trim().length >= 3) {
+                    // Product barcode scanned - trigger navigation to create order page
+                    if (widget.onProductBarcodeScanned != null) {
+                      widget.onProductBarcodeScanned!(value.trim());
+                    }
+                    _scanInputController.clear();
+                    _lastProcessedValue = '';
+                    return;
+                  }
                   
                   if (normalizedValue.contains('|')) {
                     final parts = normalizedValue.split('|');
@@ -876,6 +880,17 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                     // Parse QR code format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE"
                     // Handle both '|' and '｜' (full-width pipe) as separators
                     final normalizedValue = value.replaceAll('｜', '|');
+                    
+                    // If it doesn't contain pipes, it's likely a product barcode - navigate to create order page
+                    if (!normalizedValue.contains('|') && value.trim().length >= 3) {
+                      // Product barcode scanned - trigger navigation to create order page
+                      if (widget.onProductBarcodeScanned != null) {
+                        widget.onProductBarcodeScanned!(value.trim());
+                      }
+                      _scanInputController.clear();
+                      _lastProcessedValue = '';
+                      return;
+                    }
                     
                     if (normalizedValue.contains('|')) {
                       final parts = normalizedValue.split('|');
@@ -1223,16 +1238,16 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                     controller: controller,
                     onDetect: (capture) {
                       if (_isProcessing) return;
+                      if (capture.barcodes.isEmpty) return;
                       
-                      final List<Barcode> barcodes = capture.barcodes;
-                      for (final barcode in barcodes) {
-                        if (barcode.rawValue != null) {
-                          final qrData = barcode.rawValue!;
-                          // Check if QR code contains '|' (invoice or receipt format)
-                          // Format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE" or "ORDER_NUMBER|CHECK_CODE"
-                          if (qrData.contains('|')) {
-                            final parts = qrData.split('|');
-                            if (parts.length >= 2) {
+                      final barcode = capture.barcodes.first;
+                      if (barcode.rawValue != null) {
+                        final qrData = barcode.rawValue!;
+                        // Check if QR code contains '|' (invoice or receipt format)
+                        // Format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE" or "ORDER_NUMBER|CHECK_CODE"
+                        if (qrData.contains('|')) {
+                          final parts = qrData.split('|');
+                          if (parts.length >= 2) {
                             // QR code contains order number and check code
                             final orderNumber = parts[0].trim();
                             final checkCode = parts[1].trim();
@@ -1260,28 +1275,26 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                 _isWarning = false;
                               });
                             }
-                            } else {
-                              setState(() {
-                                _message = 'QR code format invalid. Expected: ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE';
-                                _isSuccess = false;
-                                _isWarning = false;
-                              });
-                            }
                           } else {
-                            // QR code doesn't contain '|' - treat as order number only
                             setState(() {
-                              _message = _scanStep == 1 
-                                  ? 'Invoice QR code should contain |. Please enter check code manually or scan again.'
-                                  : 'Receipt QR code should contain |. Please enter check code manually or scan again.';
+                              _message = 'QR code format invalid. Expected: ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE';
                               _isSuccess = false;
                               _isWarning = false;
                             });
-                            // Focus on check code field
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              _scanInputFocus.requestFocus();
-                            });
                           }
-                          break;
+                        } else {
+                          // QR code doesn't contain '|' - treat as order number only
+                          setState(() {
+                            _message = _scanStep == 1 
+                                ? 'Invoice QR code should contain |. Please enter check code manually or scan again.'
+                                : 'Receipt QR code should contain |. Please enter check code manually or scan again.';
+                            _isSuccess = false;
+                            _isWarning = false;
+                          });
+                          // Focus on check code field
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _scanInputFocus.requestFocus();
+                          });
                         }
                       }
                     },
