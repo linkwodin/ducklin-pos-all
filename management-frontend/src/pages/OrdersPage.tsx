@@ -29,9 +29,9 @@ import {
   Cancel as CancelIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { ordersAPI, storesAPI } from '../services/api';
+import { ordersAPI, storesAPI, usersAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
-import type { Order, Store } from '../types';
+import type { Order, Store, User } from '../types';
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import UserDisplay from '../components/UserDisplay';
@@ -43,18 +43,21 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [selectedStore, setSelectedStore] = useState<number | ''>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
+  const [staff, setStaff] = useState<User[]>([]);
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
     fetchStores();
+    fetchStaff();
     fetchOrders();
   }, []);
 
   useEffect(() => {
     fetchOrders();
-  }, [selectedStore, selectedStatus]);
+  }, [selectedStore, selectedStatus, selectedStaffId]);
 
   const fetchStores = async () => {
     try {
@@ -65,15 +68,27 @@ export default function OrdersPage() {
     }
   };
 
+  const fetchStaff = async () => {
+    try {
+      const data = await usersAPI.list();
+      setStaff(data || []);
+    } catch (error) {
+      enqueueSnackbar(t('orders.failedToFetchStaff'), { variant: 'error' });
+    }
+  };
+
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const params: any = {};
+      const params: Record<string, unknown> = {};
       if (selectedStore) {
         params.store_id = Number(selectedStore);
       }
       if (selectedStatus) {
         params.status = selectedStatus;
+      }
+      if (selectedStaffId) {
+        params.user_id = Number(selectedStaffId);
       }
       const data = await ordersAPI.list(params);
       setOrders(data);
@@ -186,6 +201,22 @@ export default function OrdersPage() {
               <MenuItem value="completed">{t('orders.statusCompleted')}</MenuItem>
               <MenuItem value="cancelled">{t('orders.statusCancelled')}</MenuItem>
               <MenuItem value="picked_up">{t('orders.statusPickedUp')}</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>{t('orders.filterByStaff')}</InputLabel>
+            <Select
+              value={selectedStaffId === '' ? '' : selectedStaffId}
+              onChange={(e) => setSelectedStaffId(e.target.value === '' ? '' : (e.target.value as number))}
+              label={t('orders.filterByStaff')}
+            >
+              <MenuItem value="">{t('orders.allStaff')}</MenuItem>
+              {staff.map((u) => (
+                <MenuItem key={u.id} value={u.id}>
+                  {u.first_name || u.last_name ? `${u.first_name} ${u.last_name}`.trim() : u.username}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </Box>

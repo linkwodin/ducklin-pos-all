@@ -212,6 +212,11 @@ func (h *OrderHandler) ListOrders(c *gin.Context) {
 		query = query.Where("status = ?", status)
 	}
 
+	// Filter by staff (user_id) if provided
+	if userID := c.Query("user_id"); userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+
 	// Filter by date range if provided
 	if startDate := c.Query("start_date"); startDate != "" {
 		query = query.Where("created_at >= ?", startDate)
@@ -517,24 +522,41 @@ func parseInt(s string) int {
 func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
 	var stats []DailyRevenueStat
 
-	// Get number of days (default 30)
-	days := 30
-	if daysStr := c.Query("days"); daysStr != "" {
-		if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
-			days = parsedDays
+	var startDate, endDate time.Time
+	startStr := c.Query("start_date")
+	endStr := c.Query("end_date")
+	if startStr != "" && endStr != "" {
+		if s, err := time.Parse("2006-01-02", startStr); err == nil {
+			startDate = s
+		} else {
+			startDate = time.Now().AddDate(0, 0, -30)
 		}
+		if e, err := time.Parse("2006-01-02", endStr); err == nil {
+			endDate = e
+		} else {
+			endDate = time.Now()
+		}
+		if endDate.Before(startDate) {
+			startDate, endDate = endDate, startDate
+		}
+	} else {
+		days := 30
+		if daysStr := c.Query("days"); daysStr != "" {
+			if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
+				days = parsedDays
+			}
+		}
+		endDate = time.Now()
+		startDate = endDate.AddDate(0, 0, -days)
 	}
 
 	// Get store filter if provided
 	storeID := c.Query("store_id")
 
-	// Calculate start date
-	startDate := time.Now().AddDate(0, 0, -days)
-
 	// Build query
 	query := h.db.Model(&models.Order{}).
 		Select("DATE(created_at) as date, SUM(total_amount) as revenue, COUNT(*) as order_count").
-		Where("created_at >= ? AND status IN (?, ?, ?)", startDate, "paid", "completed", "picked_up").
+		Where("created_at >= ? AND created_at < ? AND status IN (?, ?, ?)", startDate, endDate.AddDate(0, 0, 1), "paid", "completed", "picked_up").
 		Group("DATE(created_at)")
 
 	if storeID != "" {
@@ -566,25 +588,42 @@ func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
 func (h *OrderHandler) GetDailyProductSalesStats(c *gin.Context) {
 	var stats []DailyProductSalesStat
 
-	// Get number of days (default 30)
-	days := 30
-	if daysStr := c.Query("days"); daysStr != "" {
-		if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
-			days = parsedDays
+	var startDate, endDate time.Time
+	startStr := c.Query("start_date")
+	endStr := c.Query("end_date")
+	if startStr != "" && endStr != "" {
+		if s, err := time.Parse("2006-01-02", startStr); err == nil {
+			startDate = s
+		} else {
+			startDate = time.Now().AddDate(0, 0, -30)
 		}
+		if e, err := time.Parse("2006-01-02", endStr); err == nil {
+			endDate = e
+		} else {
+			endDate = time.Now()
+		}
+		if endDate.Before(startDate) {
+			startDate, endDate = endDate, startDate
+		}
+	} else {
+		days := 30
+		if daysStr := c.Query("days"); daysStr != "" {
+			if parsedDays := parseInt(daysStr); parsedDays > 0 && parsedDays <= 365 {
+				days = parsedDays
+			}
+		}
+		endDate = time.Now()
+		startDate = endDate.AddDate(0, 0, -days)
 	}
 
 	// Get store filter if provided
 	storeID := c.Query("store_id")
 
-	// Calculate start date
-	startDate := time.Now().AddDate(0, 0, -days)
-
 	// Build query to join orders and order_items
 	query := h.db.Table("orders").
 		Select("DATE(orders.created_at) as date, order_items.product_id, SUM(order_items.quantity) as quantity, SUM(order_items.line_total) as revenue").
 		Joins("INNER JOIN order_items ON orders.id = order_items.order_id").
-		Where("orders.created_at >= ? AND orders.status IN (?, ?, ?)", startDate, "paid", "completed", "picked_up").
+		Where("orders.created_at >= ? AND orders.created_at < ? AND orders.status IN (?, ?, ?)", startDate, endDate.AddDate(0, 0, 1), "paid", "completed", "picked_up").
 		Group("DATE(orders.created_at), order_items.product_id")
 
 	if storeID != "" {

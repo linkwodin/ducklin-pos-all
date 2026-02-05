@@ -378,6 +378,7 @@ export const ordersAPI = {
   list: async (params?: {
     store_id?: number;
     status?: string;
+    user_id?: number;
     start_date?: string;
     end_date?: string;
     limit?: number;
@@ -403,6 +404,8 @@ export const ordersAPI = {
   },
   getDailyRevenueStats: async (params?: {
     days?: number;
+    start_date?: string;
+    end_date?: string;
     store_id?: number;
   }): Promise<Array<{ date: string; revenue: number; order_count: number }>> => {
     const { data } = await api.get('/orders/stats/revenue', { params });
@@ -410,6 +413,8 @@ export const ordersAPI = {
   },
   getDailyProductSalesStats: async (params?: {
     days?: number;
+    start_date?: string;
+    end_date?: string;
     store_id?: number;
   }): Promise<Array<{ date: string; product_id: number; product_name: string; product_name_chinese: string; quantity: number; revenue: number }>> => {
     const { data } = await api.get('/orders/stats/product-sales', { params });
