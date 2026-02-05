@@ -16,9 +16,9 @@ import 'inventory_screen.dart';
 import 'user_management_screen.dart';
 import 'report_screen.dart';
 import 'login_screen.dart';
-import 'printer_settings_screen.dart';
 import 'order_pickup_screen.dart';
 import 'user_profile_screen.dart';
+import 'settings_screen.dart';
 import 'product_selection_screen.dart' show productSelectionScreenKey;
 
 class POSScreen extends StatefulWidget {
@@ -76,7 +76,6 @@ class _POSScreenState extends State<POSScreen> {
     super.initState();
     _initializeData();
     _loadUserRole();
-    _setupGlobalBarcodeListener();
   }
   
   bool _shouldMaintainGlobalBarcodeFocus() {
@@ -92,18 +91,6 @@ class _POSScreenState extends State<POSScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _shouldMaintainGlobalBarcodeFocus()) {
         _globalBarcodeFocus.requestFocus();
-      }
-    });
-    
-    // Listen for focus changes to maintain focus (only on screens that need it)
-    _globalBarcodeFocus.addListener(() {
-      if (!_globalBarcodeFocus.hasFocus && mounted && _shouldMaintainGlobalBarcodeFocus()) {
-        // Re-focus after a short delay to allow other interactions
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted && _shouldMaintainGlobalBarcodeFocus() && !_globalBarcodeFocus.hasFocus) {
-            _globalBarcodeFocus.requestFocus();
-          }
-        });
       }
     });
   }
@@ -160,10 +147,13 @@ class _POSScreenState extends State<POSScreen> {
     // Only process if we're NOT on the create order page
     // If we're on the create order page, let ProductSelectionScreen handle it
     if (_selectedIndex != 0) {
+      // Move to create order page and release global barcode focus so
+      // the order screen (and any dialogs like weight input) can manage focus.
       _pendingBarcode = barcode; // Store barcode to process after navigation
       setState(() {
         _selectedIndex = 0;
       });
+      _globalBarcodeFocus.unfocus();
       
       // Clear the controller for next scan
       _globalBarcodeController.clear();
@@ -180,12 +170,9 @@ class _POSScreenState extends State<POSScreen> {
           });
         }
         
-        // Re-focus the global barcode field after a delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            _globalBarcodeFocus.requestFocus();
-          }
-        });
+        // DO NOT re-focus the global barcode field when navigating to the
+        // create order page, so dialogs like weight input can grab focus.
+        // Other screens will manage global focus via _shouldMaintainGlobalBarcodeFocus().
       });
     } else {
       // Already on create order page - clear the global field and let ProductSelectionScreen handle it
@@ -199,7 +186,6 @@ class _POSScreenState extends State<POSScreen> {
     final l10n = AppLocalizations.of(context)!;
     // Track user activity on any interaction
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
     return Listener(
       onPointerDown: (_) => authProvider.updateLastActivity(),
       onPointerMove: (_) => authProvider.updateLastActivity(),
@@ -209,206 +195,151 @@ class _POSScreenState extends State<POSScreen> {
           children: [
             Scaffold(
               body: Row(
-        children: <Widget>[
-          NavigationRail(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (int index) {
-              // Track activity on navigation
-              authProvider.updateLastActivity();
-              setState(() {
-                _selectedIndex = index;
-              });
-              // Refresh order history when navigating to it (index 2)
-              if (index == 2 && _orderHistoryKey.currentState != null) {
-                _orderHistoryKey.currentState!.refreshOrders();
-              }
-              // Update global barcode field focus based on current page
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  if (index == 0) {
-                    // On create order page - unfocus global field to let ProductSelectionScreen handle barcodes
-                    _globalBarcodeFocus.unfocus();
-                  } else if (_shouldMaintainGlobalBarcodeFocus()) {
-                    // On other pages (including order pickup) - focus global field to capture product barcodes
-                    // On order pickup page, both fields can work: pickup page handles QR codes, global handles product barcodes
-                    _globalBarcodeFocus.requestFocus();
-                  }
-                }
-              });
-            },
-            groupAlignment: groupAlignment,
-            labelType: NavigationRailLabelType.all,
-            leading: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                children: [
-                  const Logo(fontSize: 12, textColor: Colors.black),
-                ],
-              ),
-            ),
-            trailing: Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.sync, color: Colors.grey),
-                        onPressed: _syncData,
-                        tooltip: l10n.sync,
-                      ),
-                      Text(
-                        l10n.sync,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.language, color: Colors.grey),
-                        onPressed: () {
-                          _showLanguageDialog(context);
-                        },
-                        tooltip: l10n.language,
-                      ),
-                      Text(
-                        l10n.language,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.person, color: Colors.grey),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const UserProfileScreen(),
-                            ),
-                          );
-                        },
-                        tooltip: l10n.profile ?? 'Profile',
-                      ),
-                      Text(
-                        l10n.profile ?? 'Profile',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.settings, color: Colors.grey),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PrinterSettingsScreen(),
-                            ),
-                          );
-                        },
-                        tooltip: l10n.settings,
-                      ),
-                      Text(
-                        l10n.settings,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.grey),
-                        onPressed: _showLogoutDialog,
-                        tooltip: l10n.logout,
-                      ),
-                      Text(
-                        l10n.logout,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            destinations: <NavigationRailDestination>[
-              NavigationRailDestination(
-                icon: const Icon(Icons.add_box_outlined),
-                selectedIcon: const Icon(Icons.add_box_rounded),
-                label: Text(l10n.newOrder),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.qr_code_scanner_outlined),
-                selectedIcon: const Icon(Icons.qr_code_scanner),
-                label: Text(l10n.orderPickup ?? 'Order Pickup'),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.screen_search_desktop_outlined),
-                selectedIcon: const Icon(Icons.screen_search_desktop_rounded),
-                label: Text(l10n.searchOrder),
-              ),
-              NavigationRailDestination(
-                icon: const Icon(Icons.inventory_2_outlined),
-                selectedIcon: const Icon(Icons.inventory),
-                label: Text(l10n.inventory),
-              ),
-              if (_userRole == 'admin' || _userRole == 'management' || _userRole == 'supervisor') ...[
-                NavigationRailDestination(
-                  icon: const Icon(Icons.people_alt_outlined),
-                  selectedIcon: const Icon(Icons.people_alt),
-                  label: Text(l10n.userManagement),
-                ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.dashboard_outlined),
-                  selectedIcon: const Icon(Icons.dashboard_rounded),
-                  label: Text(l10n.report),
-                ),
-              ],
-            ],
-          ),
-          const VerticalDivider(thickness: 1, width: 1),
-          // Main content
-          Expanded(
-            child: _pages[_selectedIndex],
-          ),
-        ],
-          ),
-        ),
-            // Hidden global barcode scanner input (always focused, invisible)
-            Positioned(
-              left: -1000,
-              top: -1000,
-              child: SizedBox(
-                width: 1,
-                height: 1,
-                child: Opacity(
-                  opacity: 0,
-                  child: TextField(
-                    controller: _globalBarcodeController,
-                    focusNode: _globalBarcodeFocus,
-                    autofocus: true,
-                    onSubmitted: (value) {
-                      // Process barcodes on all screens except create order page
-                      // On order pickup page, QR codes (with pipes) will be handled by that screen's field
-                      // Product barcodes (no pipes) should navigate to create order page
-                      if (value.trim().isNotEmpty && _selectedIndex != 0) {
-                        _handleGlobalBarcode(value.trim());
+                children: <Widget>[
+                  NavigationRail(
+                    selectedIndex: _selectedIndex,
+                    extended: false, // compact to save space
+                    groupAlignment: groupAlignment,
+                    labelType: NavigationRailLabelType.all,
+                    onDestinationSelected: (int index) {
+                      // Track activity on navigation
+                      authProvider.updateLastActivity();
+                      setState(() {
+                        _selectedIndex = index;
+                      });
+                      // Refresh order history when navigating to it (index 2)
+                      if (index == 2 && _orderHistoryKey.currentState != null) {
+                        _orderHistoryKey.currentState!.refreshOrders();
                       }
+                      // IMPORTANT: Do NOT change focus here anymore.
+                      // Let each screen and dialog manage its own focus
+                      // so inputs like weight and change-PIN fields work reliably.
                     },
+                    leading: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
+                        children: const [
+                          Logo(fontSize: 12, textColor: Colors.black),
+                        ],
+                      ),
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.sync, color: Colors.grey),
+                              onPressed: _syncData,
+                              tooltip: l10n.sync,
+                            ),
+                            Text(
+                              l10n.sync,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon:
+                                  const Icon(Icons.language, color: Colors.grey),
+                              onPressed: () {
+                                _showLanguageDialog(context);
+                              },
+                              tooltip: l10n.language,
+                            ),
+                            Text(
+                              l10n.language,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon:
+                                  const Icon(Icons.settings, color: Colors.grey),
+                              onPressed: () {
+                                // When opening settings, release any barcode/search focus
+                                // so text fields/dialogs on settings-related screens
+                                // can receive keyboard input.
+                                _globalBarcodeFocus.unfocus();
+                                if (productSelectionScreenKey.currentState != null) {
+                                  productSelectionScreenKey.currentState!
+                                      .setSearchAutofocusEnabled(false);
+                                }
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const SettingsScreen(),
+                                  ),
+                                );
+                              },
+                              tooltip: l10n.settings,
+                            ),
+                            Text(
+                              l10n.settings,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    destinations: <NavigationRailDestination>[
+                      NavigationRailDestination(
+                        icon: const Icon(Icons.add_box_outlined),
+                        selectedIcon: const Icon(Icons.add_box_rounded),
+                        label: Text(l10n.newOrder),
+                      ),
+                      NavigationRailDestination(
+                        icon:
+                            const Icon(Icons.qr_code_scanner_outlined),
+                        selectedIcon: const Icon(Icons.qr_code_scanner),
+                        label: Text(l10n.orderPickup ?? 'Order Pickup'),
+                      ),
+                      NavigationRailDestination(
+                        icon: const Icon(Icons.screen_search_desktop_outlined),
+                        selectedIcon:
+                            const Icon(Icons.screen_search_desktop_rounded),
+                        label: Text(l10n.searchOrder),
+                      ),
+                      NavigationRailDestination(
+                        icon: const Icon(Icons.inventory_2_outlined),
+                        selectedIcon: const Icon(Icons.inventory),
+                        label: Text(l10n.inventory),
+                      ),
+                      if (_userRole == 'admin' ||
+                          _userRole == 'management' ||
+                          _userRole == 'supervisor') ...[
+                        NavigationRailDestination(
+                          icon: const Icon(Icons.people_alt_outlined),
+                          selectedIcon: const Icon(Icons.people_alt),
+                          label: Text(l10n.userManagement),
+                        ),
+                        NavigationRailDestination(
+                          icon: const Icon(Icons.dashboard_outlined),
+                          selectedIcon: const Icon(Icons.dashboard_rounded),
+                          label: Text(l10n.report),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
+                  const VerticalDivider(thickness: 1, width: 1),
+                  // Main content
+                  Expanded(
+                    child: _pages[_selectedIndex],
+                  ),
+                ],
               ),
             ),
           ],

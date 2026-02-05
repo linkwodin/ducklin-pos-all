@@ -943,8 +943,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
             ),
           ),
         ),
-        // Visible UI
-        Expanded(
+        // Visible UI - use Positioned.fill so Stack gives bounded constraints (Expanded is invalid in Stack)
+        Positioned.fill(
           child: Column(
             children: [
             // Scan input and side-by-side invoice / receipt text boxes

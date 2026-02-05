@@ -104,10 +104,45 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     final product = item['product'] as Map<String, dynamic>;
                     final quantity = (item['quantity'] as num).toDouble();
                     final unitType = product['unit_type'] ?? 'quantity';
+                    final imageUrl = (product['image_url'] ?? '').toString().trim();
                     return ListTile(
-                      leading: product['image_url'] != null
-                          ? Image.network(product['image_url'], width: 50, height: 50)
-                          : const Icon(Icons.image),
+                      leading: imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 50,
+                                height: 50,
+                                color: Colors.grey[200],
+                                child: const Center(
+                                  child: Text(
+                                    '?',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Container(
+                              width: 50,
+                              height: 50,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Text(
+                                  '?',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ),
                       title: Text(_getProductName(product, context)),
                       subtitle: Text(
                         unitType == 'weight'

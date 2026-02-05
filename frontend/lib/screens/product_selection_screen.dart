@@ -24,6 +24,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String? _notificationMessage;
+  bool _suppressSearchAutofocus = false; // Disable auto-focus while dialogs (e.g. weight) are open
 
   @override
   void initState() {
@@ -32,21 +33,38 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final productProvider = Provider.of<ProductProvider>(context, listen: false);
       productProvider.loadProducts();
-      // Auto-focus the search field
-      _searchFocusNode.requestFocus();
+      // Auto-focus the search field (only if not suppressed)
+      if (!_suppressSearchAutofocus) {
+        _searchFocusNode.requestFocus();
+      }
     });
     
-    // Listen for focus changes and refocus if lost
+    // Listen for focus changes and refocus if lost (unless suppressed)
     _searchFocusNode.addListener(() {
-      if (!_searchFocusNode.hasFocus && mounted) {
+      if (!_suppressSearchAutofocus && !_searchFocusNode.hasFocus && mounted) {
         // Use a small delay to allow other UI interactions to complete
         Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted && !_searchFocusNode.hasFocus) {
+          if (mounted && !_suppressSearchAutofocus && !_searchFocusNode.hasFocus) {
             _searchFocusNode.requestFocus();
           }
         });
       }
     });
+  }
+
+  /// Enable or disable automatic focusing of the search/barcode field.
+  /// When disabled, the field will not steal focus (useful while other
+  /// screens like Settings are on top, or when dialogs are open).
+  void setSearchAutofocusEnabled(bool enabled) {
+    if (!mounted) return;
+    setState(() {
+      _suppressSearchAutofocus = !enabled;
+    });
+    if (enabled) {
+      _searchFocusNode.requestFocus();
+    } else {
+      _searchFocusNode.unfocus();
+    }
   }
 
   @override
@@ -73,8 +91,9 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
 
     return GestureDetector(
       onTap: () {
-        // Refocus the search field when tapping anywhere on the screen
-        if (!_searchFocusNode.hasFocus) {
+        // Refocus the search field when tapping anywhere on the screen,
+        // but only when auto-focus is not suppressed (e.g. no dialogs open).
+        if (!_suppressSearchAutofocus && !_searchFocusNode.hasFocus) {
           _searchFocusNode.requestFocus();
         }
       },
@@ -91,7 +110,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
               TextField(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
-                autofocus: true,
+                // We manage focus manually via _searchFocusNode and _suppressSearchAutofocus
+                autofocus: false,
                 decoration: InputDecoration(
                   hintText: l10n.searchProducts,
                   prefixIcon: const Icon(Icons.search),
@@ -125,8 +145,10 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                   // When Enter is pressed, check if it's an exact barcode match
                   if (value.isNotEmpty) {
                     await _handleBarcodeEnter(value, orderProvider);
-                    // Refocus after handling barcode
-                    _searchFocusNode.requestFocus();
+                    // Refocus after handling barcode (only if not suppressed)
+                    if (!_suppressSearchAutofocus) {
+                      _searchFocusNode.requestFocus();
+                    }
                   } else {
                     setState(() => _searchQuery = value);
                   }
@@ -309,18 +331,10 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
               flex: 3,
               child: Container(
                 color: Colors.grey[100],
-                child: product['image_url'] != null
-                    ? Image.network(
-                        product['image_url'],
-                        fit: BoxFit.contain, // Show full image maintaining aspect ratio
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.image, size: 32),
-                        ),
-                      )
-                    : const Center(
-                        child: Icon(Icons.image, size: 32, color: Colors.grey),
-                      ),
+                child: _buildProductImagePlaceholder(
+                  product['image_url'],
+                  size: 32,
+                ),
               ),
             ),
             Expanded(
@@ -367,25 +381,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     final isWeight = unitType == 'weight';
 
     return ListTile(
-      leading: product['image_url'] != null
-          ? Image.network(
-              product['image_url'],
-              width: 40,
-              height: 40,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                width: 40,
-                height: 40,
-                color: Colors.grey[200],
-                child: const Icon(Icons.image, size: 24),
-              ),
-            )
-          : Container(
-              width: 40,
-              height: 40,
-              color: Colors.grey[200],
-              child: const Icon(Icons.image, size: 24),
-            ),
+      leading: _buildProductImagePlaceholder(
+        product['image_url'],
+        size: 24,
+        boxSize: 40,
+      ),
       title: Text(
         _getProductName(product, context),
         style: const TextStyle(fontSize: 14),
@@ -395,6 +395,60 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
         style: const TextStyle(fontSize: 12),
       ),
       onTap: () => _addProductToCart(product, orderProvider, isWeight),
+    );
+  }
+
+  /// Build product image, falling back to a '?' placeholder when URL is missing/empty/invalid.
+  Widget _buildProductImagePlaceholder(
+    dynamic imageUrl, {
+    double size = 32,
+    double? boxSize,
+  }) {
+    final String url = (imageUrl ?? '').toString().trim();
+    final double containerSize = boxSize ?? (size + 8);
+
+    if (url.isEmpty) {
+      // No image URL – show '?' placeholder
+      return Container(
+        width: containerSize,
+        height: containerSize,
+        color: Colors.grey[200],
+        child: Center(
+          child: Text(
+            '?',
+            style: TextStyle(
+              fontSize: size,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Valid-looking URL – try to load image, but on error fall back to '?'
+    return Image.network(
+      url,
+      width: containerSize,
+      height: containerSize,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) {
+        return Container(
+          width: containerSize,
+          height: containerSize,
+          color: Colors.grey[200],
+          child: Center(
+            child: Text(
+              '?',
+              style: TextStyle(
+                fontSize: size,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -442,11 +496,26 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     bool isWeight,
   ) async {
     if (isWeight) {
+      // Before showing the weight dialog, clear any existing focus
+      // and temporarily disable search auto-focus so the dialog's
+      // TextField can receive keyboard input.
+      setState(() {
+        _suppressSearchAutofocus = true;
+      });
+      _searchFocusNode.unfocus();
+
       // Show weight input dialog
       final weight = await showDialog<double>(
         context: context,
         builder: (_) => WeightInputDialog(),
       );
+      if (!mounted) return;
+
+      // Re-enable search auto-focus after dialog closes
+      setState(() {
+        _suppressSearchAutofocus = false;
+      });
+
       if (weight != null && weight > 0) {
         final l10n = AppLocalizations.of(context)!;
         orderProvider.addToCart(product, weight: weight, message: l10n.addedWeightToCart(weight));
@@ -498,10 +567,24 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       // Add to cart with message
       final productName = _getProductName(product, context);
       if (isWeight) {
+        // Clear any existing focus and temporarily disable search auto-focus
+        // so the weight dialog can take focus.
+        setState(() {
+          _suppressSearchAutofocus = true;
+        });
+        _searchFocusNode.unfocus();
+
         final weight = await showDialog<double>(
           context: context,
           builder: (_) => WeightInputDialog(),
         );
+        if (!mounted) return;
+
+        // Re-enable search auto-focus after dialog closes
+        setState(() {
+          _suppressSearchAutofocus = false;
+        });
+
         if (weight != null && weight > 0) {
           orderProvider.addToCart(product, weight: weight, message: l10n.productAddedToCart(productName));
           // Refocus the search field after adding product

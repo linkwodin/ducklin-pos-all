@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/api_logger.dart';
+import '../providers/product_provider.dart';
 import '../utils/jwt_utils.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -35,6 +38,16 @@ class AuthProvider with ChangeNotifier {
         await prefs.setInt('user_id', _currentUser!['id'] as int);
       }
       print('AuthProvider: Token saved, login successful');
+
+      // Auto-sync products immediately after successful username/password login
+      try {
+        print('AuthProvider: Auto-syncing products after login...');
+        final productProvider = ProductProvider();
+        await productProvider.syncProducts();
+        print('AuthProvider: Product auto-sync completed');
+      } catch (e) {
+        print('AuthProvider: Product auto-sync failed: $e');
+      }
 
       // Start session monitoring
       _startSessionMonitoring();
@@ -83,6 +96,16 @@ class AuthProvider with ChangeNotifier {
         print('AuthProvider: WARNING - User ID is null in response!');
       }
 
+      // Auto-sync products immediately after successful PIN login
+      try {
+        print('AuthProvider: Auto-syncing products after PIN login...');
+        final productProvider = ProductProvider();
+        await productProvider.syncProducts();
+        print('AuthProvider: Product auto-sync after PIN login completed');
+      } catch (e) {
+        print('AuthProvider: Product auto-sync after PIN login failed: $e');
+      }
+
       // Start session monitoring
       _startSessionMonitoring();
 
@@ -90,6 +113,37 @@ class AuthProvider with ChangeNotifier {
       return true;
     } catch (e) {
       print('AuthProvider: PIN login error: $e');
+
+      // Extra logging when device code is invalid
+      if (e is DioException) {
+        final data = e.response?.data;
+        final errorMessage = data is Map<String, dynamic> ? data['error']?.toString() : null;
+        final statusCode = e.response?.statusCode;
+        final uri = e.requestOptions.uri.toString();
+        final deviceCode = ApiService.instance.deviceCode;
+
+        if (errorMessage != null && errorMessage.contains('Invalid device code')) {
+          // Log a dedicated entry with device code for easier debugging
+          ApiLogger.instance.logError(
+            'InvalidDeviceCode',
+            'Invalid device code during PIN login. '
+            'username=$username, deviceCode=$deviceCode, statusCode=$statusCode, error="$errorMessage"',
+            uri,
+            statusCode: statusCode,
+            responseData: data,
+          );
+        } else {
+          // Log generic PIN login error with device code for context
+          ApiLogger.instance.logError(
+            'PinLoginError',
+            'PIN login error. username=$username, deviceCode=$deviceCode, error=$e',
+            uri,
+            statusCode: statusCode,
+            responseData: data,
+          );
+        }
+      }
+
       _isAuthenticated = false;
       notifyListeners();
       return false;
