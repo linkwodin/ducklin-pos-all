@@ -8,6 +8,7 @@ This directory contains all deployment and utility scripts for the POS system.
 scripts/
 ├── deploy.sh                    # Main deployment script
 ├── setup-gcp.sh                 # Initial GCP setup
+├── clone-uat-to-dev.sh          # Clone UAT DB (and optional uploads) to local dev
 ├── deploy-firebase.sh           # Firebase deployment
 ├── init-firebase.sh             # Firebase initialization
 └── frontend/
@@ -37,6 +38,10 @@ All scripts should be run from the project root directory:
 # Flutter frontend
 ./scripts/frontend/deploy-flutter-uat-macos.sh
 ./scripts/frontend/setup-icon.sh
+
+# Clone UAT data to local dev (DB + optional uploads)
+./scripts/clone-uat-to-dev.sh
+./scripts/clone-uat-to-dev.sh --db-only   # database only
 ```
 
 ## Notes

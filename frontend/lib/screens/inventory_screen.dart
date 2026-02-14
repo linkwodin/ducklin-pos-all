@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/stock_provider.dart';
+import '../providers/notification_bar_provider.dart';
 import '../providers/product_provider.dart';
 import '../providers/language_provider.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
+import 'stocktake_flow_screen.dart';
 import 'package:intl/intl.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -22,6 +24,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String? _errorMessage;
   int? _selectedStoreId;
   List<dynamic> _incomingStock = [];
+  String _searchQuery = '';
+  String _sortBy = 'name'; // name, qty_desc, qty_asc
+  String _stockFilter = 'all'; // all, in_stock, out_of_stock
 
   @override
   void initState() {
@@ -86,11 +91,42 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _isLoadingIncoming = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load incoming stock: $e')),
-        );
+        context.showNotification('Failed to load incoming stock: $e', isError: true);
       }
     }
+  }
+
+  void _openStocktakeMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.wb_sunny_outlined),
+              title: const Text('Day start'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const StocktakeFlowScreen(type: 'day_start')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.nightlight_round_outlined),
+              title: const Text('Day end'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const StocktakeFlowScreen(type: 'day_end')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getProductName(Map<String, dynamic> product, BuildContext context) {
@@ -163,9 +199,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               if (quantity != null && quantity >= 0) {
                 Navigator.pop(context, true);
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a valid quantity')),
-                );
+                context.showNotification('Please enter a valid quantity', isError: true);
               }
             },
             child: const Text('Update'),
@@ -191,16 +225,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
         if (mounted) {
           final l10n = AppLocalizations.of(context)!;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.stockUpdatedSuccessfully)),
-          );
+          context.showNotification(l10n.stockUpdatedSuccessfully, isSuccess: true);
         }
       } catch (e) {
         if (mounted) {
           final l10n = AppLocalizations.of(context)!;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.failedToUpdateStock(e.toString()))),
-          );
+          context.showNotification(l10n.failedToUpdateStock(e.toString()), isError: true);
         }
       }
     }
@@ -235,15 +265,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
         await _loadIncomingStock();
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.stockReceiptConfirmed)),
-          );
+          context.showNotification(l10n.stockReceiptConfirmed, isSuccess: true);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.failedToConfirmReceipt(e.toString()))),
-          );
+          context.showNotification(l10n.failedToConfirmReceipt(e.toString()), isError: true);
         }
       }
     }
@@ -302,58 +328,186 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       Expanded(
                         child: TabBarView(
                           children: [
-                            // Current Stock Tab - Show all products including those with 0 stock
+                            // Current Stock Tab - Show all products including those with 0 stock,
+                            // with search, sort, and filter controls.
                             productProvider.products.isEmpty
                                 ? Center(
                                     child: Text(l10n.noProductsAvailable),
                                   )
-                                : ListView.builder(
-                                    itemCount: productProvider.products.length,
-                                    itemBuilder: (context, index) {
-                                      final product = productProvider.products[index];
-                                      final productId = product['id'] as int;
-                                      final storeId = _selectedStoreId ?? 1;
-
-                                      // Get stock quantity for this product, default to 0 if not found
-                                      double quantity = 0.0;
-                                      final stockKey = '${productId}_$storeId';
-                                      if (stockProvider.stock.containsKey(stockKey)) {
-                                        quantity = (stockProvider.stock[stockKey]!['quantity'] as num).toDouble();
-                                      }
-
-                                      final productName = _getProductName(product, context);
-                                      final isZeroStock = quantity == 0.0;
-
-                                      return ListTile(
-                                        title: Text(productName),
-                                        subtitle: Text(l10n.storeID(storeId)),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
+                                : Column(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                                        child: Row(
                                           children: [
-                                            Text(
-                                              l10n.qty(quantity.toStringAsFixed(2)),
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: isZeroStock ? Colors.red : Colors.black,
+                                            // Search by product name
+                                            Expanded(
+                                              child: TextField(
+                                                decoration: InputDecoration(
+                                                  isDense: true,
+                                                  prefixIcon: const Icon(Icons.search),
+                                                  border: const OutlineInputBorder(),
+                                                  hintText: l10n.searchProducts,
+                                                ),
+                                                onChanged: (value) {
+                                                  setState(() {
+                                                    _searchQuery = value.trim();
+                                                  });
+                                                },
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            IconButton(
-                                              icon: const Icon(Icons.edit),
-                                              onPressed: () => _updateStock(
-                                                productId,
-                                                storeId,
-                                                quantity,
-                                                productName,
-                                              ),
-                                              tooltip: 'Update Stock',
+                                            // Sort menu
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Sort',
+                                              icon: const Icon(Icons.sort),
+                                              onSelected: (value) {
+                                                setState(() {
+                                                  _sortBy = value;
+                                                });
+                                              },
+                                              itemBuilder: (context) => [
+                                                const PopupMenuItem(
+                                                  value: 'name',
+                                                  child: Text('Name (A–Z)'),
+                                                ),
+                                                const PopupMenuItem(
+                                                  value: 'qty_desc',
+                                                  child: Text('Quantity (High → Low)'),
+                                                ),
+                                                const PopupMenuItem(
+                                                  value: 'qty_asc',
+                                                  child: Text('Quantity (Low → High)'),
+                                                ),
+                                              ],
+                                            ),
+                                            // Filter menu
+                                            PopupMenuButton<String>(
+                                              tooltip: 'Filter',
+                                              icon: const Icon(Icons.filter_alt),
+                                              onSelected: (value) {
+                                                setState(() {
+                                                  _stockFilter = value;
+                                                });
+                                              },
+                                              itemBuilder: (context) => const [
+                                                PopupMenuItem(
+                                                  value: 'all',
+                                                  child: Text('All'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'in_stock',
+                                                  child: Text('In stock (> 0)'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'out_of_stock',
+                                                  child: Text('Out of stock (0 only)'),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                        tileColor: isZeroStock ? Colors.red[50] : null,
-                                      );
-                                    },
+                                      ),
+                                      const Divider(height: 1),
+                                      Expanded(
+                                        child: Builder(
+                                          builder: (context) {
+                                            final storeId = _selectedStoreId ?? 1;
+
+                                            // Build list with quantities
+                                            final List<Map<String, dynamic>> productsWithStock = [];
+                                            for (final product in productProvider.products) {
+                                              final productId = product['id'] as int;
+                                              final stockKey = '${productId}_$storeId';
+                                              double quantity = 0.0;
+                                              if (stockProvider.stock.containsKey(stockKey)) {
+                                                quantity = (stockProvider.stock[stockKey]!['quantity'] as num).toDouble();
+                                              }
+                                              final name = _getProductName(product, context);
+                                              productsWithStock.add({
+                                                'product': product,
+                                                'name': name,
+                                                'quantity': quantity,
+                                              });
+                                            }
+
+                                            // Apply search filter
+                                            var visible = productsWithStock.where((item) {
+                                              final name = (item['name'] as String).toLowerCase();
+                                              final q = _searchQuery.toLowerCase();
+                                              if (q.isNotEmpty && !name.contains(q)) {
+                                                return false;
+                                              }
+                                              final qty = (item['quantity'] as double);
+                                              if (_stockFilter == 'in_stock' && qty <= 0) return false;
+                                              if (_stockFilter == 'out_of_stock' && qty != 0) return false;
+                                              return true;
+                                            }).toList();
+
+                                            // Sort
+                                            visible.sort((a, b) {
+                                              if (_sortBy == 'qty_desc' || _sortBy == 'qty_asc') {
+                                                final qa = (a['quantity'] as double);
+                                                final qb = (b['quantity'] as double);
+                                                final cmp = qa.compareTo(qb);
+                                                return _sortBy == 'qty_desc' ? -cmp : cmp;
+                                              }
+                                              final na = (a['name'] as String).toLowerCase();
+                                              final nb = (b['name'] as String).toLowerCase();
+                                              return na.compareTo(nb);
+                                            });
+
+                                            if (visible.isEmpty) {
+                                              return Center(
+                                                child: Text(l10n.noProductsAvailable),
+                                              );
+                                            }
+
+                                            return ListView.builder(
+                                              itemCount: visible.length,
+                                              itemBuilder: (context, index) {
+                                                final item = visible[index];
+                                                final product = item['product'] as Map<String, dynamic>;
+                                                final productId = product['id'] as int;
+                                                final productName = item['name'] as String;
+                                                final quantity = item['quantity'] as double;
+                                                final isZeroStock = quantity == 0.0;
+
+                                                return ListTile(
+                                                  title: Text(productName),
+                                                  subtitle: Text(l10n.storeID(storeId)),
+                                                  trailing: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        l10n.qty(quantity.toStringAsFixed(2)),
+                                                        style: TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: isZeroStock ? Colors.red : Colors.black,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      IconButton(
+                                                        icon: const Icon(Icons.edit),
+                                                        onPressed: () => _updateStock(
+                                                          productId,
+                                                          storeId,
+                                                          quantity,
+                                                          productName,
+                                                        ),
+                                                        tooltip: 'Update Stock',
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  tileColor: isZeroStock ? Colors.red[50] : null,
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
                                   ),
                             // Incoming Stock Tab
                             _isLoadingIncoming
@@ -444,6 +598,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ],
                   ),
                 ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openStocktakeMenu,
+        tooltip: 'Stocktake',
+        child: const Icon(Icons.checklist),
+      ),
     );
   }
 }
+

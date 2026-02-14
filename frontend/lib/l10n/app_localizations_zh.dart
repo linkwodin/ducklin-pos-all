@@ -81,6 +81,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncing => '同步中...';
 
   @override
+  String get syncScreenTitle => '同步';
+
+  @override
+  String get syncPendingOrders => '待同步訂單';
+
+  @override
+  String get syncPendingStocktakes => '待同步盤點';
+
+  @override
+  String get syncNoPendingItems => '沒有待同步項目，所有資料已同步。';
+
+  @override
+  String get fullSyncTitle => '完整同步';
+
+  @override
+  String get fullSyncUsers => '同步使用者';
+
+  @override
+  String get fullSyncProducts => '同步產品';
+
+  @override
+  String get fullSyncProductImages => '同步產品圖片';
+
+  @override
+  String get fullSyncOrders => '同步訂單';
+
+  @override
+  String get fullSyncInventory => '同步庫存';
+
+  @override
   String get loginWithUsernamePassword => '使用使用者名稱/密碼登入';
 
   @override
@@ -266,6 +296,75 @@ class AppLocalizationsZh extends AppLocalizations {
   String get reportsComingSoon => '報表（即將推出）';
 
   @override
+  String get reportToday => '今日銷售';
+
+  @override
+  String get reportTotalSales => '總銷售額';
+
+  @override
+  String get reportSoldProducts => '已售商品';
+
+  @override
+  String get reportLoading => '載入報表中...';
+
+  @override
+  String get reportError => '無法載入報表';
+
+  @override
+  String get reportNoSalesToday => '今日無銷售';
+
+  @override
+  String get reportQuantity => '數量';
+
+  @override
+  String get reportRevenue => '收入';
+
+  @override
+  String get reportTodayCommission => '今日佣金';
+
+  @override
+  String get stocktakeDiscrepancyTitle => '庫存差異';
+
+  @override
+  String get stocktakeDiscrepancyMessage => '以下項目與系統記錄不符，請填寫調整原因。';
+
+  @override
+  String get stocktakeReasonHint => '原因';
+
+  @override
+  String get stocktakeRemarkHint => '備註';
+
+  @override
+  String get stocktakeSavedOffline => '盤點已儲存於本機，上線後將同步。';
+
+  @override
+  String get stocktakeDayStartTitle => '開市盤點';
+
+  @override
+  String get stocktakeDayStartMessage => '請在每日首次登入時進行開市盤點。';
+
+  @override
+  String get stocktakeDayEndTitle => '收市盤點';
+
+  @override
+  String get stocktakeDayEndMessage => '請在登出前進行收市盤點。';
+
+  @override
+  String get stocktakeDoIt => '進行盤點';
+
+  @override
+  String get stocktakeSkip => '略過';
+
+  @override
+  String get stocktakeSkipReasonHint => '略過原因（必填）';
+
+  @override
+  String get stocktakeSkippedNotificationShort => '已略過盤點';
+
+  @override
+  String get stocktakePendingMessage => '今日尚未完成開市盤點，點擊開啟。';
+
+  @override
   String get all => '全部';
 
   @override
@@ -319,7 +418,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get processPayment => '處理付款';
 
   @override
-  String get orderReceipt => '訂單收據';
+  String get orderReceipt => 'Order Receipt';
 
   @override
   String get print => '列印';
@@ -328,10 +427,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get printInternalAuditNote => 'Print Audit Note';
 
   @override
-  String get printInvoice => 'Print Invoice';
+  String get printInvoice => 'Order Clip (Loon Fung copy)';
 
   @override
-  String get printCustomerReceipt => 'Print receipt';
+  String get printCustomerCounterfoil => 'Order Clip (Ducklin copy)';
+
+  @override
+  String get printCustomerReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get printAll => 'Print All';
@@ -475,6 +577,67 @@ class AppLocalizationsZh extends AppLocalizations {
   String get confirmPickup => 'Confirm Pickup';
 
   @override
+  String get ok => 'OK';
+
+  @override
+  String get orderNumberLabel => 'Order number';
+
+  @override
+  String get tapToEnterOrderNumber => 'Tap to enter order number';
+
+  @override
+  String get editOrderNumber => 'Edit order number';
+
+  @override
+  String get pickupInvoice => 'Invoice';
+
+  @override
+  String get pickupReceipt => 'Receipt';
+
+  @override
+  String get invoiceCheckCodeLabel => 'Invoice check code';
+
+  @override
+  String get receiptCheckCodeLabel => 'Receipt check code';
+
+  @override
+  String get tapToSetInvoiceCheckCode => 'Tap to set invoice check code';
+
+  @override
+  String get tapToSetReceiptCheckCode => 'Tap to set receipt check code';
+
+  @override
+  String orderPickedUp(String number) {
+    return 'Order #$number picked up';
+  }
+
+  @override
+  String get alreadyPickedUp => 'Already picked up';
+
+  @override
+  String scanOtherQRFromOrder(String type) {
+    return 'Scan the $type QR from this order';
+  }
+
+  @override
+  String get orderNumbersDontMatch =>
+      'Order numbers don\'t match. Scan both QRs from the same order.';
+
+  @override
+  String get invalidQRFormatInvoice =>
+      'Invoice QR code should contain |. Please enter check code manually or scan again.';
+
+  @override
+  String get invalidQRFormatReceipt =>
+      'Receipt QR code should contain |. Please enter check code manually or scan again.';
+
+  @override
+  String get useKeyboardInput => 'Use Keyboard Input';
+
+  @override
+  String get useCameraScanner => 'Use Camera Scanner';
+
+  @override
   String get cancelOrder => 'Cancel Order';
 
   @override
@@ -552,6 +715,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updatePIN => 'Update PIN';
+
+  @override
+  String get configureDevice => '設定裝置';
+
+  @override
+  String get deviceId => '裝置 ID';
+
+  @override
+  String get copyDeviceId => '複製';
+
+  @override
+  String get deviceIdCopied => '裝置 ID 已複製到剪貼簿';
+
+  @override
+  String get addDeviceToStore => '將裝置加入商店';
+
+  @override
+  String get selectStore => '選擇商店';
+
+  @override
+  String get saveDeviceStore => '儲存';
+
+  @override
+  String get deviceConfiguredSuccessfully => '裝置已成功設定';
+
+  @override
+  String get onlyManagementCanConfigure => '僅管理員可設定裝置。';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -629,6 +819,36 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get syncing => '同步中...';
+
+  @override
+  String get syncScreenTitle => '同步';
+
+  @override
+  String get syncPendingOrders => '待同步订单';
+
+  @override
+  String get syncPendingStocktakes => '待同步盘点';
+
+  @override
+  String get syncNoPendingItems => '没有待同步项目，所有数据已同步。';
+
+  @override
+  String get fullSyncTitle => '完整同步';
+
+  @override
+  String get fullSyncUsers => '同步用户';
+
+  @override
+  String get fullSyncProducts => '同步产品';
+
+  @override
+  String get fullSyncProductImages => '同步产品图片';
+
+  @override
+  String get fullSyncOrders => '同步订单';
+
+  @override
+  String get fullSyncInventory => '同步库存';
 
   @override
   String get loginWithUsernamePassword => '使用用户名/密码登录';
@@ -811,6 +1031,48 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get reportsComingSoon => '报表（即将推出）';
 
   @override
+  String get reportToday => '今日销售';
+
+  @override
+  String get reportTotalSales => '总销售额';
+
+  @override
+  String get reportSoldProducts => '已售商品';
+
+  @override
+  String get reportLoading => '加载报表中...';
+
+  @override
+  String get reportError => '无法加载报表';
+
+  @override
+  String get reportNoSalesToday => '今日无销售';
+
+  @override
+  String get reportQuantity => '数量';
+
+  @override
+  String get reportRevenue => '收入';
+
+  @override
+  String get reportTodayCommission => '今日佣金';
+
+  @override
+  String get stocktakeDiscrepancyTitle => '库存差异';
+
+  @override
+  String get stocktakeDiscrepancyMessage => '以下项目与系统记录不符，请填写调整原因。';
+
+  @override
+  String get stocktakeReasonHint => '原因';
+
+  @override
+  String get stocktakeRemarkHint => '备注';
+
+  @override
+  String get stocktakeSavedOffline => '盘点已保存到本地，联网后将同步。';
+
+  @override
   String get all => '全部';
 
   @override
@@ -864,7 +1126,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get processPayment => '处理付款';
 
   @override
-  String get orderReceipt => '订单收据';
+  String get orderReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get print => '打印';
@@ -873,10 +1135,13 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get printInternalAuditNote => '打印审计单';
 
   @override
-  String get printInvoice => '打印发票';
+  String get printInvoice => '下單紙 (龍鳳存根)';
 
   @override
-  String get printCustomerReceipt => '打印收据';
+  String get printCustomerCounterfoil => '下單紙 (客戶存根)';
+
+  @override
+  String get printCustomerReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get printAll => '打印全部';
@@ -1018,6 +1283,64 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get confirmPickup => '确认取货';
 
   @override
+  String get ok => '确定';
+
+  @override
+  String get orderNumberLabel => '订单编号';
+
+  @override
+  String get tapToEnterOrderNumber => '点击输入订单编号';
+
+  @override
+  String get editOrderNumber => '编辑订单编号';
+
+  @override
+  String get pickupInvoice => '龙凤下单纸';
+
+  @override
+  String get pickupReceipt => '取货收据';
+
+  @override
+  String get invoiceCheckCodeLabel => '下单纸验证码';
+
+  @override
+  String get receiptCheckCodeLabel => '取货收据验证码';
+
+  @override
+  String get tapToSetInvoiceCheckCode => '点击输入下单纸验证码';
+
+  @override
+  String get tapToSetReceiptCheckCode => '点击输入取货收据验证码';
+
+  @override
+  String orderPickedUp(String number) {
+    return '订单 #$number 已取货';
+  }
+
+  @override
+  String get alreadyPickedUp => '已取货';
+
+  @override
+  String scanOtherQRFromOrder(String type) {
+    return '请扫描此订单的$type QR 码';
+  }
+
+  @override
+  String get orderNumbersDontMatch => '订单编号不符，请扫描同一订单的两张 QR 码。';
+
+  @override
+  String get invalidQRFormatInvoice => '下单纸 QR 码应包含 |，请手动输入验证码或重新扫描。';
+
+  @override
+  String get invalidQRFormatReceipt => '取货收据 QR 码应包含 |，请手动输入验证码或重新扫描。';
+
+  @override
+  String get useKeyboardInput => '使用键盘输入';
+
+  @override
+  String get useCameraScanner => '使用相机扫描';
+
+  @override
   String get cancelOrder => '取消订单';
 
   @override
@@ -1094,6 +1417,33 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get updatePIN => '更新 PIN';
+
+  @override
+  String get configureDevice => '配置设备';
+
+  @override
+  String get deviceId => '设备 ID';
+
+  @override
+  String get copyDeviceId => '复制';
+
+  @override
+  String get deviceIdCopied => '设备 ID 已复制到剪贴板';
+
+  @override
+  String get addDeviceToStore => '将设备加入门店';
+
+  @override
+  String get selectStore => '选择门店';
+
+  @override
+  String get saveDeviceStore => '保存';
+
+  @override
+  String get deviceConfiguredSuccessfully => '设备配置成功';
+
+  @override
+  String get onlyManagementCanConfigure => '仅管理员可配置设备。';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -1171,6 +1521,36 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get syncing => '同步中...';
+
+  @override
+  String get syncScreenTitle => '同步';
+
+  @override
+  String get syncPendingOrders => '待同步訂單';
+
+  @override
+  String get syncPendingStocktakes => '待同步盤點';
+
+  @override
+  String get syncNoPendingItems => '沒有待同步項目，所有資料已同步。';
+
+  @override
+  String get fullSyncTitle => '完整同步';
+
+  @override
+  String get fullSyncUsers => '同步使用者';
+
+  @override
+  String get fullSyncProducts => '同步產品';
+
+  @override
+  String get fullSyncProductImages => '同步產品圖片';
+
+  @override
+  String get fullSyncOrders => '同步訂單';
+
+  @override
+  String get fullSyncInventory => '同步庫存';
 
   @override
   String get loginWithUsernamePassword => '使用使用者名稱/密碼登入';
@@ -1353,6 +1733,48 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get reportsComingSoon => '報表（即將推出）';
 
   @override
+  String get reportToday => '今日銷售';
+
+  @override
+  String get reportTotalSales => '總銷售額';
+
+  @override
+  String get reportSoldProducts => '已售商品';
+
+  @override
+  String get reportLoading => '載入報表中...';
+
+  @override
+  String get reportError => '無法載入報表';
+
+  @override
+  String get reportNoSalesToday => '今日無銷售';
+
+  @override
+  String get reportQuantity => '數量';
+
+  @override
+  String get reportRevenue => '收入';
+
+  @override
+  String get reportTodayCommission => '今日佣金';
+
+  @override
+  String get stocktakeDiscrepancyTitle => '庫存差異';
+
+  @override
+  String get stocktakeDiscrepancyMessage => '以下項目與系統記錄不符，請填寫調整原因。';
+
+  @override
+  String get stocktakeReasonHint => '原因';
+
+  @override
+  String get stocktakeRemarkHint => '備註';
+
+  @override
+  String get stocktakeSavedOffline => '盤點已儲存於本機，上線後將同步。';
+
+  @override
   String get all => '全部';
 
   @override
@@ -1406,7 +1828,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get processPayment => '處理付款';
 
   @override
-  String get orderReceipt => '訂單收據';
+  String get orderReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get print => '列印';
@@ -1415,10 +1837,13 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get printInternalAuditNote => '列印審計單';
 
   @override
-  String get printInvoice => '列印發票';
+  String get printInvoice => '下單紙 (龍鳳存根)';
 
   @override
-  String get printCustomerReceipt => '列印收據';
+  String get printCustomerCounterfoil => '下單紙 (客戶存根)';
+
+  @override
+  String get printCustomerReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get printAll => '列印全部';
@@ -1560,6 +1985,64 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get confirmPickup => '確認取貨';
 
   @override
+  String get ok => '確定';
+
+  @override
+  String get orderNumberLabel => '訂單編號';
+
+  @override
+  String get tapToEnterOrderNumber => '點擊輸入訂單編號';
+
+  @override
+  String get editOrderNumber => '編輯訂單編號';
+
+  @override
+  String get pickupInvoice => '龍鳳下單紙';
+
+  @override
+  String get pickupReceipt => '取貨收據';
+
+  @override
+  String get invoiceCheckCodeLabel => '下單紙驗證碼';
+
+  @override
+  String get receiptCheckCodeLabel => '取貨收據驗證碼';
+
+  @override
+  String get tapToSetInvoiceCheckCode => '點擊輸入下單紙驗證碼';
+
+  @override
+  String get tapToSetReceiptCheckCode => '點擊輸入取貨收據驗證碼';
+
+  @override
+  String orderPickedUp(String number) {
+    return '訂單 #$number 已取貨';
+  }
+
+  @override
+  String get alreadyPickedUp => '已取貨';
+
+  @override
+  String scanOtherQRFromOrder(String type) {
+    return '請掃描此訂單的$type QR 碼';
+  }
+
+  @override
+  String get orderNumbersDontMatch => '訂單編號不符，請掃描同一訂單的兩張 QR 碼。';
+
+  @override
+  String get invalidQRFormatInvoice => '下單紙 QR 碼應包含 |，請手動輸入驗證碼或重新掃描。';
+
+  @override
+  String get invalidQRFormatReceipt => '取貨收據 QR 碼應包含 |，請手動輸入驗證碼或重新掃描。';
+
+  @override
+  String get useKeyboardInput => '使用鍵盤輸入';
+
+  @override
+  String get useCameraScanner => '使用相機掃描';
+
+  @override
   String get cancelOrder => '取消訂單';
 
   @override
@@ -1636,4 +2119,31 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get updatePIN => '更新 PIN';
+
+  @override
+  String get configureDevice => '設定裝置';
+
+  @override
+  String get deviceId => '裝置 ID';
+
+  @override
+  String get copyDeviceId => '複製';
+
+  @override
+  String get deviceIdCopied => '裝置 ID 已複製到剪貼簿';
+
+  @override
+  String get addDeviceToStore => '將裝置加入商店';
+
+  @override
+  String get selectStore => '選擇商店';
+
+  @override
+  String get saveDeviceStore => '儲存';
+
+  @override
+  String get deviceConfiguredSuccessfully => '裝置已成功設定';
+
+  @override
+  String get onlyManagementCanConfigure => '僅管理員可設定裝置。';
 }

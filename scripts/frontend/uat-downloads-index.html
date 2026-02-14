@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POS System - UAT Downloads</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.5rem; }
+    section { margin: 1.5rem 0; padding: 1rem; background: #f5f5f5; border-radius: 8px; }
+    h2 { margin-top: 0; font-size: 1.1rem; }
+    a.download { display: inline-block; margin: 0.5rem 0; padding: 0.5rem 1rem; background: #1976d2; color: white; text-decoration: none; border-radius: 4px; }
+    a.download:hover { background: #1565c0; }
+    .meta { font-size: 0.875rem; color: #666; margin-top: 0.5rem; }
+    code { background: #eee; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+    ul { margin: 0.5rem 0; padding-left: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>POS System - UAT Environment</h1>
+  <p>Download the application for testing.</p>
+
+  <section>
+    <h2>macOS</h2>
+    <a class="download" href="pos-system-uat-macos-latest.zip">Download Latest macOS App</a>
+    <p class="meta">Version: 1.0.0 | API: https://pos-backend-28040503481.europe-west1.run.app/api/v1</p>
+    <p>Download the ZIP, extract it, and drag the app to Applications. If macOS blocks it, right-click the app → Open, or allow in System Settings → Privacy &amp; Security.</p>
+  </section>
+
+  <section>
+    <h2>Windows</h2>
+    <a class="download" href="pos-system-uat-windows-latest.zip">Download Latest Windows App</a>
+    <p class="meta">Version: 1.0.0 | API: https://pos-backend-28040503481.europe-west1.run.app/api/v1</p>
+    <p>Download the ZIP, extract it, and run the executable inside the folder.</p>
+  </section>
+
+  <section>
+    <h2>Android</h2>
+    <p class="meta">API: https://pos-backend-28040503481.europe-west1.run.app/api/v1</p>
+    <p>Android builds are not yet published here. To build locally:</p>
+    <pre><code>cd frontend
+flutter build apk --release \
+  --dart-define=ENV=uat \
+  --dart-define=API_BASE_URL="https://pos-backend-28040503481.europe-west1.run.app/api/v1"</code></pre>
+    <p>Output: <code>build/app/outputs/flutter-apk/app-release.apk</code></p>
+  </section>
+
+  <section>
+    <h2>iOS</h2>
+    <p>iOS builds require code signing. Contact administrator for TestFlight or signed builds.</p>
+  </section>
+</body>
+</html>

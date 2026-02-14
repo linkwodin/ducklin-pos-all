@@ -23,12 +23,23 @@ class ProductProvider with ChangeNotifier {
 
       // Fetch from API
       final products = await ApiService.instance.getProductsForDevice(deviceCode);
+      final productList = products.cast<Map<String, dynamic>>();
+
+      // Remove local products that no longer exist on the server
+      try {
+        final ids = productList
+            .map((p) => p['id'])
+            .where((x) => x != null)
+            .map((x) => x is int ? x : (x as num).toInt())
+            .toList();
+        await DatabaseService.instance.deleteProductsNotInIds(ids);
+      } catch (e) {
+        debugPrint('Error removing obsolete products: $e');
+      }
 
       // Save to local database
       try {
-        await DatabaseService.instance.saveProducts(
-          products.cast<Map<String, dynamic>>(),
-        );
+        await DatabaseService.instance.saveProducts(productList);
       } catch (saveError) {
         debugPrint('Error saving products to database: $saveError');
         rethrow; // Re-throw to be caught by outer catch

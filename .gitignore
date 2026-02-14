@@ -58,3 +58,14 @@ go.work
 *.tmp
 *.temp
 
+pos-system-uat-macos-1.0.0-20260206-234158.zip
+pos-system-uat-macos-1.0.0-20260207-004214.zip
+pos-system-uat-macos-1.0.0-20260207-021010.zip
+pos-system-uat-macos-1.0.0-20260208-012320.zip
+pos-system-uat-macos-1.0.0-20260213-133558.zip
+pos_system_uat_20260212_000424.sql
+pos_system_uat_20260212_000430.sql
+pos_system_uat_20260212_000439.sql
+pos_system_uat_20260212_000647.sql
+pos_system_uat_20260212_000656.sql
+PRODUCTION_CLONE.md

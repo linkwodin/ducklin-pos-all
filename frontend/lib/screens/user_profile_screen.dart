@@ -11,6 +11,7 @@ import 'package:pos_system/l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../providers/auth_provider.dart';
+import '../providers/notification_bar_provider.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -91,9 +92,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     if (_newPinController.text != _confirmPinController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.pinMismatch ?? 'PINs do not match')),
-      );
+      context.showNotification(AppLocalizations.of(context)!.pinMismatch ?? 'PINs do not match', isError: true);
       return;
     }
 
@@ -109,17 +108,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         );
       }
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.pinUpdated ?? 'PIN updated successfully')),
-      );
+      context.showNotification(AppLocalizations.of(context)!.pinUpdated ?? 'PIN updated successfully', isSuccess: true);
       _currentPinController.clear();
       _newPinController.clear();
       _confirmPinController.clear();
       await _loadUser();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      context.showNotification(e.toString(), isError: true);
     } finally {
       setState(() => _saving = false);
     }
@@ -183,18 +178,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         _iconRefreshKey++;
       });
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.iconUpdated ?? 'Icon updated successfully')),
-      );
+      context.showNotification(AppLocalizations.of(context)!.iconUpdated ?? 'Icon updated successfully', isSuccess: true);
       // Keep dialog open to show the updated icon from server
       setState(() {
         _selectedImage = null; // Clear local file selection so server version shows
       });
     } catch (e) {
       print('Error updating icon: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      context.showNotification(e.toString(), isError: true);
     } finally {
       setState(() => _saving = false);
     }
@@ -211,12 +202,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       print('Syncing users from server after icon update...');
       // Fetch users from API
       final users = await ApiService.instance.getUsersForDevice(deviceCode);
-      
+      final userList = users.cast<Map<String, dynamic>>();
+
+      // Remove local users that no longer exist on the server
+      try {
+        final ids = userList
+            .map((u) => u['id'])
+            .where((x) => x != null)
+            .map((x) => x is int ? x : (x as num).toInt())
+            .toList();
+        await DatabaseService.instance.deleteUsersNotInIds(ids);
+      } catch (e) {
+        print('Error removing obsolete users: $e');
+      }
+
       // Save to local database (this will update all users including the one with new icon)
-      if (users.isNotEmpty) {
-        await DatabaseService.instance.saveUsers(
-          users.cast<Map<String, dynamic>>(),
-        );
+      if (userList.isNotEmpty) {
+        await DatabaseService.instance.saveUsers(userList);
         print('Users synced successfully after icon update');
       }
     } catch (e) {

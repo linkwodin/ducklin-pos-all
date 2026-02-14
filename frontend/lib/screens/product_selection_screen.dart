@@ -5,11 +5,15 @@ import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/product_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/language_provider.dart';
+import '../widgets/cached_product_image.dart';
 import 'barcode_scanner_screen.dart';
 import 'weight_input_dialog.dart';
 
 class ProductSelectionScreen extends StatefulWidget {
-  const ProductSelectionScreen({super.key});
+  /// When user scans an invoice/receipt QR (ORDER|CHECK|invoice or ORDER|CHECK|receipt), call this instead of treating as product barcode.
+  final void Function(Map<String, String>)? onInvoiceReceiptQRScanned;
+
+  const ProductSelectionScreen({super.key, this.onInvoiceReceiptQRScanned});
 
   @override
   State<ProductSelectionScreen> createState() => _ProductSelectionScreenState();
@@ -26,6 +30,15 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   String? _notificationMessage;
   bool _suppressSearchAutofocus = false; // Disable auto-focus while dialogs (e.g. weight) are open
 
+  /// Only request focus when this screen's route is on top (not when stocktake/skip reason etc. is pushed).
+  bool _isCurrentRoute(BuildContext ctx) => ModalRoute.of(ctx)?.isCurrent ?? false;
+
+  void _requestSearchFocusIfCurrent() {
+    if (!mounted || _suppressSearchAutofocus || _searchFocusNode.hasFocus) return;
+    if (!_isCurrentRoute(context)) return;
+    _searchFocusNode.requestFocus();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -33,18 +46,14 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final productProvider = Provider.of<ProductProvider>(context, listen: false);
       productProvider.loadProducts();
-      // Auto-focus the search field (only if not suppressed)
-      if (!_suppressSearchAutofocus) {
-        _searchFocusNode.requestFocus();
-      }
+      _requestSearchFocusIfCurrent();
     });
-    
-    // Listen for focus changes and refocus if lost (unless suppressed)
+
+    // Listen for focus changes and refocus if lost (unless suppressed or another route is on top)
     _searchFocusNode.addListener(() {
       if (!_suppressSearchAutofocus && !_searchFocusNode.hasFocus && mounted) {
-        // Use a small delay to allow other UI interactions to complete
         Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted && !_suppressSearchAutofocus && !_searchFocusNode.hasFocus) {
+          if (mounted && !_suppressSearchAutofocus && !_searchFocusNode.hasFocus && _isCurrentRoute(context)) {
             _searchFocusNode.requestFocus();
           }
         });
@@ -61,7 +70,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       _suppressSearchAutofocus = !enabled;
     });
     if (enabled) {
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusIfCurrent();
     } else {
       _searchFocusNode.unfocus();
     }
@@ -91,9 +100,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
 
     return GestureDetector(
       onTap: () {
-        // Refocus the search field when tapping anywhere on the screen,
-        // but only when auto-focus is not suppressed (e.g. no dialogs open).
-        if (!_suppressSearchAutofocus && !_searchFocusNode.hasFocus) {
+        if (!_suppressSearchAutofocus && !_searchFocusNode.hasFocus && _isCurrentRoute(context)) {
           _searchFocusNode.requestFocus();
         }
       },
@@ -124,7 +131,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
-                            _searchFocusNode.requestFocus();
+                            _requestSearchFocusIfCurrent();
                           },
                         ),
                       IconButton(
@@ -145,9 +152,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                   // When Enter is pressed, check if it's an exact barcode match
                   if (value.isNotEmpty) {
                     await _handleBarcodeEnter(value, orderProvider);
-                    // Refocus after handling barcode (only if not suppressed)
                     if (!_suppressSearchAutofocus) {
-                      _searchFocusNode.requestFocus();
+                      _requestSearchFocusIfCurrent();
                     }
                   } else {
                     setState(() => _searchQuery = value);
@@ -213,7 +219,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           itemCount: products.length,
                           itemBuilder: (context, index) {
                             final product = products[index];
-                            return _buildProductListItem(product, orderProvider);
+                            final productId = product['id'] ?? index;
+                            return KeyedSubtree(
+                              key: ValueKey('product_$productId'),
+                              child: _buildProductListItem(product, orderProvider),
+                            );
                           },
                         )
                       : GridView.builder(
@@ -227,7 +237,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                           itemCount: products.length,
                           itemBuilder: (context, index) {
                             final product = products[index];
-                            return _buildProductCard(product, orderProvider);
+                            final productId = product['id'] ?? index;
+                            return KeyedSubtree(
+                              key: ValueKey('product_$productId'),
+                              child: _buildProductCard(product, orderProvider),
+                            );
                           },
                         ),
         ),
@@ -289,8 +303,8 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     setState(() {
       _notificationMessage = message;
     });
-    // Auto-hide after 2 seconds
-    Future.delayed(const Duration(seconds: 2), () {
+    // Auto-hide after 10 seconds (close button also available)
+    Future.delayed(const Duration(seconds: 10), () {
       if (mounted) {
         setState(() {
           _notificationMessage = null;
@@ -398,7 +412,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     );
   }
 
-  /// Build product image, falling back to a '?' placeholder when URL is missing/empty/invalid.
+  /// Build product image from cache (downloads once per URL, no re-download when URL unchanged).
   Widget _buildProductImagePlaceholder(
     dynamic imageUrl, {
     double size = 32,
@@ -408,7 +422,6 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     final double containerSize = boxSize ?? (size + 8);
 
     if (url.isEmpty) {
-      // No image URL – show '?' placeholder
       return Container(
         width: containerSize,
         height: containerSize,
@@ -426,29 +439,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       );
     }
 
-    // Valid-looking URL – try to load image, but on error fall back to '?'
-    return Image.network(
-      url,
+    return CachedProductImage(
+      imageUrl: url,
       width: containerSize,
       height: containerSize,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) {
-        return Container(
-          width: containerSize,
-          height: containerSize,
-          color: Colors.grey[200],
-          child: Center(
-            child: Text(
-              '?',
-              style: TextStyle(
-                fontSize: size,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[700],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -519,14 +514,12 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       if (weight != null && weight > 0) {
         final l10n = AppLocalizations.of(context)!;
         orderProvider.addToCart(product, weight: weight, message: l10n.addedWeightToCart(weight));
-        // Refocus the search field after adding product
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusIfCurrent();
       }
     } else {
       final l10n = AppLocalizations.of(context)!;
       orderProvider.addToCart(product, quantity: 1, message: l10n.addedToCart);
-      // Refocus the search field after adding product
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusIfCurrent();
     }
   }
 
@@ -540,6 +533,30 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     String barcode,
     OrderProvider orderProvider,
   ) async {
+    // If barcode is invoice/receipt QR (ORDER_NUMBER|CHECK_CODE|invoice or |receipt), hand off to order pickup
+    final normalized = barcode.replaceAll('｜', '|').trim();
+    if (normalized.contains('|')) {
+      final parts = normalized.split('|');
+      if (parts.length >= 2) {
+        final orderNumber = parts[0].trim();
+        final checkCode = parts[1].trim();
+        final typeRaw = parts.length >= 3 ? parts[2].trim().toLowerCase() : null;
+        if (orderNumber.isNotEmpty && checkCode.isNotEmpty) {
+          final isInvoiceOrReceipt = typeRaw == null || typeRaw == 'invoice' || typeRaw == 'receipt';
+          if (isInvoiceOrReceipt && widget.onInvoiceReceiptQRScanned != null) {
+            widget.onInvoiceReceiptQRScanned!({
+              'orderNumber': orderNumber,
+              'checkCode': checkCode,
+              'receiptType': typeRaw ?? 'invoice',
+            });
+            _searchController.clear();
+            setState(() => _searchQuery = '');
+            return;
+          }
+        }
+      }
+    }
+
     final l10n = AppLocalizations.of(context)!;
     final productProvider = Provider.of<ProductProvider>(context, listen: false);
     
@@ -561,8 +578,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       // Clear search
       _searchController.clear();
       setState(() => _searchQuery = '');
-      // Refocus the search field for next barcode scan
-      _searchFocusNode.requestFocus();
+      _requestSearchFocusIfCurrent();
       
       // Add to cart with message
       final productName = _getProductName(product, context);
@@ -587,13 +603,11 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
 
         if (weight != null && weight > 0) {
           orderProvider.addToCart(product, weight: weight, message: l10n.productAddedToCart(productName));
-          // Refocus the search field after adding product
-          _searchFocusNode.requestFocus();
+          _requestSearchFocusIfCurrent();
         }
       } else {
         orderProvider.addToCart(product, quantity: 1, message: l10n.productAddedToCart(productName));
-        // Refocus the search field after adding product
-        _searchFocusNode.requestFocus();
+        _requestSearchFocusIfCurrent();
       }
     } else {
       // Not an exact barcode match, treat as search query

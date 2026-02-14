@@ -1,7 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
+import '../providers/notification_bar_provider.dart';
 import '../services/receipt_printer.dart';
 import '../services/receipt_printer_helpers.dart';
 import '../services/api_service.dart';
@@ -53,13 +56,22 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       // Update local database with the latest order data
       await _updateLocalDatabase(orderData);
     } catch (e) {
+      // Offline or API error: try to load from local database
+      try {
+        final localOrder = await DatabaseService.instance.getOrderWithItemsByOrderNumber(orderNumber);
+        if (localOrder != null) {
+          setState(() {
+            _order = localOrder;
+            _isLoading = false;
+          });
+          return;
+        }
+      } catch (_) {}
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading order details: $e')),
-        );
+        context.showNotification('Error loading order details: $e', isError: true);
       }
     }
   }
@@ -84,18 +96,30 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         await _loadOrderDetails();
         _orderUpdated = true;
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order pickup confirmed successfully')),
-        );
+        context.showNotification('Order pickup confirmed successfully', isSuccess: true);
       }
     } catch (e) {
+      // Network lost: update local DB so data is consistent when offline
+      try {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final updated = await DatabaseService.instance.updateOrderStatusByOrderNumber(
+          orderNumber,
+          status: 'completed',
+          pickedUpAtMillis: now,
+        );
+        if (updated && mounted) {
+          await _loadOrderDetails();
+          _orderUpdated = true;
+          setState(() => _isLoading = false);
+          context.showNotification('Pickup recorded locally. Will sync when back online.');
+          return;
+        }
+      } catch (_) {}
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error confirming pickup: $e')),
-        );
+        context.showNotification('Error confirming pickup: $e', isError: true);
       }
     }
   }
@@ -142,18 +166,31 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
         await _loadOrderDetails();
         _orderUpdated = true;
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order cancelled successfully')),
-        );
+        context.showNotification('Order cancelled successfully', isSuccess: true);
       }
     } catch (e) {
+      // Network lost: update local DB so data is consistent when offline
+      final orderNumber = _order!['order_number']?.toString() ?? '';
+      if (orderNumber.isNotEmpty) {
+        try {
+          final updated = await DatabaseService.instance.updateOrderStatusByOrderNumber(
+            orderNumber,
+            status: 'cancelled',
+          );
+          if (updated && mounted) {
+            await _loadOrderDetails();
+            _orderUpdated = true;
+            setState(() => _isLoading = false);
+            context.showNotification('Cancellation recorded locally. Will sync when back online.');
+            return;
+          }
+        } catch (_) {}
+      }
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error cancelling order: $e')),
-        );
+        context.showNotification('Error cancelling order: $e', isError: true);
       }
     }
   }
@@ -191,8 +228,81 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
+  /// Force upload this order to the backend (for offline orders with synced == 0).
+  Future<void> _forceUploadOrder() async {
+    if (_order == null || _isLoading) return;
+
+    final orderNumber = _order!['order_number']?.toString() ?? '';
+    if (orderNumber.isEmpty) return;
+
+    final localOrder = await DatabaseService.instance.getOrderByOrderNumber(orderNumber);
+    if (localOrder == null) return;
+    if ((localOrder['synced'] ?? 1) != 0) {
+      if (mounted) {
+        context.showNotification('Order is already synced');
+      }
+      return;
+    }
+
+    final deviceCode = ApiService.instance.deviceCode;
+    if (deviceCode == null || deviceCode.isEmpty) {
+      if (mounted) {
+        context.showNotification('Device not registered', isError: true);
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final orderId = localOrder['id'] as int;
+      final items = await DatabaseService.instance.getOrderItems(orderId);
+      final createdAt = localOrder['created_at'];
+      final created_at_iso = createdAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(createdAt as int).toUtc().toIso8601String()
+          : null;
+      final orderData = {
+        'store_id': localOrder['store_id'],
+        'device_code': deviceCode,
+        'sector_id': localOrder['sector_id'],
+        'order_number': localOrder['order_number'],
+        if (created_at_iso != null) 'created_at': created_at_iso,
+        'items': items.map((item) => {
+              'product_id': item['product_id'],
+              'quantity': item['quantity'],
+              'unit_type': item['unit_type'] ?? 'quantity',
+            }).toList(),
+      };
+      await ApiService.instance.createOrder(orderData);
+      await DatabaseService.instance.markOrderSynced(orderId);
+
+      if (mounted) {
+        await _loadOrderDetails();
+        _orderUpdated = true;
+        setState(() => _isLoading = false);
+        context.showNotification('Order uploaded successfully', isSuccess: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        String message = 'Upload failed';
+        if (e is DioException && e.response?.data is Map<String, dynamic>) {
+          final error = (e.response!.data as Map<String, dynamic>)['error']?.toString();
+          if (error != null && error.isNotEmpty) {
+            message = 'Upload failed: $error';
+          }
+        } else {
+          message = 'Upload failed: $e';
+        }
+        context.showNotification(message, isError: true);
+      }
+    }
+  }
+
   Future<void> _printReceipt(ReceiptType receiptType) async {
     if (_order == null || _isPrinting) return;
+
+    final notificationProvider = context.read<NotificationBarProvider>();
 
     setState(() {
       _isPrinting = true;
@@ -207,15 +317,11 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Receipt printed successfully')),
-        );
+        notificationProvider.show('Receipt printed successfully', isSuccess: true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error printing receipt: $e')),
-        );
+        notificationProvider.show('Error printing receipt: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -353,6 +459,30 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Force upload for offline (unsynced) orders
+            if ((_order!['synced'] ?? 1) == 0) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isLoading
+                          ? null
+                          : _forceUploadOrder,
+                      icon: const Icon(Icons.cloud_upload),
+                      label: const Text('Force upload'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Action buttons for pending orders
             if (status.toLowerCase() == 'pending')
@@ -529,17 +659,17 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               runSpacing: 12,
               children: [
                 ElevatedButton.icon(
-                  onPressed: _isPrinting ? null : () => _printReceipt(ReceiptType.full),
-                  icon: const Icon(Icons.print),
-                  label: Text(l10n.printInternalAuditNote),
+                  onPressed: _isPrinting ? null : () => _printReceipt(ReceiptType.noPriceWithBarcode),
+                  icon: const Icon(Icons.receipt),
+                  label: Text(l10n.printInvoice),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: _isPrinting ? null : () => _printReceipt(ReceiptType.noPriceWithBarcode),
+                  onPressed: _isPrinting ? null : () => _printReceipt(ReceiptType.customerCounterfoil),
                   icon: const Icon(Icons.receipt),
-                  label: Text(l10n.printInvoice),
+                  label: Text(l10n.printCustomerCounterfoil),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),

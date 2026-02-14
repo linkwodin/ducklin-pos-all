@@ -212,6 +212,8 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 		&models.PriceHistory{},
 		&models.CurrencyRate{},
 		&models.AuditLog{},
+		&models.StocktakeDayStartRecord{},
+		&models.UserActivityEvent{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)

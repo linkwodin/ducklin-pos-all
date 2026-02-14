@@ -98,6 +98,16 @@ export interface Stock {
   store?: Store;
 }
 
+/** One row of the day-start / day-end stock report */
+export interface StockReportRow {
+  product_id: number;
+  product_name: string;
+  store_id: number;
+  store_name: string;
+  day_start_quantity: number;
+  day_end_quantity: number;
+}
+
 export interface RestockOrder {
   id: number;
   store_id: number;
@@ -193,5 +203,32 @@ export interface OrderItem {
   discount_amount: number;
   line_total: number;
   product?: Product;
+}
+
+export interface StocktakeDayStartRecord {
+  id: number;
+  user_id: number;
+  store_id?: number; // store where user did first login / stocktake
+  date: string; // yyyy-MM-dd
+  first_login_at: string;
+  status: 'pending' | 'done' | 'skipped';
+  done_at?: string;
+  skip_reason?: string;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+  store?: Store;
+}
+
+export interface UserActivityEvent {
+  id: number;
+  user_id: number;
+  store_id?: number;
+  event_type: string; // first_login, logout, stocktake_day_start_done, stocktake_day_start_skipped, stocktake_day_end_skipped
+  occurred_at: string;
+  skip_reason?: string;
+  created_at: string;
+  user?: User;
+  store?: Store;
 }
 

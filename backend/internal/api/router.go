@@ -40,6 +40,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	catalogHandler := NewCatalogHandler(db, cfg)
 	currencyHandler := NewCurrencyHandler(db)
 	auditHandler := NewAuditHandler(db)
+	stocktakeHandler := NewStocktakeHandler(db)
 
 	// Public routes
 	public := router.Group("/api/v1")
@@ -49,6 +50,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		public.POST("/device/register", deviceHandler.RegisterDevice)
 		public.GET("/device/:device_code/users", deviceHandler.GetUsersForDevice)
 		public.GET("/device/:device_code/products", deviceHandler.GetProductsForDevice)
+		public.GET("/device/:device_code/info", deviceHandler.GetDeviceInfo)
 	}
 
 	// Protected routes
@@ -84,6 +86,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 		// Stock
 		protected.GET("/stock", stockHandler.ListStock)
+		protected.GET("/stock/report", stockHandler.GetStockReport)
 		protected.GET("/stock/:store_id", stockHandler.GetStoreStock)
 		protected.GET("/stock/low-stock", stockHandler.GetLowStock)
 		protected.GET("/stock/incoming", stockHandler.GetIncomingStock) // Get on-the-way stock
@@ -92,6 +95,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// Audit Logs
 		protected.GET("/audit/stock", auditHandler.GetStockAuditLogs)
 		protected.GET("/audit/order", auditHandler.GetOrderAuditLogs)
+
+		// Stocktake day-start (record first login / done / skipped; list for management)
+		protected.POST("/stocktake-day-start", stocktakeHandler.RecordFirstLoginOrResult)
+		protected.GET("/stocktake-day-start", stocktakeHandler.ListDayStartRecords)
+		// User activity events (for timetable: login, logout, stocktake)
+		protected.GET("/user-activity-events", stocktakeHandler.ListUserActivityEvents)
 
 		// Re-stock Orders
 		protected.GET("/restock-orders", stockHandler.ListRestockOrders)
@@ -122,6 +131,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// Devices (protected endpoints for management)
 		protected.GET("/devices", deviceHandler.ListDevices)
 		protected.GET("/devices/:id", deviceHandler.GetDevice)
+		protected.PUT("/device/configure", deviceHandler.ConfigureDevice) // add or update device store (management only)
 		protected.GET("/stores/:store_id/devices", deviceHandler.ListDevicesByStore)
 
 		// Stores

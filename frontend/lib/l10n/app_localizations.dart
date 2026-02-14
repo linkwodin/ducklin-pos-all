@@ -244,6 +244,66 @@ abstract class AppLocalizations {
   /// **'Syncing...'**
   String get syncing;
 
+  /// Sync screen title
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get syncScreenTitle;
+
+  /// Pending orders label on sync screen
+  ///
+  /// In en, this message translates to:
+  /// **'Pending orders'**
+  String get syncPendingOrders;
+
+  /// Pending stocktakes label on sync screen
+  ///
+  /// In en, this message translates to:
+  /// **'Pending stocktakes'**
+  String get syncPendingStocktakes;
+
+  /// Message when nothing to sync
+  ///
+  /// In en, this message translates to:
+  /// **'No pending items. All data is synced.'**
+  String get syncNoPendingItems;
+
+  /// No description provided for @fullSyncTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Full Sync'**
+  String get fullSyncTitle;
+
+  /// No description provided for @fullSyncUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync users'**
+  String get fullSyncUsers;
+
+  /// No description provided for @fullSyncProducts.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync products'**
+  String get fullSyncProducts;
+
+  /// No description provided for @fullSyncProductImages.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync product images'**
+  String get fullSyncProductImages;
+
+  /// No description provided for @fullSyncOrders.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync orders'**
+  String get fullSyncOrders;
+
+  /// No description provided for @fullSyncInventory.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync inventory'**
+  String get fullSyncInventory;
+
   /// Login with username/password button
   ///
   /// In en, this message translates to:
@@ -562,6 +622,144 @@ abstract class AppLocalizations {
   /// **'Reports (Coming Soon)'**
   String get reportsComingSoon;
 
+  /// Report page title for today
+  ///
+  /// In en, this message translates to:
+  /// **'Today\'s Sales'**
+  String get reportToday;
+
+  /// Total sales label
+  ///
+  /// In en, this message translates to:
+  /// **'Total Sales'**
+  String get reportTotalSales;
+
+  /// Sold products section title
+  ///
+  /// In en, this message translates to:
+  /// **'Sold Products'**
+  String get reportSoldProducts;
+
+  /// Report loading message
+  ///
+  /// In en, this message translates to:
+  /// **'Loading report...'**
+  String get reportLoading;
+
+  /// Report error message
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load report'**
+  String get reportError;
+
+  /// No sales today message
+  ///
+  /// In en, this message translates to:
+  /// **'No sales today'**
+  String get reportNoSalesToday;
+
+  /// Quantity column header
+  ///
+  /// In en, this message translates to:
+  /// **'Qty'**
+  String get reportQuantity;
+
+  /// Revenue column header
+  ///
+  /// In en, this message translates to:
+  /// **'Revenue'**
+  String get reportRevenue;
+
+  /// Today commission label (2% of total sales)
+  ///
+  /// In en, this message translates to:
+  /// **'Today Commission'**
+  String get reportTodayCommission;
+
+  /// Stocktake discrepancy dialog title
+  ///
+  /// In en, this message translates to:
+  /// **'Stock difference'**
+  String get stocktakeDiscrepancyTitle;
+
+  /// Stocktake discrepancy dialog message
+  ///
+  /// In en, this message translates to:
+  /// **'The following items differ from system record. Please provide a reason for the adjustment.'**
+  String get stocktakeDiscrepancyMessage;
+
+  /// Reason field hint for stocktake adjustment
+  ///
+  /// In en, this message translates to:
+  /// **'Reason'**
+  String get stocktakeReasonHint;
+
+  /// Per-product remarks hint in stocktake discrepancy dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Remarks'**
+  String get stocktakeRemarkHint;
+
+  /// Message when stocktake is saved offline
+  ///
+  /// In en, this message translates to:
+  /// **'Stocktake saved locally. Will sync when online.'**
+  String get stocktakeSavedOffline;
+
+  /// No description provided for @stocktakeDayStartTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Day start stocktake'**
+  String get stocktakeDayStartTitle;
+
+  /// No description provided for @stocktakeDayStartMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Please do day start stocktake on first login.'**
+  String get stocktakeDayStartMessage;
+
+  /// No description provided for @stocktakeDayEndTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Day end stocktake'**
+  String get stocktakeDayEndTitle;
+
+  /// No description provided for @stocktakeDayEndMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Please do day end stocktake before logout.'**
+  String get stocktakeDayEndMessage;
+
+  /// No description provided for @stocktakeDoIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Do stocktake'**
+  String get stocktakeDoIt;
+
+  /// No description provided for @stocktakeSkip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get stocktakeSkip;
+
+  /// No description provided for @stocktakeSkipReasonHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason for skipping (required)'**
+  String get stocktakeSkipReasonHint;
+
+  /// No description provided for @stocktakeSkippedNotificationShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Stocktake skipped'**
+  String get stocktakeSkippedNotificationShort;
+
+  /// No description provided for @stocktakePendingMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Day start stocktake required today. Tap to open.'**
+  String get stocktakePendingMessage;
+
   /// All filter option
   ///
   /// In en, this message translates to:
@@ -655,7 +853,7 @@ abstract class AppLocalizations {
   /// Order receipt title
   ///
   /// In en, this message translates to:
-  /// **'Order Receipt'**
+  /// **'貨品細明 Pickup Receipt'**
   String get orderReceipt;
 
   /// Print button
@@ -670,16 +868,22 @@ abstract class AppLocalizations {
   /// **'Print Audit Note'**
   String get printInternalAuditNote;
 
-  /// Print invoice button
+  /// Print Loon Fung counterfoil (order paper) button
   ///
   /// In en, this message translates to:
-  /// **'Print Invoice'**
+  /// **'Order Clip (Loon Fung copy)'**
   String get printInvoice;
 
-  /// Print customer receipt button
+  /// Print customer counterfoil (order paper) button
   ///
   /// In en, this message translates to:
-  /// **'Print receipt'**
+  /// **'Order Clip (Ducklin copy)'**
+  String get printCustomerCounterfoil;
+
+  /// Print pickup receipt button
+  ///
+  /// In en, this message translates to:
+  /// **'貨品細明 Pickup Receipt'**
   String get printCustomerReceipt;
 
   /// Print all receipts button
@@ -958,6 +1162,114 @@ abstract class AppLocalizations {
   /// **'Confirm Pickup'**
   String get confirmPickup;
 
+  /// OK button
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get ok;
+
+  /// No description provided for @orderNumberLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Order number'**
+  String get orderNumberLabel;
+
+  /// No description provided for @tapToEnterOrderNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to enter order number'**
+  String get tapToEnterOrderNumber;
+
+  /// No description provided for @editOrderNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit order number'**
+  String get editOrderNumber;
+
+  /// No description provided for @pickupInvoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Invoice'**
+  String get pickupInvoice;
+
+  /// No description provided for @pickupReceipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt'**
+  String get pickupReceipt;
+
+  /// No description provided for @invoiceCheckCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Invoice check code'**
+  String get invoiceCheckCodeLabel;
+
+  /// No description provided for @receiptCheckCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt check code'**
+  String get receiptCheckCodeLabel;
+
+  /// No description provided for @tapToSetInvoiceCheckCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to set invoice check code'**
+  String get tapToSetInvoiceCheckCode;
+
+  /// No description provided for @tapToSetReceiptCheckCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to set receipt check code'**
+  String get tapToSetReceiptCheckCode;
+
+  /// No description provided for @orderPickedUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Order #{number} picked up'**
+  String orderPickedUp(String number);
+
+  /// No description provided for @alreadyPickedUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Already picked up'**
+  String get alreadyPickedUp;
+
+  /// No description provided for @scanOtherQRFromOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the {type} QR from this order'**
+  String scanOtherQRFromOrder(String type);
+
+  /// No description provided for @orderNumbersDontMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Order numbers don\'t match. Scan both QRs from the same order.'**
+  String get orderNumbersDontMatch;
+
+  /// No description provided for @invalidQRFormatInvoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Invoice QR code should contain |. Please enter check code manually or scan again.'**
+  String get invalidQRFormatInvoice;
+
+  /// No description provided for @invalidQRFormatReceipt.
+  ///
+  /// In en, this message translates to:
+  /// **'Receipt QR code should contain |. Please enter check code manually or scan again.'**
+  String get invalidQRFormatReceipt;
+
+  /// No description provided for @useKeyboardInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Keyboard Input'**
+  String get useKeyboardInput;
+
+  /// No description provided for @useCameraScanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Camera Scanner'**
+  String get useCameraScanner;
+
   /// Button to cancel an order
   ///
   /// In en, this message translates to:
@@ -1113,6 +1425,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update PIN'**
   String get updatePIN;
+
+  /// Admin device configuration title
+  ///
+  /// In en, this message translates to:
+  /// **'Configure Device'**
+  String get configureDevice;
+
+  /// Device ID label
+  ///
+  /// In en, this message translates to:
+  /// **'Device ID'**
+  String get deviceId;
+
+  /// Copy device ID button
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get copyDeviceId;
+
+  /// Snackbar when device ID copied
+  ///
+  /// In en, this message translates to:
+  /// **'Device ID copied to clipboard'**
+  String get deviceIdCopied;
+
+  /// Section title for assigning device to store
+  ///
+  /// In en, this message translates to:
+  /// **'Add device to store'**
+  String get addDeviceToStore;
+
+  /// Store dropdown hint
+  ///
+  /// In en, this message translates to:
+  /// **'Select store'**
+  String get selectStore;
+
+  /// Save device-store assignment button
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveDeviceStore;
+
+  /// Success message after device config
+  ///
+  /// In en, this message translates to:
+  /// **'Device configured successfully'**
+  String get deviceConfiguredSuccessfully;
+
+  /// Error when non-admin tries device config
+  ///
+  /// In en, this message translates to:
+  /// **'Only management users can configure the device.'**
+  String get onlyManagementCanConfigure;
 }
 
 class _AppLocalizationsDelegate

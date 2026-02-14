@@ -258,3 +258,45 @@ type AuditLog struct {
 	// Relationships
 	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
+
+// StocktakeDayStartRecord records first login of the day and day-start stocktake result (done or skipped with reason).
+// One record per user per store per calendar day (user may work in multiple stores). Used for management timetable.
+type StocktakeDayStartRecord struct {
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	UserID       uint       `gorm:"not null;uniqueIndex:idx_stocktake_day_start_user_date_store" json:"user_id"`
+	StoreID      *uint      `gorm:"uniqueIndex:idx_stocktake_day_start_user_date_store" json:"store_id,omitempty"` // store where user did first login / stocktake
+	Date         string     `gorm:"type:date;not null;uniqueIndex:idx_stocktake_day_start_user_date_store" json:"date"` // yyyy-MM-dd
+	FirstLoginAt time.Time  `gorm:"type:datetime;not null" json:"first_login_at"`
+	Status       string     `gorm:"type:varchar(20);not null;default:'pending'" json:"status"` // pending, done, skipped
+	DoneAt       *time.Time `gorm:"type:datetime" json:"done_at,omitempty"`
+	SkipReason   string     `gorm:"type:text" json:"skip_reason,omitempty"`
+	CreatedAt    time.Time  `gorm:"type:datetime" json:"created_at"`
+	UpdatedAt    time.Time  `gorm:"type:datetime" json:"updated_at"`
+
+	// Relationships
+	User  User  `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Store *Store `gorm:"foreignKey:StoreID" json:"store,omitempty"`
+}
+
+// UserActivityEvent stores login, logout, and stocktake events for history/audit.
+// Used for timetable and for login/logout timeline.
+const (
+	EventFirstLogin               = "first_login"
+	EventLogout                   = "logout"
+	EventStocktakeDayStartDone    = "stocktake_day_start_done"
+	EventStocktakeDayStartSkipped = "stocktake_day_start_skipped"
+	EventStocktakeDayEndSkipped   = "stocktake_day_end_skipped"
+)
+
+type UserActivityEvent struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	UserID      uint      `gorm:"not null;index" json:"user_id"`
+	StoreID     *uint     `gorm:"index" json:"store_id,omitempty"`
+	EventType   string    `gorm:"type:varchar(50);not null;index" json:"event_type"` // first_login, logout, stocktake_day_start_done, stocktake_day_start_skipped
+	OccurredAt  time.Time `gorm:"type:datetime;not null" json:"occurred_at"`
+	SkipReason  string    `gorm:"type:text" json:"skip_reason,omitempty"` // for stocktake_day_start_skipped
+	CreatedAt   time.Time `gorm:"type:datetime" json:"created_at"`
+
+	User  User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Store *Store `gorm:"foreignKey:StoreID" json:"store,omitempty"`
+}

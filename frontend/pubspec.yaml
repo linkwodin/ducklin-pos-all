@@ -73,6 +73,8 @@ dependencies:
   
   # UUID generation
   uuid: ^4.3.3
+  # Hashing for cache keys (avoid key collision)
+  crypto: ^3.0.3
   
   # Network images
   cached_network_image: ^3.3.1

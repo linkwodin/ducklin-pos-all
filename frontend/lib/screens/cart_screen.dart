@@ -4,9 +4,15 @@ import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/order_provider.dart';
 import '../providers/language_provider.dart';
+import '../widgets/cached_product_image.dart';
 
 class CartScreen extends StatelessWidget {
-  const CartScreen({super.key});
+  /// Called when the update-quantity dialog opens (e.g. to disable barcode autofocus).
+  final VoidCallback? onQuantityDialogOpen;
+  /// Called when the update-quantity dialog closes (e.g. to re-enable barcode autofocus).
+  final VoidCallback? onQuantityDialogClose;
+
+  const CartScreen({super.key, this.onQuantityDialogOpen, this.onQuantityDialogClose});
 
   @override
   Widget build(BuildContext context) {
@@ -40,26 +46,11 @@ class CartScreen extends StatelessWidget {
               final imageUrl = (product['image_url'] ?? '').toString().trim();
               return ListTile(
                 leading: imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl,
+                    ? CachedProductImage(
+                        imageUrl: imageUrl,
                         width: 50,
                         height: 50,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 50,
-                          height: 50,
-                          color: Colors.grey[200],
-                          child: const Center(
-                            child: Text(
-                              '?',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                        ),
                       )
                     : Container(
                         width: 50,
@@ -92,7 +83,7 @@ class CartScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                onTap: () => _showQuantityDialog(context, orderProvider, item),
+                onTap: () => _showQuantityDialog(context, orderProvider, item, onQuantityDialogOpen: onQuantityDialogOpen, onQuantityDialogClose: onQuantityDialogClose),
               );
             },
           ),
@@ -191,8 +182,10 @@ class CartScreen extends StatelessWidget {
   void _showQuantityDialog(
     BuildContext context,
     OrderProvider orderProvider,
-    Map<String, dynamic> item,
-  ) {
+    Map<String, dynamic> item, {
+    VoidCallback? onQuantityDialogOpen,
+    VoidCallback? onQuantityDialogClose,
+  }) {
     final l10n = AppLocalizations.of(context)!;
     final product = item['product'] as Map<String, dynamic>;
     final currentQuantity = (item['quantity'] as num).toDouble();
@@ -203,6 +196,7 @@ class CartScreen extends StatelessWidget {
       text: currentQuantity.toStringAsFixed(isWeight ? 2 : 0),
     );
 
+    onQuantityDialogOpen?.call();
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -248,7 +242,7 @@ class CartScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ).then((_) => onQuantityDialogClose?.call());
   }
 }
 

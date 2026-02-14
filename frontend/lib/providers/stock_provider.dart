@@ -14,23 +14,49 @@ class StockProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final stockList = await ApiService.instance.getStoreStock(storeId);
-      
+      List<dynamic> stockList;
+      bool fromApi = false;
+      try {
+        stockList = await ApiService.instance.getStoreStock(storeId);
+        fromApi = true;
+      } catch (e) {
+        debugPrint('StockProvider: API unavailable, loading stock from local DB: $e');
+        final local = await DatabaseService.instance.getStoreStockLocal(storeId);
+        stockList = local;
+      }
+
       for (var item in stockList) {
         final productId = item['product_id'];
-        final storeId = item['store_id'];
-        final key = '${productId}_$storeId';
-        _stock[key] = item as Map<String, dynamic>;
-        
-        // Update local database
-        await DatabaseService.instance.updateStock(
-          productId,
-          storeId,
-          (item['quantity'] as num).toDouble(),
-        );
+        final storeIdVal = item['store_id'];
+        final key = '${productId}_$storeIdVal';
+        _stock[key] = item is Map<String, dynamic>
+            ? Map<String, dynamic>.from(item)
+            : {
+                'product_id': productId,
+                'store_id': storeIdVal,
+                'quantity': (item['quantity'] as num?)?.toDouble() ?? 0.0,
+              };
+
+        if (fromApi) {
+          await DatabaseService.instance.updateStock(
+            productId as int,
+            storeIdVal as int,
+            (item['quantity'] as num).toDouble(),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error syncing stock: $e');
+      // Last resort: try loading from local so something shows when offline
+      try {
+        final local = await DatabaseService.instance.getStoreStockLocal(storeId);
+        for (var item in local) {
+          final productId = item['product_id'] as int;
+          final storeIdVal = item['store_id'] as int;
+          final key = '${productId}_$storeIdVal';
+          _stock[key] = item;
+        }
+      } catch (_) {}
     } finally {
       _isLoading = false;
       notifyListeners();

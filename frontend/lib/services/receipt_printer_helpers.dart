@@ -92,6 +92,25 @@ class ReceiptPrinterHelpers {
     return !usbSerialPort.startsWith('/dev/');
   }
 
+  /// Format order created_at for receipt (date and time). Fallback to now if missing.
+  static String formatOrderDateTime(dynamic createdAt) {
+    if (createdAt == null) {
+      final now = DateTime.now();
+      return '${now.toIso8601String().split('T')[0]} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    }
+    DateTime dt;
+    if (createdAt is int) {
+      dt = DateTime.fromMillisecondsSinceEpoch(createdAt);
+    } else if (createdAt is String) {
+      dt = DateTime.tryParse(createdAt) ?? DateTime.now();
+    } else if (createdAt is num) {
+      dt = DateTime.fromMillisecondsSinceEpoch(createdAt.toInt());
+    } else {
+      return DateTime.now().toString().split('.').first;
+    }
+    return '${dt.toIso8601String().split('T')[0]} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+  }
+
   /// Get store name from order or database
   static Future<String> getStoreName(Map<String, dynamic> order) async {
     String storeName = '';

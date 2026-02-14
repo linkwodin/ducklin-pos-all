@@ -81,6 +81,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncing => 'Syncing...';
 
   @override
+  String get syncScreenTitle => 'Sync';
+
+  @override
+  String get syncPendingOrders => 'Pending orders';
+
+  @override
+  String get syncPendingStocktakes => 'Pending stocktakes';
+
+  @override
+  String get syncNoPendingItems => 'No pending items. All data is synced.';
+
+  @override
+  String get fullSyncTitle => 'Full Sync';
+
+  @override
+  String get fullSyncUsers => 'Sync users';
+
+  @override
+  String get fullSyncProducts => 'Sync products';
+
+  @override
+  String get fullSyncProductImages => 'Sync product images';
+
+  @override
+  String get fullSyncOrders => 'Sync orders';
+
+  @override
+  String get fullSyncInventory => 'Sync inventory';
+
+  @override
   String get loginWithUsernamePassword => 'Login with Username/Password';
 
   @override
@@ -268,6 +298,80 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reportsComingSoon => 'Reports (Coming Soon)';
 
   @override
+  String get reportToday => 'Today\'s Sales';
+
+  @override
+  String get reportTotalSales => 'Total Sales';
+
+  @override
+  String get reportSoldProducts => 'Sold Products';
+
+  @override
+  String get reportLoading => 'Loading report...';
+
+  @override
+  String get reportError => 'Failed to load report';
+
+  @override
+  String get reportNoSalesToday => 'No sales today';
+
+  @override
+  String get reportQuantity => 'Qty';
+
+  @override
+  String get reportRevenue => 'Revenue';
+
+  @override
+  String get reportTodayCommission => 'Today Commission';
+
+  @override
+  String get stocktakeDiscrepancyTitle => 'Stock difference';
+
+  @override
+  String get stocktakeDiscrepancyMessage =>
+      'The following items differ from system record. Please provide a reason for the adjustment.';
+
+  @override
+  String get stocktakeReasonHint => 'Reason';
+
+  @override
+  String get stocktakeRemarkHint => 'Remarks';
+
+  @override
+  String get stocktakeSavedOffline =>
+      'Stocktake saved locally. Will sync when online.';
+
+  @override
+  String get stocktakeDayStartTitle => 'Day start stocktake';
+
+  @override
+  String get stocktakeDayStartMessage =>
+      'Please do day start stocktake on first login.';
+
+  @override
+  String get stocktakeDayEndTitle => 'Day end stocktake';
+
+  @override
+  String get stocktakeDayEndMessage =>
+      'Please do day end stocktake before logout.';
+
+  @override
+  String get stocktakeDoIt => 'Do stocktake';
+
+  @override
+  String get stocktakeSkip => 'Skip';
+
+  @override
+  String get stocktakeSkipReasonHint => 'Reason for skipping (required)';
+
+  @override
+  String get stocktakeSkippedNotificationShort => 'Stocktake skipped';
+
+  @override
+  String get stocktakePendingMessage =>
+      'Day start stocktake required today. Tap to open.';
+
+  @override
   String get all => 'All';
 
   @override
@@ -323,7 +427,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get processPayment => 'Process Payment';
 
   @override
-  String get orderReceipt => 'Order Receipt';
+  String get orderReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get print => 'Print';
@@ -332,10 +436,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get printInternalAuditNote => 'Print Audit Note';
 
   @override
-  String get printInvoice => 'Print Invoice';
+  String get printInvoice => 'Order Clip (Loon Fung copy)';
 
   @override
-  String get printCustomerReceipt => 'Print receipt';
+  String get printCustomerCounterfoil => 'Order Clip (Ducklin copy)';
+
+  @override
+  String get printCustomerReceipt => '貨品細明 Pickup Receipt';
 
   @override
   String get printAll => 'Print All';
@@ -480,6 +587,67 @@ class AppLocalizationsEn extends AppLocalizations {
   String get confirmPickup => 'Confirm Pickup';
 
   @override
+  String get ok => 'OK';
+
+  @override
+  String get orderNumberLabel => 'Order number';
+
+  @override
+  String get tapToEnterOrderNumber => 'Tap to enter order number';
+
+  @override
+  String get editOrderNumber => 'Edit order number';
+
+  @override
+  String get pickupInvoice => 'Invoice';
+
+  @override
+  String get pickupReceipt => 'Receipt';
+
+  @override
+  String get invoiceCheckCodeLabel => 'Invoice check code';
+
+  @override
+  String get receiptCheckCodeLabel => 'Receipt check code';
+
+  @override
+  String get tapToSetInvoiceCheckCode => 'Tap to set invoice check code';
+
+  @override
+  String get tapToSetReceiptCheckCode => 'Tap to set receipt check code';
+
+  @override
+  String orderPickedUp(String number) {
+    return 'Order #$number picked up';
+  }
+
+  @override
+  String get alreadyPickedUp => 'Already picked up';
+
+  @override
+  String scanOtherQRFromOrder(String type) {
+    return 'Scan the $type QR from this order';
+  }
+
+  @override
+  String get orderNumbersDontMatch =>
+      'Order numbers don\'t match. Scan both QRs from the same order.';
+
+  @override
+  String get invalidQRFormatInvoice =>
+      'Invoice QR code should contain |. Please enter check code manually or scan again.';
+
+  @override
+  String get invalidQRFormatReceipt =>
+      'Receipt QR code should contain |. Please enter check code manually or scan again.';
+
+  @override
+  String get useKeyboardInput => 'Use Keyboard Input';
+
+  @override
+  String get useCameraScanner => 'Use Camera Scanner';
+
+  @override
   String get cancelOrder => 'Cancel Order';
 
   @override
@@ -557,4 +725,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updatePIN => 'Update PIN';
+
+  @override
+  String get configureDevice => 'Configure Device';
+
+  @override
+  String get deviceId => 'Device ID';
+
+  @override
+  String get copyDeviceId => 'Copy';
+
+  @override
+  String get deviceIdCopied => 'Device ID copied to clipboard';
+
+  @override
+  String get addDeviceToStore => 'Add device to store';
+
+  @override
+  String get selectStore => 'Select store';
+
+  @override
+  String get saveDeviceStore => 'Save';
+
+  @override
+  String get deviceConfiguredSuccessfully => 'Device configured successfully';
+
+  @override
+  String get onlyManagementCanConfigure =>
+      'Only management users can configure the device.';
 }

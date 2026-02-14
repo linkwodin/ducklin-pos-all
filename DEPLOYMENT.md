@@ -2,6 +2,8 @@
 
 This guide will help you deploy the POS system to Google Cloud Platform.
 
+**Cloning to a new GCP project (production):** To clone the database and deploy the full stack to a **new** GCP project, see **[PRODUCTION_CLONE.md](./PRODUCTION_CLONE.md)**.
+
 ## Prerequisites
 
 1. **Google Cloud Account**: Sign up at [cloud.google.com](https://cloud.google.com)

@@ -8,12 +8,15 @@ import type {
   ProductCost,
   ProductSectorDiscount,
   Stock,
+  StockReportRow,
   RestockOrder,
   PriceHistory,
   CurrencyRate,
   AuditLog,
   LoginResponse,
   Order,
+  StocktakeDayStartRecord,
+  UserActivityEvent,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -183,6 +186,12 @@ export const stockAPI = {
   },
   update: async (productId: number, storeId: number, stock: Partial<Stock>): Promise<Stock> => {
     const { data } = await api.put(`/stock/${productId}/${storeId}`, stock);
+    return data;
+  },
+  getStockReport: async (params: { date: string; store_id?: number }): Promise<StockReportRow[]> => {
+    const p: Record<string, string | number> = { date: params.date };
+    if (params.store_id != null) p.store_id = params.store_id;
+    const { data } = await api.get('/stock/report', { params: p });
     return data;
   },
 };
@@ -418,6 +427,44 @@ export const ordersAPI = {
     store_id?: number;
   }): Promise<Array<{ date: string; product_id: number; product_name: string; product_name_chinese: string; quantity: number; revenue: number }>> => {
     const { data } = await api.get('/orders/stats/product-sales', { params });
+    return data;
+  },
+};
+
+// Stocktake day-start (management)
+export const stocktakeAPI = {
+  listDayStart: async (params?: {
+    from?: string;
+    to?: string;
+    user_id?: number;
+    store_ids?: number[];
+  }): Promise<StocktakeDayStartRecord[]> => {
+    const p: Record<string, string | number> = {};
+    if (params?.from) p.from = params.from;
+    if (params?.to) p.to = params.to;
+    if (params?.user_id != null) p.user_id = params.user_id;
+    if (params?.store_ids?.length) p.store_ids = params.store_ids.join(',');
+    const { data } = await api.get('/stocktake-day-start', { params: p });
+    return data;
+  },
+};
+
+// User activity events (for timetable: login, logout, stocktake)
+export const userActivityAPI = {
+  list: async (params?: {
+    from?: string;
+    to?: string;
+    user_id?: number;
+    store_ids?: number[];
+    event_type?: string[];
+  }): Promise<UserActivityEvent[]> => {
+    const p: Record<string, string | number> = {};
+    if (params?.from) p.from = params.from;
+    if (params?.to) p.to = params.to;
+    if (params?.user_id != null) p.user_id = params.user_id;
+    if (params?.store_ids?.length) p.store_ids = params.store_ids.join(',');
+    if (params?.event_type?.length) p.event_type = params.event_type.join(',');
+    const { data } = await api.get('/user-activity-events', { params: p });
     return data;
   },
 };

@@ -78,6 +78,63 @@ func (h *DeviceHandler) RegisterDevice(c *gin.Context) {
 	c.JSON(http.StatusCreated, device)
 }
 
+// ConfigureDeviceRequest is the body for PUT /device/configure (add or update device store)
+type ConfigureDeviceRequest struct {
+	DeviceCode string `json:"device_code" binding:"required"`
+	StoreID    uint   `json:"store_id" binding:"required"`
+	DeviceName string `json:"device_name"`
+}
+
+// ConfigureDevice adds this device to a store or updates its store (management only).
+func (h *DeviceHandler) ConfigureDevice(c *gin.Context) {
+	role, _ := c.Get("role")
+	if role != "management" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only management can configure devices"})
+		return
+	}
+
+	var req ConfigureDeviceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(req.DeviceCode)
+
+	var device models.POSDevice
+	err := h.db.Where("device_code = ?", normalizedDeviceCode).First(&device).Error
+	if err != nil {
+		// Create new device
+		device = models.POSDevice{
+			DeviceCode: normalizedDeviceCode,
+			StoreID:    req.StoreID,
+			DeviceName: req.DeviceName,
+			IsActive:   true,
+		}
+		if err := h.db.Create(&device).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, device)
+		return
+	}
+
+	// Update existing device
+	updates := map[string]interface{}{"store_id": req.StoreID}
+	if req.DeviceName != "" {
+		updates["device_name"] = req.DeviceName
+	}
+	if err := h.db.Model(&device).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.Preload("Store").First(&device, device.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, device)
+}
+
 func (h *DeviceHandler) GetUsersForDevice(c *gin.Context) {
 	// Get device code from URL parameter and normalize it (strip braces if present)
 	rawDeviceCode := c.Param("device_code")
@@ -109,6 +166,45 @@ func (h *DeviceHandler) GetUsersForDevice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, users)
+}
+
+// GetDeviceInfo returns device info including last_stocktake_at for the device's store (public).
+// last_stocktake_at is the latest occurred_at for event_type = stocktake_day_start_done only (skip does not clear reminder).
+func (h *DeviceHandler) GetDeviceInfo(c *gin.Context) {
+	rawDeviceCode := c.Param("device_code")
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(rawDeviceCode))
+
+	var device models.POSDevice
+	if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).
+		Preload("Store").First(&device).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	var lastAt *time.Time
+	var out struct {
+		MaxAt *time.Time `gorm:"column:max_at"`
+	}
+	err := h.db.Model(&models.UserActivityEvent{}).
+		Select("MAX(occurred_at) AS max_at").
+		Where("store_id = ? AND event_type = ?", device.StoreID, models.EventStocktakeDayStartDone).
+		Scan(&out).Error
+	if err == nil && out.MaxAt != nil {
+		lastAt = out.MaxAt
+	}
+
+	deviceCodeDisplay := normalizeDeviceCodeForLookup(device.DeviceCode)
+	resp := gin.H{
+		"device_code": deviceCodeDisplay,
+		"store_id":    device.StoreID,
+		"device_name": device.DeviceName,
+	}
+	if lastAt != nil {
+		resp["last_stocktake_at"] = lastAt.Format(time.RFC3339)
+	} else {
+		resp["last_stocktake_at"] = nil
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *DeviceHandler) GetProductsForDevice(c *gin.Context) {

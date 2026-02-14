@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
@@ -75,12 +76,32 @@ class ApiLogger {
     }
     
     if (data != null) {
-      logMessage.writeln('Data: $data');
+      if (_isBinaryData(data)) {
+        final len = _binaryLength(data) ?? 0;
+        logMessage.writeln('Data: [binary, $len bytes]');
+      } else {
+        logMessage.writeln('Data: $data');
+      }
     }
     logMessage.writeln('');
     
     await _writeLog(logMessage.toString());
     print(logMessage.toString());
+  }
+
+  /// True if [data] is binary (bytes). Log as summary to avoid freezing UI.
+  static bool _isBinaryData(dynamic data) {
+    if (data == null) return false;
+    return data is List<int> ||
+        data is Uint8List ||
+        (data is List && data.isNotEmpty && data.first is int);
+  }
+
+  static int? _binaryLength(dynamic data) {
+    if (data is List<int>) return data.length;
+    if (data is Uint8List) return data.length;
+    if (data is List) return data.length;
+    return null;
   }
 
   Future<void> logResponse(int? statusCode, String uri, {dynamic data}) async {
@@ -92,12 +113,16 @@ class ApiLogger {
     logMessage.writeln('URI: $uri');
     
     if (data != null) {
-      // Truncate large responses
-      final dataStr = data.toString();
-      if (dataStr.length > 1000) {
-        logMessage.writeln('Data: ${dataStr.substring(0, 1000)}... (truncated)');
+      if (_isBinaryData(data)) {
+        final len = _binaryLength(data) ?? 0;
+        logMessage.writeln('Data: [binary, $len bytes]');
       } else {
-        logMessage.writeln('Data: $data');
+        final dataStr = data.toString();
+        if (dataStr.length > 1000) {
+          logMessage.writeln('Data: ${dataStr.substring(0, 1000)}... (truncated)');
+        } else {
+          logMessage.writeln('Data: $data');
+        }
       }
     }
     logMessage.writeln('');
@@ -120,7 +145,12 @@ class ApiLogger {
     }
     
     if (responseData != null) {
-      logMessage.writeln('Response: $responseData');
+      if (_isBinaryData(responseData)) {
+        final len = _binaryLength(responseData) ?? 0;
+        logMessage.writeln('Response: [binary, $len bytes]');
+      } else {
+        logMessage.writeln('Response: $responseData');
+      }
     }
     logMessage.writeln('');
     

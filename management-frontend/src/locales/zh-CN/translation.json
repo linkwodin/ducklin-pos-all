@@ -42,7 +42,10 @@
     "devices": "设备",
     "orders": "订单",
     "catalogs": "目录",
-    "currencyRates": "汇率"
+    "currencyRates": "汇率",
+    "stocktake": "盘点",
+    "stockReport": "库存报表",
+    "timetable": "店舖日誌"
   },
   "login": {
     "title": "POS 管理系统",

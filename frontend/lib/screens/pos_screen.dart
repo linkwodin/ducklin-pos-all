@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,19 +7,30 @@ import '../providers/product_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/language_provider.dart';
+import '../providers/sync_status_provider.dart';
+import '../providers/notification_bar_provider.dart';
+import '../providers/stocktake_flow_provider.dart';
+import '../providers/stocktake_status_provider.dart';
 import '../services/database_service.dart';
+import '../services/image_cache_service.dart';
+import '../services/offline_sync_service.dart';
+import '../services/api_service.dart';
+import '../services/stocktake_prompt_service.dart';
 import '../widgets/logo.dart';
+import 'stocktake_skip_reason_screen.dart';
 import 'product_selection_screen.dart';
 import 'cart_screen.dart';
 import 'checkout_screen.dart';
 import 'order_history_screen.dart';
 import 'inventory_screen.dart';
+import 'stocktake_flow_screen.dart';
 import 'user_management_screen.dart';
 import 'report_screen.dart';
 import 'login_screen.dart';
 import 'order_pickup_screen.dart';
 import 'user_profile_screen.dart';
 import 'settings_screen.dart';
+import 'full_sync_progress_screen.dart';
 import 'product_selection_screen.dart' show productSelectionScreenKey;
 
 class POSScreen extends StatefulWidget {
@@ -41,11 +53,43 @@ class _POSScreenState extends State<POSScreen> {
   final FocusNode _globalBarcodeFocus = FocusNode();
   String _lastProcessedBarcode = '';
   String? _pendingBarcode; // Barcode to process after navigation
+  Map<String, String>? _pendingPickupQR; // Invoice/receipt QR data to open on pickup tab
   
-  // List of pages for navigation
+  bool get _showUserManagement =>
+      _userRole == 'admin' || _userRole == 'management' || _userRole == 'supervisor';
+
+  // Page index: for pos_user we have 5 nav items (Report at index 4). For admin we have 6 (UserMgmt at 4, Report at 5).
+  // _pages order: [Order, Pickup, History, Inventory, Report, UserManagement]
+  int get _pageIndex {
+    if (_selectedIndex < 4) return _selectedIndex;
+    if (_showUserManagement) return _selectedIndex == 4 ? 5 : 4; // 4->UserMgmt(5), 5->Report(4)
+    return 4; // pos_user: nav index 4 = Report = _pages[4]
+  }
+
+  // List of pages for navigation: Order, Pickup, History, Inventory, Report, UserManagement
   List<Widget> get _pages => [
-    OrderScreen(),
+    OrderScreen(
+      onInvoiceReceiptQRScanned: (data) {
+        setState(() {
+          _pendingPickupQR = data;
+          _selectedIndex = 1;
+        });
+      },
+      onQuantityDialogOpen: () {
+        _globalBarcodeFocus.unfocus();
+        productSelectionScreenKey.currentState?.setSearchAutofocusEnabled(false);
+      },
+      onQuantityDialogClose: () {
+        productSelectionScreenKey.currentState?.setSearchAutofocusEnabled(true);
+      },
+    ),
     OrderPickupScreen(
+      initialPickupQR: _pendingPickupQR,
+      onPickupQRApplied: () {
+        setState(() {
+          _pendingPickupQR = null;
+        });
+      },
       onProductBarcodeScanned: (barcode) {
         // Navigate to create order page when product barcode is scanned on order pickup page
         _pendingBarcode = barcode;
@@ -67,8 +111,19 @@ class _POSScreenState extends State<POSScreen> {
     ),
     OrderHistoryScreen(key: _orderHistoryKey),
     InventoryScreen(),
+    ReportScreen(
+      onTapPendingOrders: () {
+        setState(() {
+          _selectedIndex = 2; // Order History / Search Order tab
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _orderHistoryKey.currentState?.applyStatusFilter('pending');
+          }
+        });
+      },
+    ),
     UserManagementScreen(),
-    ReportScreen(),
   ];
 
   @override
@@ -76,6 +131,99 @@ class _POSScreenState extends State<POSScreen> {
     super.initState();
     _initializeData();
     _loadUserRole();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final syncStatus = Provider.of<SyncStatusProvider>(context, listen: false);
+      await syncStatus.refreshPendingCount();
+      final count = await DatabaseService.instance.getPendingOrdersCount();
+      if (mounted && count > 0) {
+        OfflineSyncService.start(() => syncStatus.refreshPendingCount());
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final stocktakeStatus = Provider.of<StocktakeStatusProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      // Don't overwrite flag when we just logged in (login response already set it)
+      if (authProvider.lastLoginResponse == null) {
+        await stocktakeStatus.refreshFromServer();
+      }
+      if (!mounted) return;
+      try {
+        final storeId = Provider.of<OrderProvider>(context, listen: false).storeId;
+        await ApiService.instance.recordStocktakeDayStart('first_login', storeId: storeId);
+      } catch (_) {}
+      if (!mounted) return;
+      final flowProvider = Provider.of<StocktakeFlowProvider>(context, listen: false);
+      if (!stocktakeStatus.hasPendingDayStartToday) {
+        flowProvider.setAllowBarcodeFocus(true);
+        return;
+      }
+      _showDayStartStocktakeDialog();
+    });
+  }
+
+  void _showDayStartStocktakeDialog() {
+    final l10n = AppLocalizations.of(context)!;
+    final notificationProvider = Provider.of<NotificationBarProvider>(context, listen: false);
+    final flowProvider = Provider.of<StocktakeFlowProvider>(context, listen: false);
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.stocktakeDayStartTitle),
+        content: Text(l10n.stocktakeDayStartMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('skip'),
+            child: Text(l10n.stocktakeSkip),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('do'),
+            child: Text(l10n.stocktakeDoIt),
+          ),
+        ],
+      ),
+    ).then((result) async {
+      if (result == 'do') {
+        // User chose "Do stocktake" – push stocktake screen; on back without completing, show dialog again
+        if (!mounted) return;
+        final stocktakeResult = await Navigator.of(context).push<String>(
+          MaterialPageRoute(builder: (_) => const StocktakeFlowScreen(type: 'day_start')),
+        );
+        if (mounted) {
+          flowProvider.setAllowBarcodeFocus(true);
+          Provider.of<StocktakeStatusProvider>(context, listen: false).refresh();
+          if (stocktakeResult == 'incomplete') _showDayStartStocktakeDialog();
+        }
+        return;
+      }
+      if (result != 'skip') return;
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      final reason = await StocktakeSkipReasonScreen.push(context, l10n.stocktakeSkipReasonHint);
+      if (!mounted) return;
+      if (reason == null) {
+        _showDayStartStocktakeDialog();
+        return;
+      }
+      if (reason.isEmpty) return;
+      flowProvider.setAllowBarcodeFocus(true);
+      try {
+        final storeId = Provider.of<OrderProvider>(context, listen: false).storeId;
+        await ApiService.instance.recordStocktakeDayStart('skipped', skipReason: reason, storeId: storeId);
+      } catch (_) {}
+      // Do not call recordDayStartDone() on skip — keep the reminder icon until they complete stocktake
+      if (mounted) {
+        await Provider.of<StocktakeStatusProvider>(context, listen: false).refresh();
+      }
+      final fullMessage = '${l10n.stocktakeDayStartTitle}: ${l10n.stocktakeSkippedNotificationShort}. Reason: $reason';
+      notificationProvider.showPersistent(
+        l10n.stocktakeSkippedNotificationShort,
+        fullMessage: fullMessage,
+        isError: true,
+      );
+    });
   }
   
   bool _shouldMaintainGlobalBarcodeFocus() {
@@ -97,6 +245,7 @@ class _POSScreenState extends State<POSScreen> {
   
   @override
   void dispose() {
+    OfflineSyncService.stop();
     _globalBarcodeController.dispose();
     _globalBarcodeFocus.dispose();
     super.dispose();
@@ -137,8 +286,31 @@ class _POSScreenState extends State<POSScreen> {
       return;
     }
     
-    // Ignore if it contains pipe characters (likely a QR code from order pickup, not a product barcode)
-    if (barcode.contains('|') || barcode.contains('｜')) {
+    // If it contains pipe and is invoice/receipt QR, go to order pickup with the order
+    final normalized = barcode.replaceAll('｜', '|').trim();
+    if (normalized.contains('|')) {
+      final parts = normalized.split('|');
+      if (parts.length >= 2) {
+        final orderNumber = parts[0].trim();
+        final checkCode = parts[1].trim();
+        final typeRaw = parts.length >= 3 ? parts[2].trim().toLowerCase() : null;
+        if (orderNumber.isNotEmpty && checkCode.isNotEmpty) {
+          final isInvoiceOrReceipt = typeRaw == null || typeRaw == 'invoice' || typeRaw == 'receipt';
+          if (isInvoiceOrReceipt) {
+            _lastProcessedBarcode = barcode;
+            setState(() {
+              _pendingPickupQR = {
+                'orderNumber': orderNumber,
+                'checkCode': checkCode,
+                'receiptType': typeRaw ?? 'invoice',
+              };
+              _selectedIndex = 1;
+            });
+            _globalBarcodeController.clear();
+            return;
+          }
+        }
+      }
       return;
     }
     
@@ -230,10 +402,15 @@ class _POSScreenState extends State<POSScreen> {
                         Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.sync, color: Colors.grey),
-                              onPressed: _syncData,
-                              tooltip: l10n.sync,
+                            Consumer<SyncStatusProvider>(
+                              builder: (context, syncStatus, _) {
+                                return _SyncButtonWithLongPress(
+                                  pendingCount: syncStatus.pendingOrdersCount + syncStatus.pendingStocktakesCount + syncStatus.pendingUserActivityEventsCount,
+                                  onSync: _syncData,
+                                  onFullResync: _fullResync,
+                                  tooltip: l10n.sync,
+                                );
+                              },
                             ),
                             Text(
                               l10n.sync,
@@ -282,7 +459,16 @@ class _POSScreenState extends State<POSScreen> {
                                   MaterialPageRoute(
                                     builder: (_) => const SettingsScreen(),
                                   ),
-                                );
+                                ).then((_) async {
+                                  if (!mounted) return;
+                                  final should = Provider.of<StocktakeStatusProvider>(context, listen: false).hasPendingDayStartToday;
+                                  if (!mounted) return;
+                                  if (should) {
+                                    final flowProvider = Provider.of<StocktakeFlowProvider>(context, listen: false);
+                                    flowProvider.setAllowBarcodeFocus(false);
+                                    _showDayStartStocktakeDialog();
+                                  }
+                                });
                               },
                               tooltip: l10n.settings,
                             ),
@@ -318,26 +504,23 @@ class _POSScreenState extends State<POSScreen> {
                         selectedIcon: const Icon(Icons.inventory),
                         label: Text(l10n.inventory),
                       ),
-                      if (_userRole == 'admin' ||
-                          _userRole == 'management' ||
-                          _userRole == 'supervisor') ...[
+                      if (_showUserManagement)
                         NavigationRailDestination(
                           icon: const Icon(Icons.people_alt_outlined),
                           selectedIcon: const Icon(Icons.people_alt),
                           label: Text(l10n.userManagement),
                         ),
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.dashboard_outlined),
-                          selectedIcon: const Icon(Icons.dashboard_rounded),
-                          label: Text(l10n.report),
-                        ),
-                      ],
+                      NavigationRailDestination(
+                        icon: const Icon(Icons.dashboard_outlined),
+                        selectedIcon: const Icon(Icons.dashboard_rounded),
+                        label: Text(l10n.report),
+                      ),
                     ],
                   ),
                   const VerticalDivider(thickness: 1, width: 1),
                   // Main content
                   Expanded(
-                    child: _pages[_selectedIndex],
+                    child: _pages[_pageIndex],
                   ),
                 ],
               ),
@@ -351,19 +534,25 @@ class _POSScreenState extends State<POSScreen> {
       Future<void> _syncData() async {
         final l10n = AppLocalizations.of(context)!;
         final productProvider = Provider.of<ProductProvider>(context, listen: false);
+        final syncStatus = Provider.of<SyncStatusProvider>(context, listen: false);
         final success = await productProvider.syncProducts();
+        await OfflineSyncService.runSyncNow();
+        if (mounted) syncStatus.refreshPendingCount();
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(success ? l10n.dataSyncedSuccessfully : l10n.syncFailed('Failed to sync products')),
-              action: SnackBarAction(
-                label: 'Close',
-                onPressed: () {},
-              ),
-            ),
+          context.showNotification(
+            success ? l10n.dataSyncedSuccessfully : l10n.syncFailed('Failed to sync products'),
+            isSuccess: success,
+            isError: !success,
           );
         }
+      }
+
+      void _fullResync() {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FullSyncProgressScreen()),
+        );
       }
 
       void _showLanguageDialog(BuildContext context) {
@@ -419,18 +608,24 @@ class _POSScreenState extends State<POSScreen> {
     final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(l10n.logout),
         content: Text(l10n.areYouSureLogout),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: Text(l10n.cancel),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _logout();
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final should = await StocktakePromptService.shouldPromptDayEnd();
+              if (!mounted) return;
+              if (should) {
+                _showDayEndStocktakeDialog();
+              } else {
+                _logout();
+              }
             },
             child: Text(l10n.logout),
           ),
@@ -439,9 +634,61 @@ class _POSScreenState extends State<POSScreen> {
     );
   }
 
+  void _showDayEndStocktakeDialog() {
+    final l10n = AppLocalizations.of(context)!;
+    final notificationProvider = Provider.of<NotificationBarProvider>(context, listen: false);
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.stocktakeDayEndTitle),
+        content: Text(l10n.stocktakeDayEndMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('skip'),
+            child: Text(l10n.stocktakeSkip),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop('do');
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StocktakeFlowScreen(type: 'day_end')),
+              );
+            },
+            child: Text(l10n.stocktakeDoIt),
+          ),
+        ],
+      ),
+    ).then((result) async {
+      if (result != 'skip') return;
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      final reason = await StocktakeSkipReasonScreen.push(context, l10n.stocktakeSkipReasonHint);
+      if (!mounted) return;
+      if (reason == null) {
+        _showDayEndStocktakeDialog();
+        return;
+      }
+      if (reason.isEmpty) return;
+      final storeId = Provider.of<OrderProvider>(context, listen: false).storeId;
+      await ApiService.instance.recordStocktakeDayEndSkip(skipReason: reason, storeId: storeId);
+      if (!mounted) return;
+      final fullMessage = '${l10n.stocktakeDayEndTitle}: ${l10n.stocktakeSkippedNotificationShort}. Reason: $reason';
+      notificationProvider.showPersistent(
+        l10n.stocktakeSkippedNotificationShort,
+        fullMessage: fullMessage,
+        isError: true,
+      );
+      _logout();
+    });
+  }
+
   Future<void> _logout() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.logout();
+    final notificationProvider = Provider.of<NotificationBarProvider>(context, listen: false);
+    final storeId = Provider.of<OrderProvider>(context, listen: false).storeId;
+    await authProvider.logout(storeId: storeId);
+    notificationProvider.clear();
 
     if (mounted) {
       Navigator.of(context).pushReplacement(
@@ -451,9 +698,125 @@ class _POSScreenState extends State<POSScreen> {
   }
 }
 
+/// Sync button with 10-second hold for full resync; shows yellow progress bar while holding.
+class _SyncButtonWithLongPress extends StatefulWidget {
+  final int pendingCount;
+  final VoidCallback onSync;
+  final VoidCallback onFullResync;
+  final String tooltip;
+
+  const _SyncButtonWithLongPress({
+    required this.pendingCount,
+    required this.onSync,
+    required this.onFullResync,
+    required this.tooltip,
+  });
+
+  @override
+  State<_SyncButtonWithLongPress> createState() => _SyncButtonWithLongPressState();
+}
+
+class _SyncButtonWithLongPressState extends State<_SyncButtonWithLongPress> {
+  double _progress = 0.0;
+  Timer? _timer;
+  static const int _fullResyncSeconds = 5;
+  static const int _tickMs = 100;
+  static const double _tickStep = _tickMs / (_fullResyncSeconds * 1000);
+
+  void _onPointerDown() {
+    _timer?.cancel();
+    setState(() => _progress = 0.0);
+    _timer = Timer.periodic(const Duration(milliseconds: _tickMs), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        _progress += _tickStep;
+        if (_progress >= 1.0) {
+          _progress = 1.0;
+          t.cancel();
+          // Don't trigger here; trigger on tap up so user can cancel by moving away
+        }
+      });
+    });
+  }
+
+  void _onPointerUp() {
+    _timer?.cancel();
+    final progress = _progress;
+    setState(() => _progress = 0.0);
+    if (progress >= 1.0) {
+      widget.onFullResync();
+    } else if (progress < 0.02) {
+      widget.onSync();
+    }
+    // If 0.02 <= progress < 1.0: released early, no action (user cancelled hold)
+  }
+
+  void _onPointerCancel() {
+    _timer?.cancel();
+    setState(() => _progress = 0.0);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Badge(
+          isLabelVisible: widget.pendingCount > 0,
+          backgroundColor: Colors.red,
+          label: Text('${widget.pendingCount}'),
+          child: Listener(
+            onPointerDown: (_) => _onPointerDown(),
+            onPointerUp: (_) => _onPointerUp(),
+            onPointerCancel: (_) => _onPointerCancel(),
+            child: IconButton(
+              icon: const Icon(Icons.sync, color: Colors.grey),
+              onPressed: () {},
+              tooltip: '${widget.tooltip} (hold 5s: full sync)',
+            ),
+          ),
+        ),
+        if (_progress > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: SizedBox(
+              width: 48,
+              height: 4,
+              child: LinearProgressIndicator(
+                value: _progress,
+                backgroundColor: Colors.grey[300],
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 // OrderScreen combines ProductSelectionScreen and CartScreen
 class OrderScreen extends StatelessWidget {
-  const OrderScreen({super.key});
+  final void Function(Map<String, String>)? onInvoiceReceiptQRScanned;
+  /// When the cart's update-quantity dialog opens (disable barcode autofocus).
+  final VoidCallback? onQuantityDialogOpen;
+  /// When the cart's update-quantity dialog closes (re-enable barcode autofocus).
+  final VoidCallback? onQuantityDialogClose;
+
+  const OrderScreen({
+    super.key,
+    this.onInvoiceReceiptQRScanned,
+    this.onQuantityDialogOpen,
+    this.onQuantityDialogClose,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -463,7 +826,10 @@ class OrderScreen extends StatelessWidget {
         // Left: Product Selection (70%)
         Expanded(
           flex: 7,
-          child: ProductSelectionScreen(key: productSelectionScreenKey),
+          child: ProductSelectionScreen(
+            key: productSelectionScreenKey,
+            onInvoiceReceiptQRScanned: onInvoiceReceiptQRScanned,
+          ),
         ),
         const VerticalDivider(thickness: 1, width: 1),
         // Right: Cart (30%)
@@ -472,7 +838,10 @@ class OrderScreen extends StatelessWidget {
           child: Column(
             children: [
               Expanded(
-                child: const CartScreen(),
+                child: CartScreen(
+                  onQuantityDialogOpen: onQuantityDialogOpen,
+                  onQuantityDialogClose: onQuantityDialogClose,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -498,7 +867,13 @@ class OrderScreen extends StatelessWidget {
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
+                        // 2x height checkout button
+                        minimumSize: const Size(double.infinity, 96),
+                        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+                        textStyle: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       child: Text(l10n.checkout),
                     );

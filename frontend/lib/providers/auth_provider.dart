@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/api_logger.dart';
+import '../services/offline_sync_service.dart';
 import '../providers/product_provider.dart';
 import '../utils/jwt_utils.dart';
 
@@ -13,16 +14,20 @@ class AuthProvider with ChangeNotifier {
   bool _isAuthenticated = false;
   Timer? _sessionTimer;
   static const Duration _idleTimeout = Duration(hours: 4);
+  /// Last login/pin-login response (includes last_stocktake_at). Cleared on logout.
+  Map<String, dynamic>? _lastLoginResponse;
 
   String? get token => _token;
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
+  Map<String, dynamic>? get lastLoginResponse => _lastLoginResponse;
 
   Future<bool> login(String username, String password) async {
     try {
       print('AuthProvider: Attempting login for user: $username');
       final response = await ApiService.instance.login(username, password);
       print('AuthProvider: Login response received: $response');
+      _lastLoginResponse = response;
       _token = response['token'];
       _currentUser = response['user'];
       _isAuthenticated = true;
@@ -49,6 +54,13 @@ class AuthProvider with ChangeNotifier {
         print('AuthProvider: Product auto-sync failed: $e');
       }
 
+      // Sync pending offline orders with the new JWT
+      try {
+        await OfflineSyncService.runSyncNow();
+      } catch (e) {
+        print('AuthProvider: Offline order sync after login failed: $e');
+      }
+
       // Start session monitoring
       _startSessionMonitoring();
 
@@ -67,6 +79,7 @@ class AuthProvider with ChangeNotifier {
       print('AuthProvider: PIN login for user: $username');
       final response = await ApiService.instance.pinLogin(username, pin);
       print('AuthProvider: PIN login response: $response');
+      _lastLoginResponse = response;
       _token = response['token'];
       _currentUser = response['user'];
       print('AuthProvider: Current user from response: $_currentUser');
@@ -104,6 +117,13 @@ class AuthProvider with ChangeNotifier {
         print('AuthProvider: Product auto-sync after PIN login completed');
       } catch (e) {
         print('AuthProvider: Product auto-sync after PIN login failed: $e');
+      }
+
+      // Sync pending offline orders with the new JWT
+      try {
+        await OfflineSyncService.runSyncNow();
+      } catch (e) {
+        print('AuthProvider: Offline order sync after PIN login failed: $e');
       }
 
       // Start session monitoring
@@ -150,10 +170,17 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> logout() async {
+  /// [storeId] optional; when provided (e.g. from POS/settings), logout event is recorded with that store.
+  Future<void> logout({int? storeId}) async {
+    // Record logout for activity history before clearing token (so API can authenticate).
+    try {
+      await ApiService.instance.recordLogout(storeId: storeId);
+    } catch (_) {}
+
     _token = null;
     _currentUser = null;
     _isAuthenticated = false;
+    _lastLoginResponse = null;
 
     // Stop session monitoring
     _stopSessionMonitoring();

@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/sync_status_provider.dart';
+import '../providers/notification_bar_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/order_provider.dart';
@@ -10,7 +12,10 @@ import '../providers/auth_provider.dart';
 import '../providers/language_provider.dart';
 import '../services/api_service.dart';
 import '../services/receipt_printer.dart';
+import '../services/receipt_printer_helpers.dart';
 import '../services/database_service.dart';
+import '../services/offline_sync_service.dart';
+import '../widgets/cached_product_image.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -107,26 +112,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     final imageUrl = (product['image_url'] ?? '').toString().trim();
                     return ListTile(
                       leading: imageUrl.isNotEmpty
-                          ? Image.network(
-                              imageUrl,
+                          ? CachedProductImage(
+                              imageUrl: imageUrl,
                               width: 50,
                               height: 50,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                width: 50,
-                                height: 50,
-                                color: Colors.grey[200],
-                                child: const Center(
-                                  child: Text(
-                                    '?',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              ),
                             )
                           : Container(
                               width: 50,
@@ -176,13 +166,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          // Checkout button
+          // Checkout button (2x height)
           ElevatedButton(
             onPressed: (_isProcessing || orderProvider.cartItems.isEmpty)
                 ? null
                 : () => _processCheckout(orderProvider, authProvider),
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              minimumSize: const Size(double.infinity, 96),
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             child: _isProcessing
                 ? const CircularProgressIndicator()
@@ -245,8 +237,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _notificationMessage = l10n.storeNotSelected;
       });
-      // Auto-hide after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
+      // Auto-hide after 10 seconds (close button also available)
+      Future.delayed(const Duration(seconds: 10), () {
         if (mounted) {
           setState(() {
             _notificationMessage = null;
@@ -308,8 +300,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _isProcessing = false;
       });
 
-      // Navigate to print receipt screen
+      // Navigate to print receipt screen (online and offline: receipts are printed from local data)
       if (mounted && order != null) {
+        if (order['offline'] == true) {
+          context.showNotification('Order saved offline. It will sync when the server is back.');
+        }
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -325,8 +320,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() {
           _notificationMessage = '${l10n.loginFailed}: $e';
         });
-        // Auto-hide after 4 seconds
-        Future.delayed(const Duration(seconds: 4), () {
+        // Auto-hide after 10 seconds (close button also available)
+        Future.delayed(const Duration(seconds: 10), () {
           if (mounted) {
             setState(() {
               _notificationMessage = null;
@@ -339,17 +334,66 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
 }
 
-class ReceiptScreen extends StatelessWidget {
+class ReceiptScreen extends StatefulWidget {
   final Map<String, dynamic> order;
 
   const ReceiptScreen({super.key, required this.order});
 
   @override
+  State<ReceiptScreen> createState() => _ReceiptScreenState();
+}
+
+class _ReceiptScreenState extends State<ReceiptScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.order['offline'] == true && context.mounted) {
+        final syncStatus = Provider.of<SyncStatusProvider>(context, listen: false);
+        syncStatus.refreshPendingCount();
+        OfflineSyncService.start(() => syncStatus.refreshPendingCount());
+      }
+      _autoPrintOrderReceipts(context, widget.order);
+    });
+  }
+
+  Future<void> _autoPrintOrderReceipts(BuildContext context, Map<String, dynamic> order) async {
+    final l10n = AppLocalizations.of(context)!;
+    // Do not print invoice/audit note — only order clips and 貨品細明
+    const sequence = [
+      ReceiptType.noPriceWithBarcode,   // 下單紙 (龍鳳存根)
+      ReceiptType.customerCounterfoil, // 下單紙 (客戶存根)
+      ReceiptType.noPriceNoBarcode,    // 貨品細明
+    ];
+    for (final receiptType in sequence) {
+      try {
+        await ReceiptPrinter.printReceipt(order: order, l10n: l10n, receiptType: receiptType);
+        await Future.delayed(const Duration(milliseconds: 500));
+      } catch (e) {
+        debugPrint('Auto-print failed for ${receiptType.name}: $e');
+      }
+    }
+    if (context.mounted) {
+      context.showNotification('3 documents sent to printer.', isSuccess: true);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final order = widget.order;
     final orderNumber = order['order_number'] ?? '';
     final qrData = order['qr_code_data'] ?? '';
     final items = order['items'] as List<dynamic>? ?? [];
+    final totalAmountNum = (order['total_amount'] != null ? (order['total_amount'] as num).toDouble() : 0.0);
+    final invoiceCheckCode = order['invoice_check_code']?.toString().trim();
+    final receiptCheckCode = order['receipt_check_code']?.toString().trim();
+    final displayInvoiceCode = (invoiceCheckCode != null && invoiceCheckCode.isNotEmpty)
+        ? invoiceCheckCode
+        : ReceiptPrinterHelpers.generateCheckCode(orderNumber, totalAmountNum, receiptType: 'invoice');
+    final displayReceiptCode = (receiptCheckCode != null && receiptCheckCode.isNotEmpty)
+        ? receiptCheckCode
+        : ReceiptPrinterHelpers.generateCheckCode(orderNumber, totalAmountNum, receiptType: 'receipt');
 
     return Scaffold(
       appBar: AppBar(
@@ -370,6 +414,41 @@ class ReceiptScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                     Text(l10n.orderNumber(orderNumber)),
+                  const SizedBox(height: 16),
+                  // Show both check codes so user can use them if printer is out
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.invoiceCheckCodeLabel,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(
+                          displayInvoiceCode,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 2),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          l10n.receiptCheckCodeLabel,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(
+                          displayReceiptCode,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 2),
+                        ),
+                      ],
+                    ),
+                  ),
                     const SizedBox(height: 24),
                     // Order items
                     if (items.isNotEmpty) ...[
@@ -424,7 +503,7 @@ class ReceiptScreen extends StatelessWidget {
                     alignment: WrapAlignment.center,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.full),
+                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.auditNote),
                         icon: const Icon(Icons.print),
                         label: Text(l10n.printInternalAuditNote),
                         style: ElevatedButton.styleFrom(
@@ -435,6 +514,14 @@ class ReceiptScreen extends StatelessWidget {
                         onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.noPriceWithBarcode),
                         icon: const Icon(Icons.receipt),
                         label: Text(l10n.printInvoice),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.customerCounterfoil),
+                        icon: const Icon(Icons.receipt),
+                        label: Text(l10n.printCustomerCounterfoil),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         ),
@@ -485,7 +572,7 @@ class ReceiptScreen extends StatelessWidget {
     return product['name']?.toString() ?? '';
   }
 
-  Future<void> _printReceipt(BuildContext buildContext, Map<String, dynamic> order, {ReceiptType receiptType = ReceiptType.full}) async {
+  Future<void> _printReceipt(BuildContext buildContext, Map<String, dynamic> order, {ReceiptType receiptType = ReceiptType.auditNote}) async {
     final l10n = AppLocalizations.of(buildContext)!;
 
     // Try direct printing
@@ -496,25 +583,13 @@ class ReceiptScreen extends StatelessWidget {
         receiptType: receiptType,
       );
       if (buildContext.mounted) {
-        ScaffoldMessenger.of(buildContext).showSnackBar(
-          SnackBar(
-            content: Text('${l10n.print} successful'),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
+        buildContext.showNotification('${l10n.print} successful', isSuccess: true);
       }
     } catch (e) {
       debugPrint('Direct print failed: $e');
       // Show error to user - they can configure printer in settings
       if (buildContext.mounted) {
-        ScaffoldMessenger.of(buildContext).showSnackBar(
-          SnackBar(
-            content: Text('Print failed: $e. Please check printer settings.'),
-            duration: const Duration(seconds: 5),
-            backgroundColor: Colors.red,
-          ),
-        );
+        buildContext.showNotification('Print failed: $e. Please check printer settings.', isError: true);
       }
     }
   }
@@ -523,18 +598,14 @@ class ReceiptScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(buildContext)!;
 
     if (buildContext.mounted) {
-      ScaffoldMessenger.of(buildContext).showSnackBar(
-        SnackBar(
-          content: const Text('Printing all receipts...'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      buildContext.showNotification('Printing all receipts...');
     }
 
-    // Print all three receipt types sequentially
+    // Print all four receipt types sequentially (audit note, 龍鳳存根, 客戶存根, pickup receipt)
     final receiptTypes = [
-      ReceiptType.full,
+      ReceiptType.auditNote,
       ReceiptType.noPriceWithBarcode,
+      ReceiptType.customerCounterfoil,
       ReceiptType.noPriceNoBarcode,
     ];
 
@@ -559,21 +630,9 @@ class ReceiptScreen extends StatelessWidget {
 
     if (buildContext.mounted) {
       if (failCount == 0) {
-        ScaffoldMessenger.of(buildContext).showSnackBar(
-          SnackBar(
-            content: Text('All receipts printed successfully ($successCount)'),
-            duration: const Duration(seconds: 3),
-            backgroundColor: Colors.green,
-          ),
-        );
+        buildContext.showNotification('All receipts printed successfully ($successCount)', isSuccess: true);
       } else {
-        ScaffoldMessenger.of(buildContext).showSnackBar(
-          SnackBar(
-            content: Text('Printed: $successCount, Failed: $failCount'),
-            duration: const Duration(seconds: 5),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        buildContext.showNotification('Printed: $successCount, Failed: $failCount');
       }
     }
   }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../providers/stocktake_status_provider.dart';
 import '../widgets/numeric_keypad.dart';
 import '../widgets/pin_display.dart';
 import 'pos_screen.dart';
@@ -109,6 +110,9 @@ class _PINLoginScreenState extends State<PINLoginScreen> {
       final success = await authProvider.pinLogin(widget.username, _pin);
 
       if (success && mounted) {
+        Provider.of<StocktakeStatusProvider>(context, listen: false)
+            .setPendingFromLastStocktakeAt(authProvider.lastLoginResponse?['last_stocktake_at']);
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const POSScreen()),
         );

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/order_provider.dart';
+import '../providers/notification_bar_provider.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
 import 'order_details_screen.dart';
@@ -19,6 +20,12 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _filteredOrders = [];
   bool _isLoading = true;
+  String? _statusFilter; // null = all
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+  /// Which quick range the user chose ('today' | 'week' | 'month'), so the correct chip stays selected even when range is one day (e.g. Monday = this week).
+  String? _selectedQuickRange;
+  static const List<String> _statusOptions = ['pending', 'paid', 'completed', 'picked_up', 'cancelled'];
 
   @override
   void initState() {
@@ -30,6 +37,126 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
   // Method to refresh orders (can be called externally)
   void refreshOrders() {
     _loadOrders();
+  }
+
+  /// Apply a status filter (e.g. 'pending'). Call from report "pending" tap to show only those orders.
+  void applyStatusFilter(String? status) {
+    setState(() {
+      _statusFilter = status;
+    });
+    _applyFilters();
+  }
+
+  void _applyFilters() {
+    var list = _orders;
+    if (_statusFilter != null && _statusFilter!.isNotEmpty) {
+      list = list.where((o) => (o['status'] ?? '').toString().toLowerCase() == _statusFilter!.toLowerCase()).toList();
+    }
+    if (_dateFrom != null || _dateTo != null) {
+      final fromMs = _dateFrom != null ? DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day).millisecondsSinceEpoch : 0;
+      final toEndMs = _dateTo != null ? DateTime(_dateTo!.year, _dateTo!.month, _dateTo!.day).add(const Duration(days: 1)).millisecondsSinceEpoch : 0x7FFFFFFFFFFFFFFF;
+      list = list.where((o) {
+        final created = o['created_at'];
+        if (created == null) return false;
+        final ms = created is int ? created : (created is String ? int.tryParse(created) : null);
+        if (ms == null) return false;
+        if (_dateFrom != null && ms < fromMs) return false;
+        if (_dateTo != null && ms >= toEndMs) return false;
+        return true;
+      }).toList();
+    }
+    final query = _searchController.text.trim();
+    if (query.isNotEmpty) {
+      final queryLower = query.toLowerCase();
+      list = list.where((order) {
+        final orderNumber = (order['order_number'] ?? '').toString().toLowerCase();
+        final total = (order['total_amount'] ?? 0).toString().toLowerCase();
+        final createdAt = (order['created_at'] ?? '').toString().toLowerCase();
+        return orderNumber.contains(queryLower) ||
+            total.contains(queryLower) ||
+            createdAt.contains(queryLower);
+      }).toList();
+    }
+    if (mounted) {
+      setState(() {
+        _filteredOrders = list;
+      });
+    }
+  }
+
+  Future<void> _pickDateFrom() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFrom ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedQuickRange = null;
+        _dateFrom = picked;
+        if (_dateTo != null && _dateTo!.isBefore(picked)) _dateTo = picked;
+      });
+      _applyFilters();
+    }
+  }
+
+  Future<void> _pickDateTo() async {
+    final initial = _dateTo ?? _dateFrom ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: _dateFrom ?? DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedQuickRange = null;
+        _dateTo = picked;
+        if (_dateFrom != null && _dateFrom!.isAfter(picked)) _dateFrom = picked;
+      });
+      _applyFilters();
+    }
+  }
+
+  void _clearDateFilter() {
+    setState(() {
+      _selectedQuickRange = null;
+      _dateFrom = null;
+      _dateTo = null;
+    });
+    _applyFilters();
+  }
+
+  bool _isQuickRangeSelected(String range) {
+    return _selectedQuickRange == range;
+  }
+
+  void _setQuickDateRange(String range) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    setState(() {
+      _selectedQuickRange = range;
+      switch (range) {
+        case 'today':
+          _dateFrom = today;
+          _dateTo = today;
+          break;
+        case 'week':
+          _dateFrom = today.subtract(const Duration(days: 6));
+          _dateTo = today;
+          break;
+        case 'month':
+          _dateFrom = DateTime(now.year, now.month, 1);
+          _dateTo = today;
+          break;
+        default:
+          _selectedQuickRange = null;
+          _dateFrom = null;
+          _dateTo = null;
+      }
+    });
+    _applyFilters();
   }
 
   @override
@@ -54,17 +181,15 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
       setState(() {
         _orders = allOrders;
-        _filteredOrders = allOrders;
         _isLoading = false;
       });
+      _applyFilters();
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading orders: $e')),
-        );
+        context.showNotification('Error loading orders: $e', isError: true);
       }
     }
   }
@@ -72,14 +197,15 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
   void _searchOrders() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
-      setState(() {
-        _filteredOrders = _orders;
-      });
+      _applyFilters();
       return;
     }
 
     final queryLower = query.toLowerCase();
     final localMatches = _orders.where((order) {
+      if (_statusFilter != null && (order['status'] ?? '').toString().toLowerCase() != _statusFilter!.toLowerCase()) {
+        return false;
+      }
       final orderNumber = (order['order_number'] ?? '').toString().toLowerCase();
       final total = (order['total_amount'] ?? 0).toString().toLowerCase();
       final createdAt = (order['created_at'] ?? '').toString().toLowerCase();
@@ -144,12 +270,11 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
           };
 
           setState(() {
-            _filteredOrders = [localOrder];
-            // Also add to main orders list
             if (!_orders.any((o) => o['order_number'] == localOrder['order_number'])) {
               _orders.insert(0, localOrder);
             }
           });
+          _applyFilters();
           return;
         }
       } catch (e) {
@@ -157,9 +282,7 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
       }
     }
 
-    setState(() {
-      _filteredOrders = localMatches;
-    });
+    _applyFilters();
   }
 
   Color _getStatusColor(String status) {
@@ -207,6 +330,102 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
               onSubmitted: (_) => _searchOrders(),
             ),
           ),
+          // Filters: status + date range
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Filters', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.grey[700])),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('Status:', style: TextStyle(fontSize: 14, color: Colors.grey[700])),
+                        const SizedBox(width: 8),
+                        DropdownButton<String>(
+                          value: _statusFilter,
+                          hint: const Text('All'),
+                          isDense: true,
+                          items: [
+                            const DropdownMenuItem<String>(value: null, child: Text('All')),
+                            ..._statusOptions.map((s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text(s.toUpperCase()),
+                                )),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _statusFilter = v);
+                            _applyFilters();
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Date:', style: TextStyle(fontSize: 14, color: Colors.grey[700])),
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                icon: const Icon(Icons.calendar_today, size: 18),
+                                label: Text(_dateFrom != null ? '${_dateFrom!.year}-${_dateFrom!.month.toString().padLeft(2, '0')}-${_dateFrom!.day.toString().padLeft(2, '0')}' : 'From'),
+                                onPressed: _pickDateFrom,
+                              ),
+                              const Text('–'),
+                              TextButton.icon(
+                                icon: const Icon(Icons.calendar_today, size: 18),
+                                label: Text(_dateTo != null ? '${_dateTo!.year}-${_dateTo!.month.toString().padLeft(2, '0')}-${_dateTo!.day.toString().padLeft(2, '0')}' : 'To'),
+                                onPressed: _pickDateTo,
+                              ),
+                              if (_dateFrom != null || _dateTo != null)
+                                TextButton(
+                                  onPressed: _clearDateFilter,
+                                  child: const Text('Clear date'),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          alignment: WrapAlignment.end,
+                          children: [
+                            FilterChip(
+                              label: const Text('Today'),
+                              selected: _isQuickRangeSelected('today'),
+                              onSelected: (_) => _setQuickDateRange('today'),
+                            ),
+                            FilterChip(
+                              label: const Text('Last 7 days'),
+                              selected: _isQuickRangeSelected('week'),
+                              onSelected: (_) => _setQuickDateRange('week'),
+                            ),
+                            FilterChip(
+                              label: const Text('This month'),
+                              selected: _isQuickRangeSelected('month'),
+                              onSelected: (_) => _setQuickDateRange('month'),
+                            ),
+                            FilterChip(
+                              label: const Text('All dates'),
+                              selected: _dateFrom == null && _dateTo == null,
+                              onSelected: (_) => _clearDateFilter(),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -220,6 +439,8 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
                           final total = (order['total_amount'] ?? 0.0) as num;
                           final createdAt = order['created_at'];
                           final status = order['status'] ?? 'pending';
+
+                          final notSynced = (order['synced'] ?? 1) != 1;
 
                           return Card(
                             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -237,6 +458,12 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
                                 }
                               },
                               child: ListTile(
+                                leading: notSynced
+                                    ? const CircleAvatar(
+                                        radius: 6,
+                                        backgroundColor: Colors.red,
+                                      )
+                                    : null,
                                 title: Text('${l10n.orderNumberHash(orderNumber)} - £${total.toStringAsFixed(2)}'),
                                 subtitle: createdAt != null
                                     ? Text(

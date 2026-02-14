@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../providers/stocktake_status_provider.dart';
 import 'pos_screen.dart';
 
 class UsernameLoginScreen extends StatefulWidget {
@@ -49,6 +50,9 @@ class _UsernameLoginScreenState extends State<UsernameLoginScreen> {
 
       if (success && mounted) {
         print('UsernameLoginScreen: Login successful, navigating to POS screen');
+        Provider.of<StocktakeStatusProvider>(context, listen: false)
+            .setPendingFromLastStocktakeAt(authProvider.lastLoginResponse?['last_stocktake_at']);
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const POSScreen()),
         );

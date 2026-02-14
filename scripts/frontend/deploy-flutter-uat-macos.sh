@@ -165,6 +165,13 @@ gsutil setmeta -h "Content-Type:application/zip" \
     -h "Content-Disposition:attachment; filename=\"pos-system-uat-macos-latest.zip\"" \
     "gs://$BUCKET_NAME/pos-system-uat-macos-latest.zip"
 
+# Update downloads index page
+INDEX_HTML="$SCRIPT_DIR/uat-downloads-index.html"
+if [ -f "$INDEX_HTML" ]; then
+    echo -e "${GREEN}[INFO]${NC} Updating index.html..."
+    gsutil -h "Content-Type:text/html" cp "$INDEX_HTML" "gs://$BUCKET_NAME/index.html"
+fi
+
 echo ""
 echo -e "${GREEN}[INFO]${NC} ✅ Deployment completed successfully!"
 echo ""

@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LanguageProvider with ChangeNotifier {
   static const String _languageKey = 'selected_language';
+  static const String _countryKey = 'selected_country';
   Locale _locale = const Locale('en');
 
   Locale get locale => _locale;
@@ -15,7 +16,10 @@ class LanguageProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final languageCode = prefs.getString(_languageKey);
     if (languageCode != null) {
-      _locale = Locale(languageCode);
+      final countryCode = prefs.getString(_countryKey);
+      _locale = countryCode != null && countryCode.isNotEmpty
+          ? Locale(languageCode, countryCode)
+          : Locale(languageCode);
       notifyListeners();
     }
   }
@@ -24,6 +28,7 @@ class LanguageProvider with ChangeNotifier {
     _locale = locale;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_languageKey, locale.languageCode);
+    await prefs.setString(_countryKey, locale.countryCode ?? '');
     notifyListeners();
   }
 

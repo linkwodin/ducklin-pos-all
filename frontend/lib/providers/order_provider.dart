@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../services/database_service.dart';
@@ -176,8 +177,16 @@ class OrderProvider with ChangeNotifier {
         debugPrint('OrderProvider: Order data: $orderData');
         final order = await ApiService.instance.createOrder(orderData);
         debugPrint('OrderProvider: Order created successfully: $order');
-        
-        // Save to local database
+
+        final orderId = order['id'] as int;
+        try {
+          await ApiService.instance.markOrderPaid(orderId);
+          await ApiService.instance.markOrderComplete(orderId);
+        } catch (e) {
+          debugPrint('OrderProvider: Mark paid/complete failed (order still created): $e');
+        }
+
+        // Save to local database (status completed so POS and management show same)
         await DatabaseService.instance.saveOrder({
           'order_number': order['order_number'],
           'store_id': _storeId,
@@ -186,13 +195,11 @@ class OrderProvider with ChangeNotifier {
           'subtotal': subtotal,
           'discount_amount': discountAmount,
           'total_amount': total,
-          'status': 'pending',
+          'status': 'completed',
           'qr_code_data': order['qr_code_data'],
           'created_at': DateTime.now().millisecondsSinceEpoch,
           'synced': 1,
         });
-
-        final orderId = order['id'];
         final orderItems = _cartItems.map((item) => {
           'order_id': orderId,
           'product_id': item['product_id'],
@@ -206,15 +213,21 @@ class OrderProvider with ChangeNotifier {
         await DatabaseService.instance.saveOrderItems(orderId, orderItems);
 
         clearCart();
-        return order;
+        final orderWithStatus = Map<String, dynamic>.from(order);
+        orderWithStatus['status'] = 'completed';
+        return orderWithStatus;
       } catch (e, stackTrace) {
-        // Network error - save offline
+        // Network error: save to local DB with ORD-{day}-T-{storeId}-{localId}, then return full order for printing
         debugPrint('OrderProvider: Network error, saving offline');
         debugPrint('OrderProvider: Error: $e');
         debugPrint('OrderProvider: Stack trace: $stackTrace');
-        
+
+        final day = DateTime.now().toIso8601String().substring(0, 10).replaceAll('-', '');
+        // Unique temp number to avoid same-millisecond collision when multiple offline orders are saved (prevents merge/UNIQUE violation).
+        final tempOrderNumber = 'TEMP-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(999999)}';
+
         final localOrderId = await DatabaseService.instance.saveOrder({
-          'order_number': orderNumber,
+          'order_number': tempOrderNumber,
           'store_id': _storeId,
           'user_id': userId,
           'sector_id': _sectorId,
@@ -227,25 +240,47 @@ class OrderProvider with ChangeNotifier {
           'synced': 0,
         });
 
-        final orderItems = _cartItems.map((item) => {
-          'order_id': localOrderId,
+        final finalOrderNumber = 'ORD-$day-T-$_storeId-$localOrderId';
+        await DatabaseService.instance.updateOrderNumber(localOrderId, finalOrderNumber);
+
+        final orderItemsForDb = _cartItems.map((item) => {
           'product_id': item['product_id'],
           'quantity': item['quantity'],
+          'unit_type': item['unit_type'] ?? 'quantity',
           'unit_price': item['unit_price'],
           'discount_percent': item['discount_percent'],
           'discount_amount': item['discount_amount'],
           'line_total': item['line_total'],
         }).toList();
 
-        await DatabaseService.instance.saveOrderItems(localOrderId, orderItems);
+        await DatabaseService.instance.saveOrderItems(localOrderId, orderItemsForDb);
 
-        clearCart();
-        return {
+        // Build full order map for receipt printing (same shape as API order with items)
+        final fullOrder = {
           'id': localOrderId,
-          'order_number': orderNumber,
+          'order_number': finalOrderNumber,
+          'store_id': _storeId,
+          'user_id': userId,
+          'sector_id': _sectorId,
+          'subtotal': subtotal,
+          'discount_amount': discountAmount,
+          'total_amount': total,
           'status': 'pending',
           'offline': true,
+          'items': _cartItems.map((item) => {
+            'product_id': item['product_id'],
+            'product': item['product'],
+            'quantity': item['quantity'],
+            'unit_type': item['unit_type'] ?? 'quantity',
+            'unit_price': item['unit_price'],
+            'discount_percent': item['discount_percent'],
+            'discount_amount': item['discount_amount'],
+            'line_total': item['line_total'],
+          }).toList(),
         };
+
+        clearCart();
+        return fullOrder;
       }
     } finally {
       _isLoading = false;

@@ -1,10 +1,18 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/api_config.dart';
 import 'api_logger.dart';
+import 'database_service.dart';
+
+bool _isBinaryResponse(dynamic data) {
+  return data is List<int> ||
+      data is Uint8List ||
+      (data is List && data.isNotEmpty && data.first is int);
+}
 
 class ApiService {
   static final ApiService instance = ApiService._init();
@@ -64,7 +72,7 @@ class ApiService {
         handler.next(options);
       },
       onResponse: (response, handler) async {
-        // Log response to file
+        // Log response to file (binary data is summarized to avoid freezing UI)
         await ApiLogger.instance.logResponse(
           response.statusCode,
           response.requestOptions.uri.toString(),
@@ -72,7 +80,13 @@ class ApiService {
         );
         
         print('API Service: Response - ${response.statusCode} ${response.requestOptions.uri}');
-        print('API Service: Response data: ${response.data}');
+        final rd = response.data;
+        if (rd != null && _isBinaryResponse(rd)) {
+          final len = rd is List ? rd.length : (rd is Uint8List ? rd.length : 0);
+          print('API Service: Response data: [binary, $len bytes]');
+        } else {
+          print('API Service: Response data: $rd');
+        }
         
         // Update last activity time on any successful API response
         if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
@@ -128,19 +142,29 @@ class ApiService {
         
         print('API Service: Error in interceptor - ${error.type}');
         print('API Service: Error message: ${error.message}');
-        print('API Service: Error response: ${error.response?.data}');
+        final errData = error.response?.data;
+        if (errData != null && _isBinaryResponse(errData)) {
+          final len = errData is List ? errData.length : (errData is Uint8List ? errData.length : 0);
+          print('API Service: Error response: [binary, $len bytes]');
+        } else {
+          print('API Service: Error response: $errData');
+        }
         print('API Service: Error status code: ${error.response?.statusCode}');
         
         if (error.response?.statusCode == 401) {
-          // Token expired or unauthorized, clear token and activity
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.remove('jwt_token');
-          await prefs.remove('last_activity_time');
-          await prefs.remove('user_role');
-          await prefs.remove('user_id');
-          
-          // Notify AuthProvider to logout
-          // This will be handled by the AuthProvider's session monitoring
+          // Only clear token when the server rejected our token (invalid/expired).
+          // Do not clear on "Authorization header required" (we didn't send one).
+          final msg = errData is Map ? (errData['error'] ?? '').toString() : '';
+          final tokenWasRejected = msg.contains('Invalid token') ||
+              msg.contains('Invalid token claims') ||
+              msg.contains('expired');
+          if (tokenWasRejected) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove('jwt_token');
+            await prefs.remove('last_activity_time');
+            await prefs.remove('user_role');
+            await prefs.remove('user_id');
+          }
         } else {
           // For non-401 errors, still update activity time (user is still active)
           // This helps distinguish between network errors and actual inactivity
@@ -212,6 +236,7 @@ class ApiService {
       final response = await _dio.post('/auth/login', data: {
         'username': username,
         'password': password,
+        if (_deviceCode != null) 'device_code': _deviceCode,
       });
       print('API Service: Login successful, response: ${response.data}');
       return response.data;
@@ -236,6 +261,89 @@ class ApiService {
     return response.data;
   }
 
+  /// Record day-start stocktake: first_login (on first login of day), done, or skipped with reason.
+  /// [storeId] is the store where the user is working (required for correct timetable per store).
+  /// On network failure, saves event locally for sync when back online (unless [skipLocalSaveOnFailure]).
+  Future<void> recordStocktakeDayStart(
+    String action, {
+    String? skipReason,
+    int? storeId,
+    bool skipLocalSaveOnFailure = false,
+  }) async {
+    final data = <String, dynamic>{'action': action};
+    if (skipReason != null && skipReason.isNotEmpty) data['skip_reason'] = skipReason;
+    if (storeId != null) data['store_id'] = storeId;
+    try {
+      await _dio.post('/stocktake-day-start', data: data);
+    } catch (e) {
+      if (!skipLocalSaveOnFailure) {
+        await _savePendingUserActivityEvent(
+          eventType: action,
+          storeId: storeId,
+          skipReason: skipReason,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Record day-end stocktake skipped with reason (for activity history).
+  /// On network failure, saves event locally for sync when back online (unless [skipLocalSaveOnFailure]).
+  Future<void> recordStocktakeDayEndSkip({
+    required String skipReason,
+    int? storeId,
+    bool skipLocalSaveOnFailure = false,
+  }) async {
+    final data = <String, dynamic>{'action': 'day_end_skipped', 'skip_reason': skipReason};
+    if (storeId != null) data['store_id'] = storeId;
+    try {
+      await _dio.post('/stocktake-day-start', data: data);
+    } catch (e) {
+      if (!skipLocalSaveOnFailure) {
+        await _savePendingUserActivityEvent(
+          eventType: 'day_end_skipped',
+          storeId: storeId,
+          skipReason: skipReason,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Record logout for activity history (login/logout timeline).
+  /// On network failure, saves event locally for sync when back online (unless [skipLocalSaveOnFailure]).
+  Future<void> recordLogout({int? storeId, bool skipLocalSaveOnFailure = false}) async {
+    final data = <String, dynamic>{'action': 'logout'};
+    if (storeId != null) data['store_id'] = storeId;
+    try {
+      await _dio.post('/stocktake-day-start', data: data);
+    } catch (e) {
+      if (!skipLocalSaveOnFailure) {
+        await _savePendingUserActivityEvent(eventType: 'logout', storeId: storeId);
+      }
+    }
+  }
+
+  Future<void> _savePendingUserActivityEvent({
+    required String eventType,
+    int? storeId,
+    String? skipReason,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('user_id');
+      if (userId == null) return;
+      final now = DateTime.now().toUtc().toIso8601String();
+      await DatabaseService.instance.savePendingUserActivityEvent(
+        userId: userId,
+        storeId: storeId,
+        eventType: eventType,
+        occurredAt: now,
+        skipReason: skipReason,
+      );
+    } catch (_) {}
+  }
+
   // Device endpoints
   Future<void> registerDevice(String deviceCode, int storeId, {String? deviceName}) async {
     await _dio.post('/device/register', data: {
@@ -243,6 +351,24 @@ class ApiService {
       'store_id': storeId,
       'device_name': deviceName,
     });
+  }
+
+  /// Add or update this device's store (management only). Creates device if not exists.
+  Future<Map<String, dynamic>> configureDevice(String deviceCode, int storeId, {String? deviceName}) async {
+    final response = await _dio.put('/device/configure', data: {
+      'device_code': deviceCode,
+      'store_id': storeId,
+      if (deviceName != null && deviceName.isNotEmpty) 'device_name': deviceName,
+    });
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// List stores (protected). Used by admin device config.
+  Future<List<dynamic>> getStores() async {
+    final response = await _dio.get('/stores');
+    return response.data is List ? response.data as List<dynamic> : [];
   }
 
   Future<List<dynamic>> getUsersForDevice(String deviceCode) async {
@@ -266,6 +392,48 @@ class ApiService {
   Future<List<dynamic>> getProductsForDevice(String deviceCode) async {
     final response = await _dio.get('/device/$deviceCode/products');
     return response.data;
+  }
+
+  /// Device info including last_stocktake_at for the device's store (from user_activity_events).
+  /// Returns map with device_code, store_id, device_name, last_stocktake_at (String? RFC3339), or null if device not found.
+  Future<Map<String, dynamic>?> getDeviceInfo(String deviceCode) async {
+    try {
+      final response = await _dio.get('/device/$deviceCode/info');
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Download image (or any file) from [url] and return bytes. Uses full URL as-is.
+  Future<Uint8List?> downloadUrl(String url) async {
+    try {
+      final r = await _dio.get<dynamic>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = r.data;
+      if (data == null) return null;
+      if (data is Uint8List) return data;
+      if (data is List<int>) return Uint8List.fromList(data);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Health check (GET /health at server root). Returns true if server is reachable.
+  Future<bool> healthCheck() async {
+    try {
+      final root = _baseUrl!.replaceFirst(RegExp(r'/api/v1/?$'), '');
+      final healthUrl = '$root/health';
+      final response = await _dio.get(healthUrl);
+      return response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300;
+    } catch (_) {
+      return false;
+    }
   }
 
   // Order endpoints
@@ -352,6 +520,42 @@ class ApiService {
   Future<Map<String, dynamic>> getOrder(String orderIdOrNumber) async {
     final response = await _dio.get('/orders/$orderIdOrNumber');
     return response.data;
+  }
+
+  /// GET /orders/stats/revenue. Query: start_date, end_date (YYYY-MM-DD), optional store_id.
+  /// Returns list of { date, revenue, order_count }.
+  Future<List<dynamic>> getDailyRevenueStats({
+    String? startDate,
+    String? endDate,
+    int? storeId,
+  }) async {
+    final queryParams = <String, dynamic>{};
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+    if (storeId != null) queryParams['store_id'] = storeId;
+    final response = await _dio.get(
+      '/orders/stats/revenue',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    return response.data is List ? response.data as List<dynamic> : [];
+  }
+
+  /// GET /orders/stats/product-sales. Query: start_date, end_date (YYYY-MM-DD), optional store_id.
+  /// Returns list of { date, product_id, product_name, product_name_chinese, quantity, revenue }.
+  Future<List<dynamic>> getDailyProductSalesStats({
+    String? startDate,
+    String? endDate,
+    int? storeId,
+  }) async {
+    final queryParams = <String, dynamic>{};
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+    if (storeId != null) queryParams['store_id'] = storeId;
+    final response = await _dio.get(
+      '/orders/stats/product-sales',
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+    return response.data is List ? response.data as List<dynamic> : [];
   }
 
   // Stock endpoints

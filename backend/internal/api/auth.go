@@ -24,8 +24,9 @@ func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
 }
 
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username   string `json:"username" binding:"required"`
+	Password   string `json:"password" binding:"required"`
+	DeviceCode string `json:"device_code"`
 }
 
 type PINLoginRequest struct {
@@ -35,8 +36,9 @@ type PINLoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token string      `json:"token"`
-	User  models.User `json:"user"`
+	Token            string      `json:"token"`
+	User             models.User `json:"user"`
+	LastStocktakeAt  *string     `json:"last_stocktake_at,omitempty"`
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -93,10 +95,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user.PasswordHash = ""
 	user.PINHash = ""
 
-	c.JSON(http.StatusOK, LoginResponse{
-		Token: token,
-		User:  user,
-	})
+	resp := LoginResponse{Token: token, User: user}
+	if req.DeviceCode != "" {
+		if lastAt := h.lastStocktakeAtForDevice(req.DeviceCode); lastAt != nil {
+			resp.LastStocktakeAt = lastAt
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *AuthHandler) PINLogin(c *gin.Context) {
@@ -112,15 +117,16 @@ func (h *AuthHandler) PINLogin(c *gin.Context) {
 		return
 	}
 
-	// Verify device code if provided
+	// Verify device code if provided and get store for last_stocktake_at
+	var deviceStoreID *uint
 	if req.DeviceCode != "" {
-		// Normalize device code for lookup (wrap with braces for database)
 		normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(req.DeviceCode))
 		var device models.POSDevice
 		if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).First(&device).Error; err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid device code"})
 			return
 		}
+		deviceStoreID = &device.StoreID
 	}
 
 	var user models.User
@@ -168,10 +174,40 @@ func (h *AuthHandler) PINLogin(c *gin.Context) {
 	user.PasswordHash = ""
 	user.PINHash = ""
 
-	c.JSON(http.StatusOK, LoginResponse{
-		Token: token,
-		User:  user,
-	})
+	resp := LoginResponse{Token: token, User: user}
+	if deviceStoreID != nil {
+		if lastAt := h.lastStocktakeAtForStore(*deviceStoreID); lastAt != nil {
+			resp.LastStocktakeAt = lastAt
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// lastStocktakeAtForDevice returns last_stocktake_at (RFC3339) for the device's store, or nil.
+func (h *AuthHandler) lastStocktakeAtForDevice(deviceCode string) *string {
+	normalizedDeviceCode := normalizeDeviceCodeForStorage(normalizeDeviceCodeForLookup(deviceCode))
+	var device models.POSDevice
+	if err := h.db.Where("device_code = ? AND is_active = ?", normalizedDeviceCode, true).First(&device).Error; err != nil {
+		return nil
+	}
+	return h.lastStocktakeAtForStore(device.StoreID)
+}
+
+// lastStocktakeAtForStore returns last_stocktake_at (RFC3339) for the store — only from completed (done) events.
+// Skip and first_login do not clear the reminder; only stocktake_day_start_done does.
+func (h *AuthHandler) lastStocktakeAtForStore(storeID uint) *string {
+	var out struct {
+		MaxAt *time.Time `gorm:"column:max_at"`
+	}
+	err := h.db.Model(&models.UserActivityEvent{}).
+		Select("MAX(occurred_at) AS max_at").
+		Where("store_id = ? AND event_type = ?", storeID, models.EventStocktakeDayStartDone).
+		Scan(&out).Error
+	if err != nil || out.MaxAt == nil {
+		return nil
+	}
+	s := out.MaxAt.Format(time.RFC3339)
+	return &s
 }
 
 func (h *AuthHandler) generateJWT(userID uint, username, role string) (string, error) {

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -11,6 +12,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// StockReportRow is one row of the day-start / day-end stock report
+type StockReportRow struct {
+	ProductID        uint    `json:"product_id"`
+	ProductName      string  `json:"product_name"`
+	StoreID          uint    `json:"store_id"`
+	StoreName        string  `json:"store_name"`
+	DayStartQuantity float64 `json:"day_start_quantity"`
+	DayEndQuantity   float64 `json:"day_end_quantity"`
+}
 
 type StockHandler struct {
 	db *gorm.DB
@@ -154,6 +165,112 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 	h.db.Create(&auditLog)
 
 	c.JSON(http.StatusOK, stock)
+}
+
+// GetStockReport returns per-product day-start and day-end quantities for a given date,
+// derived from stock_update audit logs with reason stocktake_day_start / stocktake_day_end.
+func (h *StockHandler) GetStockReport(c *gin.Context) {
+	dateStr := c.Query("date")
+	if dateStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date is required (YYYY-MM-DD)"})
+		return
+	}
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date format (use YYYY-MM-DD)"})
+		return
+	}
+	storeIDStr := c.Query("store_id")
+
+	var logs []models.AuditLog
+	query := h.db.Where("action = ? AND entity_type = ?", "stock_update", "stock").
+		Where("DATE(created_at) = ?", date.Format("2006-01-02")).
+		Order("created_at ASC")
+	if storeIDStr != "" {
+		// Join to stocks to filter by store_id (GORM table name is "stocks")
+		query = query.Joins("INNER JOIN stocks ON audit_logs.entity_id = stocks.id AND stocks.store_id = ?", storeIDStr)
+	}
+	if err := query.Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// changes: product_id, store_id, old_quantity, new_quantity, reason
+	type changeSet struct {
+		ProductID   uint    `json:"product_id"`
+		StoreID     uint    `json:"store_id"`
+		NewQuantity float64 `json:"new_quantity"`
+		Reason      string  `json:"reason"`
+	}
+	type key struct {
+		ProductID uint
+		StoreID   uint
+	}
+	dayStart := make(map[key]float64)
+	dayEnd := make(map[key]float64)
+	for _, log := range logs {
+		var c changeSet
+		if err := json.Unmarshal([]byte(log.Changes), &c); err != nil {
+			continue
+		}
+		k := key{ProductID: c.ProductID, StoreID: c.StoreID}
+		switch c.Reason {
+		case "stocktake_day_start":
+			dayStart[k] = c.NewQuantity
+		case "stocktake_day_end":
+			dayEnd[k] = c.NewQuantity
+		}
+	}
+
+	// Build unique keys and fetch product/store names
+	seen := make(map[key]bool)
+	for k := range dayStart {
+		seen[k] = true
+	}
+	for k := range dayEnd {
+		seen[k] = true
+	}
+	if len(seen) == 0 {
+		c.JSON(http.StatusOK, []StockReportRow{})
+		return
+	}
+
+	var productIDs, storeIDs []uint
+	for k := range seen {
+		productIDs = append(productIDs, k.ProductID)
+		storeIDs = append(storeIDs, k.StoreID)
+	}
+	var products []models.Product
+	h.db.Where("id IN ?", productIDs).Find(&products)
+	var stores []models.Store
+	h.db.Where("id IN ?", storeIDs).Find(&stores)
+	productNameByID := make(map[uint]string)
+	for _, p := range products {
+		productNameByID[p.ID] = p.Name
+	}
+	storeNameByID := make(map[uint]string)
+	for _, s := range stores {
+		storeNameByID[s.ID] = s.Name
+	}
+
+	var rows []StockReportRow
+	for k := range seen {
+		rows = append(rows, StockReportRow{
+			ProductID:        k.ProductID,
+			ProductName:      productNameByID[k.ProductID],
+			StoreID:          k.StoreID,
+			StoreName:        storeNameByID[k.StoreID],
+			DayStartQuantity: dayStart[k],
+			DayEndQuantity:   dayEnd[k],
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].StoreName != rows[j].StoreName {
+			return rows[i].StoreName < rows[j].StoreName
+		}
+		return rows[i].ProductName < rows[j].ProductName
+	})
+	c.JSON(http.StatusOK, rows)
 }
 
 func (h *StockHandler) ListRestockOrders(c *gin.Context) {

@@ -42,7 +42,10 @@
     "devices": "Devices",
     "orders": "Orders",
     "catalogs": "Catalogs",
-    "currencyRates": "Currency Rates"
+    "currencyRates": "Currency Rates",
+    "stocktake": "Stocktake",
+    "stockReport": "Stock report",
+    "timetable": "Store daily log"
   },
   "login": {
     "title": "POS Management System",

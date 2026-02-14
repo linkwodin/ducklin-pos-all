@@ -1,23 +1,32 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
+import '../providers/notification_bar_provider.dart';
+import '../providers/stocktake_flow_provider.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
 
 class OrderPickupScreen extends StatefulWidget {
   final Function(String)? onProductBarcodeScanned;
-  
-  const OrderPickupScreen({super.key, this.onProductBarcodeScanned});
+  /// When set, open step 2 with this order (e.g. after scanning invoice/receipt QR from another tab).
+  final Map<String, String>? initialPickupQR;
+  /// Called after [initialPickupQR] has been applied so parent can clear it.
+  final VoidCallback? onPickupQRApplied;
+
+  const OrderPickupScreen({
+    super.key,
+    this.onProductBarcodeScanned,
+    this.initialPickupQR,
+    this.onPickupQRApplied,
+  });
 
   @override
   State<OrderPickupScreen> createState() => _OrderPickupScreenState();
 }
 
 class _OrderPickupScreenState extends State<OrderPickupScreen> {
-  final MobileScannerController controller = MobileScannerController();
-
   // Scan input (raw QR string)
   final TextEditingController _scanInputController = TextEditingController();
   final FocusNode _scanInputFocus = FocusNode();
@@ -41,8 +50,12 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
   String? _message;
   bool _isSuccess = false;
   bool _isWarning = false; // For warnings (already picked up) vs errors
-  bool _useCamera = false; // Camera disabled initially, enable when button is clicked
   bool _isDialogOpen = false; // Track if a dialog is currently open
+
+  // Order details (shown in place of camera section)
+  Map<String, dynamic>? _orderDetails;
+  bool _orderDetailsLoading = false;
+  String? _orderDetailsError;
   
   // Two-scan verification
   String? _firstScanOrderNumber; // From first QR code (invoice or receipt)
@@ -53,21 +66,41 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
   String? _secondScanReceiptType; // "invoice" or "receipt"
   int _scanStep = 1; // 1 = first scan (any type), 2 = second scan (opposite type)
 
+  StocktakeFlowProvider? _flowProvider;
+
+  bool _isCurrentRoute(BuildContext ctx) => ModalRoute.of(ctx)?.isCurrent ?? false;
+
+  void _requestScanFocusIfAllowed() {
+    if (_flowProvider == null || !_flowProvider!.allowBarcodeFocus) return;
+    if (_uiStep != 1 || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _uiStep == 1 && _flowProvider?.allowBarcodeFocus == true && _isCurrentRoute(context)) {
+        _requestScanFocus();
+      }
+    });
+  }
+
+  /// Request focus on scan field only when stocktake flow allows and this route is on top.
+  void _requestScanFocus() {
+    if (_flowProvider?.allowBarcodeFocus != true || !mounted) return;
+    if (!_isCurrentRoute(context)) return;
+    _scanInputFocus.requestFocus();
+  }
+
   @override
   void initState() {
     super.initState();
-    // Auto-focus the text field when screen loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scanInputFocus.requestFocus();
-    });
-    
-    // Listen to focus changes to keep the hidden text field focused
+    if (widget.initialPickupQR != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.initialPickupQR != null) _applyInitialPickupQR();
+      });
+    }
+    // Listen to focus changes to keep the hidden text field focused (only when barcode focus is allowed)
     _scanInputFocus.addListener(() {
-      if (!_scanInputFocus.hasFocus && _uiStep == 1) {
-        // Re-focus if we're in step 1 and lost focus
+      if (!_scanInputFocus.hasFocus && _uiStep == 1 && _flowProvider?.allowBarcodeFocus == true) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_uiStep == 1 && !_useCamera) {
-            _scanInputFocus.requestFocus();
+          if (_uiStep == 1 && _flowProvider?.allowBarcodeFocus == true && mounted && _isCurrentRoute(context)) {
+            _requestScanFocus();
           }
         });
       }
@@ -75,8 +108,49 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_flowProvider == null) {
+      _flowProvider = Provider.of<StocktakeFlowProvider>(context, listen: false);
+      _flowProvider!.addListener(_requestScanFocusIfAllowed);
+      if (widget.initialPickupQR == null) _requestScanFocusIfAllowed();
+    }
+  }
+
+  void _applyInitialPickupQR() {
+    final qr = widget.initialPickupQR;
+    if (qr == null || !mounted) return;
+    final orderNumber = qr['orderNumber']?.trim() ?? '';
+    final checkCode = qr['checkCode']?.trim() ?? '';
+    final receiptType = (qr['receiptType']?.trim().toLowerCase() == 'receipt') ? 'receipt' : 'invoice';
+    if (orderNumber.isEmpty || checkCode.isEmpty) return;
+    setState(() {
+      _uiStep = 2;
+      _currentOrderNumber = orderNumber;
+      _firstScanOrderNumber = orderNumber;
+      _firstScanCheckCode = checkCode;
+      _firstScanReceiptType = receiptType;
+      _scanStep = 2;
+      if (receiptType == 'invoice') {
+        _invoiceOrderController.text = orderNumber;
+        _invoiceCheckController.text = checkCode;
+        _receiptOrderController.clear();
+        _receiptCheckController.clear();
+      } else {
+        _receiptOrderController.text = orderNumber;
+        _receiptCheckController.text = checkCode;
+        _invoiceOrderController.clear();
+        _invoiceCheckController.clear();
+      }
+    });
+    _loadOrderDetails();
+    _handleQRCodeScan(orderNumber, checkCode, receiptType: receiptType, context: context);
+    widget.onPickupQRApplied?.call();
+  }
+
+  @override
   void dispose() {
-    controller.dispose();
+    _flowProvider?.removeListener(_requestScanFocusIfAllowed);
     _scanInputController.dispose();
     _scanInputFocus.dispose();
     _invoiceOrderController.dispose();
@@ -126,7 +200,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
       });
       // Focus on order number field for second scan
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scanInputFocus.requestFocus();
+        _requestScanFocus();
       });
     } else if (_scanStep == 2) {
       // Second scan - Must be the opposite type
@@ -150,39 +224,25 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
           _scanStep = 1;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scanInputFocus.requestFocus();
+          _requestScanFocus();
         });
         return;
       }
 
       // Verify it's the opposite receipt type
       if (currentReceiptType == _firstScanReceiptType) {
-        // Same receipt type scanned twice - show warning but don't clear input
-        final oppositeType = _firstScanReceiptType == 'invoice' ? 'Receipt' : 'Invoice';
-        final warningMessage = 'Warning: You scanned the same ${_firstScanReceiptType == 'invoice' ? 'Invoice' : 'Receipt'} QR code again. Please scan the $oppositeType QR code from the same order.';
-        
-        // Show toast message
         if (context != null && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(warningMessage),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Close',
-                textColor: Colors.white,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                },
-              ),
-            ),
-          );
+          final l10n = AppLocalizations.of(context!);
+          if (l10n != null) {
+            final oppositeTypeLabel = _firstScanReceiptType == 'invoice' ? l10n.pickupReceipt : l10n.pickupInvoice;
+            context!.showNotification(l10n.scanOtherQRFromOrder(oppositeTypeLabel));
+          }
         }
         
         // Don't clear any input - keep the check codes that were already entered
         // Don't reset scan step - stay in step 2
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scanInputFocus.requestFocus();
+          _requestScanFocus();
         });
         return;
       }
@@ -258,7 +318,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
           _receiptCheckController.clear();
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scanInputFocus.requestFocus();
+          _requestScanFocus();
         });
         return;
       }
@@ -278,6 +338,12 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     await _confirmPickupWithCheckCode(orderNumber, checkCode, context: context);
   }
 
+  void _showPickupSuccessSnackBar(BuildContext? context, String orderNumber, AppLocalizations l10n) {
+    if (context != null) {
+      context.showNotification(l10n.orderPickedUp(orderNumber), isSuccess: true);
+    }
+  }
+
   Future<void> _confirmPickupWithCheckCode(
     String orderNumber, 
     String? checkCode, {
@@ -295,6 +361,9 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
       _isWarning = false;
     });
 
+    // Capture context and l10n before any await so they stay valid after we switch to step 1
+    final l10n = context != null ? AppLocalizations.of(context!) : null;
+
     try {
       // If both check codes are provided, use the new format
       if (invoiceCheckCode != null && invoiceCheckCode.isNotEmpty && 
@@ -305,12 +374,19 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
           receiptCheckCode: receiptCheckCode,
         );
         await _handlePickupSuccess(response, orderNumber);
+        if (context != null && l10n != null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showPickupSuccessSnackBar(context, orderNumber, l10n);
+          });
+        }
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted) setState(() { _message = null; _isSuccess = false; _isWarning = false; });
+        });
         return;
       }
       
       // Legacy format: If receipt type not specified and check code provided, try both
       if (receiptType == null && checkCode != null && checkCode.isNotEmpty) {
-        // Try receipt first
         try {
           final response = await ApiService.instance.confirmOrderPickup(
             orderNumber,
@@ -318,9 +394,16 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
             receiptType: 'receipt',
           );
           await _handlePickupSuccess(response, orderNumber);
+          if (context != null && l10n != null && mounted) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _showPickupSuccessSnackBar(context, orderNumber, l10n);
+            });
+          }
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted) setState(() { _message = null; _isSuccess = false; _isWarning = false; });
+          });
           return;
         } catch (e) {
-          // If receipt fails, try invoice
           try {
             final response = await ApiService.instance.confirmOrderPickup(
               orderNumber,
@@ -328,9 +411,16 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
               receiptType: 'invoice',
             );
             await _handlePickupSuccess(response, orderNumber);
+            if (context != null && l10n != null && mounted) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _showPickupSuccessSnackBar(context, orderNumber, l10n);
+              });
+            }
+            Future.delayed(const Duration(seconds: 5), () {
+              if (mounted) setState(() { _message = null; _isSuccess = false; _isWarning = false; });
+            });
             return;
           } catch (e2) {
-            // Both failed, show error
             throw e2;
           }
         }
@@ -345,15 +435,13 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
       
       await _handlePickupSuccess(response, orderNumber);
 
-      // Reset message after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          setState(() {
-            _message = null;
-            _isSuccess = false;
-            _isWarning = false;
-          });
-        }
+      if (context != null && l10n != null && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showPickupSuccessSnackBar(context, orderNumber, l10n);
+        });
+      }
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) setState(() { _message = null; _isSuccess = false; _isWarning = false; });
       });
     } catch (e) {
       String errorMessage = 'Error: ${e.toString()}';
@@ -381,6 +469,29 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
           }
         }
       }
+
+      // If API failed (e.g. network lost), try to record pickup locally
+      if (!isWarning) {
+        try {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final updated = await DatabaseService.instance.updateOrderStatusByOrderNumber(
+            orderNumber,
+            status: 'completed',
+            pickedUpAtMillis: now,
+          );
+          if (updated && mounted) {
+            await _handlePickupSuccess(
+              {
+                'status': 'completed',
+                'picked_up_at': DateTime.fromMillisecondsSinceEpoch(now).toUtc().toIso8601String(),
+              },
+              orderNumber,
+              offlineMessage: 'Order $orderNumber recorded locally. Will sync when back online.',
+            );
+            return;
+          }
+        } catch (_) {}
+      }
       
       setState(() {
         _isSuccess = false;
@@ -391,7 +502,6 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
         // If order is already picked up, go back to step 1
         if (isWarning && errorMessage.contains('already picked up')) {
           _uiStep = 1;
-          _useCamera = false;
           _scanInputController.clear();
           _invoiceOrderController.clear();
           _invoiceCheckController.clear();
@@ -406,46 +516,37 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
           _secondScanReceiptType = null;
           _scanStep = 1;
           _lastProcessedValue = '';
+          _orderDetails = null;
+          _orderDetailsLoading = false;
+          _orderDetailsError = null;
           
-          // Show toast message in step 1
           if (context != null && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(errorMessage),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 5),
-                action: SnackBarAction(
-                  label: 'Close',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  },
-                ),
-              ),
+            final l10n = AppLocalizations.of(context!);
+            final prefix = 'Order $orderNumber was already picked up at ';
+            final timeSubtitle = errorMessage.startsWith(prefix)
+                ? errorMessage.substring(prefix.length).trim()
+                : null;
+            context.showNotification(
+              (timeSubtitle != null && timeSubtitle.length < 30)
+                  ? '${l10n?.alreadyPickedUp ?? 'Already picked up'} $timeSubtitle'
+                  : (l10n?.alreadyPickedUp ?? 'Already picked up'),
             );
           }
           
           // Re-focus the text field in step 1
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _uiStep == 1) {
-              _scanInputFocus.requestFocus();
+              _requestScanFocus();
             }
           });
         } else if (context != null && mounted && _uiStep == 2) {
-          // Show toast message in step 2 for all errors/warnings
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: isWarning ? Colors.orange : Colors.red,
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Close',
-                textColor: Colors.white,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                },
-              ),
-            ),
+          final l10n = AppLocalizations.of(context!);
+          final shortMessage = errorMessage.contains('Order numbers do not match')
+              ? (l10n?.orderNumbersDontMatch ?? 'Order numbers don\'t match. Scan both QRs from the same order.')
+              : errorMessage.replaceFirst('Error: ', '');
+          context.showNotification(
+            shortMessage,
+            isError: !isWarning,
           );
         }
       });
@@ -471,7 +572,234 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     }
   }
 
-  Future<void> _handlePickupSuccess(Map<String, dynamic> response, String orderNumber) async {
+  Future<void> _loadOrderDetails() async {
+    final orderNumber = _currentOrderNumber?.trim();
+    if (orderNumber == null || orderNumber.isEmpty) {
+      setState(() {
+        _orderDetails = null;
+        _orderDetailsError = null;
+        _orderDetailsLoading = false;
+      });
+      return;
+    }
+    setState(() {
+      _orderDetails = null;
+      _orderDetailsError = null;
+      _orderDetailsLoading = true;
+    });
+    try {
+      final data = await ApiService.instance.getOrder(orderNumber);
+      if (mounted) {
+        setState(() {
+          _orderDetails = data;
+          _orderDetailsError = null;
+          _orderDetailsLoading = false;
+        });
+      }
+    } catch (e) {
+      // Network lost or API error: try local database
+      try {
+        final localOrder = await DatabaseService.instance.getOrderWithItemsByOrderNumber(orderNumber);
+        if (mounted && localOrder != null) {
+          setState(() {
+            _orderDetails = localOrder;
+            _orderDetailsError = null;
+            _orderDetailsLoading = false;
+          });
+          return;
+        }
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _orderDetails = null;
+          _orderDetailsError = e.toString();
+          _orderDetailsLoading = false;
+        });
+      }
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'paid':
+        return Colors.blue;
+      case 'completed':
+        return Colors.green;
+      case 'picked_up':
+        return Colors.purple;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildOrderDetailsSection(BuildContext context, AppLocalizations l10n) {
+    if (_orderDetailsLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_orderDetailsError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.red[700]),
+              const SizedBox(height: 16),
+              Text(
+                l10n.orderDetails,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _orderDetailsError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_orderDetails == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.receipt_long, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                l10n.orderDetails,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.tapToEnterOrderNumber,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final order = _orderDetails!;
+    final items = order['items'] as List<dynamic>? ?? [];
+    final orderNumber = order['order_number']?.toString() ?? '';
+    final status = order['status']?.toString() ?? '';
+    final createdAt = order['created_at']?.toString();
+    final createdStr = createdAt != null
+        ? (() {
+            try {
+              final dt = DateTime.parse(createdAt);
+              return DateFormat.yMd().add_Hm().format(dt);
+            } catch (_) {
+              return createdAt;
+            }
+          })()
+        : '';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.orderDetails,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          if (orderNumber.isNotEmpty || status.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (orderNumber.isNotEmpty)
+                    Expanded(
+                      child: Text('${l10n.orderNumberLabel}: $orderNumber', style: const TextStyle(fontSize: 16)),
+                    ),
+                  if (status.isNotEmpty) ...[
+                    if (orderNumber.isNotEmpty) const SizedBox(width: 12),
+                    Chip(
+                      label: Text(
+                        status.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: _getStatusColor(status),
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (createdStr.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text('Created: $createdStr', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            ),
+          const Divider(height: 24),
+          Text(
+            l10n.orderItems ?? 'Order items',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            Text(l10n.noItemsFound ?? 'No items', style: TextStyle(fontSize: 14, color: Colors.grey[600]))
+          else
+            ...items.map<Widget>((e) {
+              final item = e is Map<String, dynamic> ? e : <String, dynamic>{};
+              final product = item['product'] is Map ? item['product'] as Map<String, dynamic> : <String, dynamic>{};
+              final nameZh = product['name_chinese']?.toString().trim();
+              final nameEn = product['name']?.toString().trim();
+              final hasZh = nameZh != null && nameZh.isNotEmpty;
+              final hasEn = nameEn != null && nameEn.isNotEmpty;
+              final qty = item['quantity']?.toString() ?? '0';
+              final nameWidget = hasZh && hasEn
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(nameZh!, style: const TextStyle(fontSize: 14)),
+                        Text(nameEn!, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      ],
+                    )
+                  : Text(
+                      hasZh ? nameZh! : (hasEn ? nameEn! : '—'),
+                      style: const TextStyle(fontSize: 14),
+                    );
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: nameWidget),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: Text('Qty: $qty', style: const TextStyle(fontSize: 14)),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handlePickupSuccess(Map<String, dynamic> response, String orderNumber, {String? offlineMessage}) async {
     // Update local database with new order status
     try {
       final db = await DatabaseService.instance.database;
@@ -539,7 +867,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     
     setState(() {
       _isSuccess = true;
-      _message = 'Order $orderNumber picked up successfully!';
+      _message = offlineMessage ?? 'Order $orderNumber picked up successfully!';
       _isProcessing = false;
     });
 
@@ -558,7 +886,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     _secondScanReceiptType = null;
     _scanStep = 1;
     _uiStep = 1; // Go back to first step after successful pickup
-    _scanInputFocus.requestFocus();
+    _requestScanFocus();
   }
 
   @override
@@ -575,7 +903,6 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                 onPressed: () {
                   setState(() {
                     _uiStep = 1;
-                    _useCamera = false;
                     _scanInputController.clear();
                     _invoiceOrderController.clear();
                     _invoiceCheckController.clear();
@@ -593,45 +920,26 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                     _isSuccess = false;
                     _isWarning = false;
                     _lastProcessedValue = '';
+                    _orderDetails = null;
+                    _orderDetailsLoading = false;
+                    _orderDetailsError = null;
                   });
                   // Use a delayed callback to ensure widget tree is rebuilt
                   Future.delayed(const Duration(milliseconds: 200), () {
                     if (mounted && _uiStep == 1) {
-                      _scanInputFocus.requestFocus();
+                      _requestScanFocus();
                     }
                   });
                   // Also request focus immediately after setState
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted && _uiStep == 1) {
-                      _scanInputFocus.requestFocus();
+                      _requestScanFocus();
                     }
                   });
                 },
               )
             : null,
-        actions: _uiStep == 1
-            ? null
-            : [
-                IconButton(
-                  icon: Icon(_useCamera ? Icons.keyboard : Icons.camera_alt),
-                  onPressed: () {
-                    setState(() {
-                      _useCamera = !_useCamera;
-                      if (_useCamera) {
-                        _scanInputFocus.unfocus();
-                      } else {
-                        _scanInputFocus.requestFocus();
-                      }
-                    });
-                  },
-                  tooltip: _useCamera ? 'Use Keyboard Input' : 'Use Camera Scanner',
-                ),
-                if (_useCamera)
-                  IconButton(
-                    icon: const Icon(Icons.flash_off, color: Colors.grey),
-                    onPressed: () => controller.toggleTorch(),
-                  ),
-              ],
+        actions: null,
       ),
       body: _uiStep == 1
           ? _buildStepOne(context, l10n)
@@ -640,13 +948,15 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
   }
 
   Widget _buildStepOne(BuildContext context, AppLocalizations l10n) {
-    // Ensure focus when step 1 is shown
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_uiStep == 1 && !_useCamera && !_scanInputFocus.hasFocus) {
-        _scanInputFocus.requestFocus();
-      }
-    });
-    
+    // Ensure focus when step 1 is shown (only after stocktake flow allows barcode focus)
+    if (_flowProvider?.allowBarcodeFocus == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_uiStep == 1 && !_scanInputFocus.hasFocus && mounted) {
+          _requestScanFocus();
+        }
+      });
+    }
+
     return Stack(
       children: [
         // Hidden text field for barcode scanner input (barcode scanners act as keyboard)
@@ -660,11 +970,10 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
               opacity: 0,
               child: Focus(
               onFocusChange: (hasFocus) {
-                // Re-focus if we lost focus and we're in step 1
-                if (!hasFocus && _uiStep == 1 && !_useCamera) {
+                if (!hasFocus && _uiStep == 1 && _flowProvider?.allowBarcodeFocus == true) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_uiStep == 1 && !_useCamera) {
-                      _scanInputFocus.requestFocus();
+                    if (_uiStep == 1 && _flowProvider?.allowBarcodeFocus == true) {
+                      _requestScanFocus();
                     }
                   });
                 }
@@ -673,7 +982,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                 controller: _scanInputController,
                 focusNode: _scanInputFocus,
                 autofocus: true,
-                enabled: !_useCamera, // Disable when camera is on
+                enabled: true,
                 onChanged: (value) {
                   // Don't process on every character change - wait for complete input
                   // Barcode scanners typically send all data at once, but we'll process in onSubmitted
@@ -728,6 +1037,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                             _invoiceCheckController.clear();
                           }
                         });
+                        _loadOrderDetails();
                         // Handle the QR code scan only if receipt type is specified
                         if (receiptTypeFromQR != null) {
                           _handleQRCodeScan(orderNumber, checkCode, receiptType: receiptTypeFromQR, context: context);
@@ -736,8 +1046,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                         _lastProcessedValue = '';
                         // Re-focus after transition
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (_uiStep == 2 && !_useCamera) {
-                            _scanInputFocus.requestFocus();
+                          if (_uiStep == 2) {
+                            _requestScanFocus();
                           }
                         });
                       }
@@ -765,7 +1075,6 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                         : () {
                             setState(() {
                               _uiStep = 2;
-                              _useCamera = true;
                             });
                           },
                     style: ElevatedButton.styleFrom(
@@ -810,10 +1119,9 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                         : () {
                             setState(() {
                               _uiStep = 2;
-                              _useCamera = false;
                             });
                             WidgetsBinding.instance.addPostFrameCallback((_) {
-                              _scanInputFocus.requestFocus();
+                              _requestScanFocus();
                             });
                           },
                     style: OutlinedButton.styleFrom(
@@ -836,8 +1144,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
   Widget _buildStepTwo(BuildContext context, AppLocalizations l10n) {
     // Ensure the hidden text field is focused when step 2 is shown and camera is off
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_uiStep == 2 && !_useCamera && !_scanInputFocus.hasFocus && !_isDialogOpen) {
-        _scanInputFocus.requestFocus();
+      if (_uiStep == 2 && !_scanInputFocus.hasFocus && !_isDialogOpen) {
+        _requestScanFocus();
       }
     });
     
@@ -855,16 +1163,16 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
               child: Focus(
                 onFocusChange: (hasFocus) {
                   // Re-focus if we lost focus and camera is off, but not if a dialog is open
-                  if (!hasFocus && _uiStep == 2 && !_useCamera && !_isDialogOpen) {
+                  if (!hasFocus && _uiStep == 2 && !_isDialogOpen) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_uiStep == 2 && !_useCamera && !_isDialogOpen) {
-                        _scanInputFocus.requestFocus();
+                      if (_uiStep == 2 && !_isDialogOpen) {
+                        _requestScanFocus();
                       }
                     });
                   }
                 },
                 child: TextField(
-                  enabled: !_useCamera, // Disable when camera is on
+                  enabled: true,
                   controller: _scanInputController,
                   focusNode: _scanInputFocus,
                   autofocus: true,
@@ -922,6 +1230,7 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                             }
                             // If receiptTypeFromQR is null, don't populate anything
                           });
+                          _loadOrderDetails();
                           // Handle the QR code scan only if receipt type is specified
                           if (receiptTypeFromQR != null) {
                             _handleQRCodeScan(orderNumber, checkCode, receiptType: receiptTypeFromQR, context: context);
@@ -930,8 +1239,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                           _lastProcessedValue = '';
                           // Re-focus after clearing
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (_uiStep == 2 && !_useCamera) {
-                              _scanInputFocus.requestFocus();
+                            if (_uiStep == 2) {
+                              _requestScanFocus();
                             }
                           });
                         }
@@ -959,9 +1268,9 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                 Center(
                   child: Column(
                     children: [
-                      const Text(
-                        'Order number',
-                        style: TextStyle(
+                      Text(
+                        l10n.orderNumberLabel,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
@@ -981,22 +1290,22 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                   context: context,
                                   builder: (ctx) {
                                     return AlertDialog(
-                                      title: const Text('Edit order number'),
+                                      title: Text(l10n.editOrderNumber),
                                       content: TextField(
                                         controller: controller,
                                         autofocus: true,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Order number',
+                                        decoration: InputDecoration(
+                                          labelText: l10n.orderNumberLabel,
                                         ),
                                       ),
                                       actions: [
                                         TextButton(
                                           onPressed: () => Navigator.of(ctx).pop(),
-                                          child: const Text('Cancel'),
+                                          child: Text(l10n.cancel),
                                         ),
                                         TextButton(
                                           onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-                                          child: const Text('OK'),
+                                          child: Text(l10n.ok),
                                         ),
                                       ],
                                     );
@@ -1013,18 +1322,19 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                     _invoiceOrderController.text = newValue;
                                     _receiptOrderController.text = newValue;
                                   });
+                                  _loadOrderDetails();
                                   _tryAutoConfirmIfReady(context: context);
                                 }
                                 
                                 // Re-focus the hidden text field after dialog closes
                                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (_uiStep == 2 && !_useCamera && !_isDialogOpen) {
-                                    _scanInputFocus.requestFocus();
+                                  if (_uiStep == 2 && !_isDialogOpen) {
+                                    _requestScanFocus();
                                   }
                                 });
                               },
                         child: Text(
-                          _currentOrderNumber ?? 'Tap to enter order number',
+                          _currentOrderNumber ?? l10n.tapToEnterOrderNumber,
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
@@ -1045,9 +1355,9 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Invoice',
-                            style: TextStyle(
+                          Text(
+                            l10n.pickupInvoice,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1067,23 +1377,23 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                       context: context,
                                       builder: (ctx) {
                                         return AlertDialog(
-                                          title: const Text('Edit invoice check code'),
+                                          title: Text(l10n.invoiceCheckCodeLabel),
                                           content: TextField(
                                             controller: controller,
                                             autofocus: true,
                                             keyboardType: TextInputType.number,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Invoice check code',
+                                            decoration: InputDecoration(
+                                              labelText: l10n.invoiceCheckCodeLabel,
                                             ),
                                           ),
                                           actions: [
                                             TextButton(
                                               onPressed: () => Navigator.of(ctx).pop(),
-                                              child: const Text('Cancel'),
+                                              child: Text(l10n.cancel),
                                             ),
                                             TextButton(
                                               onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-                                              child: const Text('OK'),
+                                              child: Text(l10n.ok),
                                             ),
                                           ],
                                         );
@@ -1107,8 +1417,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                     
                                     // Re-focus the hidden text field after dialog closes
                                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (_uiStep == 2 && !_useCamera && !_isDialogOpen) {
-                                        _scanInputFocus.requestFocus();
+                                      if (_uiStep == 2 && !_isDialogOpen) {
+                                        _requestScanFocus();
                                       }
                                     });
                                   },
@@ -1121,8 +1431,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                               child: Center(
                                 child: _invoiceCheckController.text.isNotEmpty
                                     ? const Icon(Icons.check, color: Colors.green, size: 64)
-                                    : const Text(
-                                        'Tap to set invoice check code',
+                                    : Text(
+                                        l10n.tapToSetInvoiceCheckCode,
                                         textAlign: TextAlign.center,
                                       ),
                               ),
@@ -1137,9 +1447,9 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Receipt',
-                            style: TextStyle(
+                          Text(
+                            l10n.pickupReceipt,
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1159,23 +1469,23 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                       context: context,
                                       builder: (ctx) {
                                         return AlertDialog(
-                                          title: const Text('Edit receipt check code'),
+                                          title: Text(l10n.receiptCheckCodeLabel),
                                           content: TextField(
                                             controller: controller,
                                             autofocus: true,
                                             keyboardType: TextInputType.number,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Receipt check code',
+                                            decoration: InputDecoration(
+                                              labelText: l10n.receiptCheckCodeLabel,
                                             ),
                                           ),
                                           actions: [
                                             TextButton(
                                               onPressed: () => Navigator.of(ctx).pop(),
-                                              child: const Text('Cancel'),
+                                              child: Text(l10n.cancel),
                                             ),
                                             TextButton(
                                               onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-                                              child: const Text('OK'),
+                                              child: Text(l10n.ok),
                                             ),
                                           ],
                                         );
@@ -1199,8 +1509,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                                     
                                     // Re-focus the hidden text field after dialog closes
                                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (_uiStep == 2 && !_useCamera && !_isDialogOpen) {
-                                        _scanInputFocus.requestFocus();
+                                      if (_uiStep == 2 && !_isDialogOpen) {
+                                        _requestScanFocus();
                                       }
                                     });
                                   },
@@ -1213,8 +1523,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
                               child: Center(
                                 child: _receiptCheckController.text.isNotEmpty
                                     ? const Icon(Icons.check, color: Colors.green, size: 64)
-                                    : const Text(
-                                        'Tap to set receipt check code',
+                                    : Text(
+                                        l10n.tapToSetReceiptCheckCode,
                                         textAlign: TextAlign.center,
                                       ),
                               ),
@@ -1229,124 +1539,10 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
             ),
           ),
           
-          // Camera scanner (optional) or full height for keyboard mode
-          if (_useCamera)
-            Expanded(
-              child: Stack(
-                children: [
-                  MobileScanner(
-                    controller: controller,
-                    onDetect: (capture) {
-                      if (_isProcessing) return;
-                      if (capture.barcodes.isEmpty) return;
-                      
-                      final barcode = capture.barcodes.first;
-                      if (barcode.rawValue != null) {
-                        final qrData = barcode.rawValue!;
-                        // Check if QR code contains '|' (invoice or receipt format)
-                        // Format: "ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE" or "ORDER_NUMBER|CHECK_CODE"
-                        if (qrData.contains('|')) {
-                          final parts = qrData.split('|');
-                          if (parts.length >= 2) {
-                            // QR code contains order number and check code
-                            final orderNumber = parts[0].trim();
-                            final checkCode = parts[1].trim();
-                            // Receipt type is optional (parts[2] if present)
-                            final receiptTypeFromQR = parts.length >= 3 ? parts[2].trim().toLowerCase() : null;
-                            
-                            if (orderNumber.isNotEmpty && checkCode.isNotEmpty) {
-                              // Populate appropriate side based on type
-                              setState(() {
-                                if (receiptTypeFromQR == 'invoice') {
-                                  _invoiceOrderController.text = orderNumber;
-                                  _invoiceCheckController.text = checkCode;
-                                } else if (receiptTypeFromQR == 'receipt') {
-                                  _receiptOrderController.text = orderNumber;
-                                  _receiptCheckController.text = checkCode;
-                                }
-                              });
-                              
-                              // Also drive the two-scan state machine
-                              _handleQRCodeScan(orderNumber, checkCode, receiptType: receiptTypeFromQR, context: context);
-                            } else {
-                              setState(() {
-                                _message = 'Invalid QR code format. Please scan again.';
-                                _isSuccess = false;
-                                _isWarning = false;
-                              });
-                            }
-                          } else {
-                            setState(() {
-                              _message = 'QR code format invalid. Expected: ORDER_NUMBER|CHECK_CODE|RECEIPT_TYPE';
-                              _isSuccess = false;
-                              _isWarning = false;
-                            });
-                          }
-                        } else {
-                          // QR code doesn't contain '|' - treat as order number only
-                          setState(() {
-                            _message = _scanStep == 1 
-                                ? 'Invoice QR code should contain |. Please enter check code manually or scan again.'
-                                : 'Receipt QR code should contain |. Please enter check code manually or scan again.';
-                            _isSuccess = false;
-                            _isWarning = false;
-                          });
-                          // Focus on check code field
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            _scanInputFocus.requestFocus();
-                          });
-                        }
-                      }
-                    },
-                  ),
-                  
-                  // Instructions overlay for camera
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(20),
-                          topRight: Radius.circular(20),
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.qr_code_scanner,
-                            size: 48,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            l10n.scanOrderQRCode ?? 'Scan Order QR Code',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            l10n.scanQRCodeToConfirmPickup ?? 'Scan the QR code on the invoice to confirm order pickup',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          // Order details section (replaces camera)
+          Expanded(
+            child: _buildOrderDetailsSection(context, l10n),
+          ),
           ],
           ),
         ),
@@ -1354,4 +1550,3 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     );
   }
 }
-

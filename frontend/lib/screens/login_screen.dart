@@ -24,6 +24,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _restoreSessionAndLoadUsers();
+  }
+
+  Future<void> _restoreSessionAndLoadUsers() async {
+    if (!mounted) return;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.checkAuth();
+    if (!mounted) return;
     _loadUsers();
   }
 
@@ -64,15 +72,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Fetch users from API
       final users = await ApiService.instance.getUsersForDevice(deviceCode);
+      final userList = users.cast<Map<String, dynamic>>();
+
+      // Remove local users that no longer exist on the server
+      try {
+        final ids = userList
+            .map((u) => u['id'])
+            .where((x) => x != null)
+            .map((x) => x is int ? x : (x as num).toInt())
+            .toList();
+        await DatabaseService.instance.deleteUsersNotInIds(ids);
+      } catch (e) {
+        debugPrint('Error removing obsolete users: $e');
+      }
 
       // Save to local database
-      if (users.isNotEmpty) {
+      if (userList.isNotEmpty) {
         try {
-          await DatabaseService.instance.saveUsers(
-            users.cast<Map<String, dynamic>>(),
-          );
+          await DatabaseService.instance.saveUsers(userList);
           setState(() {
-            _syncMessage = l10n.syncedUsers(users.length);
+            _syncMessage = l10n.syncedUsers(userList.length);
           });
         } catch (saveError) {
           // If save fails, show error message

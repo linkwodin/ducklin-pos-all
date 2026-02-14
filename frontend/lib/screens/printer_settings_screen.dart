@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart' as bt;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:pos_system/l10n/app_localizations.dart';
+import '../providers/notification_bar_provider.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart' as esc_pos_utils;
 // Windows printer library (only available on Windows)
 import 'package:windows_printer/windows_printer.dart' if (dart.library.html) 'package:windows_printer/windows_printer_stub.dart' as windows_printer;
@@ -103,9 +105,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
     }
     
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsSavedSuccessfully)),
-      );
+      context.showNotification(l10n.settingsSavedSuccessfully, isSuccess: true);
     }
   }
 
@@ -137,9 +137,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
         _isScanning = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error scanning Bluetooth: $e')),
-        );
+        context.showNotification('Error scanning Bluetooth: $e', isError: true);
       }
     }
   }
@@ -342,9 +340,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
         _isScanningUsb = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error listing printers: $e')),
-        );
+        context.showNotification('Error listing printers: $e', isError: true);
       }
     }
   }
@@ -787,9 +783,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
         _isScanningUsb = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error scanning USB printers: $e')),
-        );
+        context.showNotification('Error scanning USB printers: $e', isError: true);
       }
     }
   }

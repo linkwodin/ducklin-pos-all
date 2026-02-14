@@ -24,9 +24,11 @@ func NewOrderHandler(db *gorm.DB, cfg *config.Config) *OrderHandler {
 }
 
 type CreateOrderRequest struct {
-	StoreID    uint   `json:"store_id" binding:"required"`
-	DeviceCode string `json:"device_code"`
-	SectorID   *uint  `json:"sector_id"`
+	StoreID    uint    `json:"store_id" binding:"required"`
+	DeviceCode string  `json:"device_code"`
+	SectorID   *uint   `json:"sector_id"`
+	OrderNumber *string `json:"order_number"` // Optional: from frontend (offline sync); enables idempotent create
+	CreatedAt   *string `json:"created_at"`   // Optional: ISO8601 from frontend (offline order date)
 	Items      []struct {
 		ProductID uint    `json:"product_id" binding:"required"`
 		Quantity  float64 `json:"quantity" binding:"required"`
@@ -44,8 +46,23 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Generate order number
-	orderNumber := fmt.Sprintf("ORD-%s-%d", time.Now().Format("20060102"), time.Now().Unix()%10000)
+	// Idempotent create: if frontend sends order_number (e.g. from offline sync), return existing order when already created
+	if req.OrderNumber != nil && strings.TrimSpace(*req.OrderNumber) != "" {
+		var existing models.Order
+		if err := h.db.Preload("Store").Preload("User").Preload("Sector").Preload("Items.Product").
+			Where("order_number = ?", strings.TrimSpace(*req.OrderNumber)).First(&existing).Error; err == nil {
+			c.JSON(http.StatusOK, existing)
+			return
+		}
+	}
+
+	// Use provided order number (e.g. ORD-{day}-T-{storeId}-{localId}) or generate
+	var orderNumber string
+	if req.OrderNumber != nil && strings.TrimSpace(*req.OrderNumber) != "" {
+		orderNumber = strings.TrimSpace(*req.OrderNumber)
+	} else {
+		orderNumber = fmt.Sprintf("ORD-%s-%d", time.Now().Format("20060102"), time.Now().Unix()%10000)
+	}
 
 	// Calculate totals
 	var subtotal float64
@@ -130,6 +147,16 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		"created_at":   now.Format(time.RFC3339),
 	}
 
+	// Use frontend created_at (offline order date) when provided
+	orderCreatedAt := now
+	if req.CreatedAt != nil && strings.TrimSpace(*req.CreatedAt) != "" {
+		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(*req.CreatedAt)); err == nil {
+			orderCreatedAt = t
+		}
+		// Also update qrData for consistency
+		qrData["created_at"] = orderCreatedAt.Format(time.RFC3339)
+	}
+
 	order := models.Order{
 		OrderNumber:      orderNumber,
 		StoreID:          req.StoreID,
@@ -143,7 +170,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		QRCodeData:       fmt.Sprintf("%v", qrData),
 		InvoiceCheckCode: invoiceCheckCode,
 		ReceiptCheckCode: receiptCheckCode,
-		CreatedAt:        now,
+		CreatedAt:        orderCreatedAt,
 	}
 
 	if err := h.db.Create(&order).Error; err != nil {

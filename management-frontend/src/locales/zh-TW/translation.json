@@ -42,7 +42,10 @@
     "devices": "設備",
     "orders": "訂單",
     "catalogs": "目錄",
-    "currencyRates": "匯率"
+    "currencyRates": "匯率",
+    "stocktake": "盤點",
+    "stockReport": "庫存報表",
+    "timetable": "店舖日誌"
   },
   "login": {
     "title": "POS 管理系統",

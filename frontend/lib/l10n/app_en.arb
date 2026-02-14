@@ -96,6 +96,28 @@
   "@syncing": {
     "description": "Syncing text"
   },
+  "syncScreenTitle": "Sync",
+  "@syncScreenTitle": {
+    "description": "Sync screen title"
+  },
+  "syncPendingOrders": "Pending orders",
+  "@syncPendingOrders": {
+    "description": "Pending orders label on sync screen"
+  },
+  "syncPendingStocktakes": "Pending stocktakes",
+  "@syncPendingStocktakes": {
+    "description": "Pending stocktakes label on sync screen"
+  },
+  "syncNoPendingItems": "No pending items. All data is synced.",
+  "@syncNoPendingItems": {
+    "description": "Message when nothing to sync"
+  },
+  "fullSyncTitle": "Full Sync",
+  "fullSyncUsers": "Sync users",
+  "fullSyncProducts": "Sync products",
+  "fullSyncProductImages": "Sync product images",
+  "fullSyncOrders": "Sync orders",
+  "fullSyncInventory": "Sync inventory",
   "loginWithUsernamePassword": "Login with Username/Password",
   "@loginWithUsernamePassword": {
     "description": "Login with username/password button"
@@ -373,6 +395,71 @@
   "@reportsComingSoon": {
     "description": "Reports coming soon"
   },
+  "reportToday": "Today's Sales",
+  "@reportToday": {
+    "description": "Report page title for today"
+  },
+  "reportTotalSales": "Total Sales",
+  "@reportTotalSales": {
+    "description": "Total sales label"
+  },
+  "reportSoldProducts": "Sold Products",
+  "@reportSoldProducts": {
+    "description": "Sold products section title"
+  },
+  "reportLoading": "Loading report...",
+  "@reportLoading": {
+    "description": "Report loading message"
+  },
+  "reportError": "Failed to load report",
+  "@reportError": {
+    "description": "Report error message"
+  },
+  "reportNoSalesToday": "No sales today",
+  "@reportNoSalesToday": {
+    "description": "No sales today message"
+  },
+  "reportQuantity": "Qty",
+  "@reportQuantity": {
+    "description": "Quantity column header"
+  },
+  "reportRevenue": "Revenue",
+  "@reportRevenue": {
+    "description": "Revenue column header"
+  },
+  "reportTodayCommission": "Today Commission",
+  "@reportTodayCommission": {
+    "description": "Today commission label (2% of total sales)"
+  },
+  "stocktakeDiscrepancyTitle": "Stock difference",
+  "@stocktakeDiscrepancyTitle": {
+    "description": "Stocktake discrepancy dialog title"
+  },
+  "stocktakeDiscrepancyMessage": "The following items differ from system record. Please provide a reason for the adjustment.",
+  "@stocktakeDiscrepancyMessage": {
+    "description": "Stocktake discrepancy dialog message"
+  },
+  "stocktakeReasonHint": "Reason",
+  "@stocktakeReasonHint": {
+    "description": "Reason field hint for stocktake adjustment"
+  },
+  "stocktakeRemarkHint": "Remarks",
+  "@stocktakeRemarkHint": {
+    "description": "Per-product remarks hint in stocktake discrepancy dialog"
+  },
+  "stocktakeSavedOffline": "Stocktake saved locally. Will sync when online.",
+  "@stocktakeSavedOffline": {
+    "description": "Message when stocktake is saved offline"
+  },
+  "stocktakeDayStartTitle": "Day start stocktake",
+  "stocktakeDayStartMessage": "Please do day start stocktake on first login.",
+  "stocktakeDayEndTitle": "Day end stocktake",
+  "stocktakeDayEndMessage": "Please do day end stocktake before logout.",
+  "stocktakeDoIt": "Do stocktake",
+  "stocktakeSkip": "Skip",
+  "stocktakeSkipReasonHint": "Reason for skipping (required)",
+  "stocktakeSkippedNotificationShort": "Stocktake skipped",
+  "stocktakePendingMessage": "Day start stocktake required today. Tap to open.",
   "all": "All",
   "@all": {
     "description": "All filter option"
@@ -453,7 +540,7 @@
   "@processPayment": {
     "description": "Process payment button"
   },
-  "orderReceipt": "Order Receipt",
+  "orderReceipt": "貨品細明 Pickup Receipt",
   "@orderReceipt": {
     "description": "Order receipt title"
   },
@@ -474,13 +561,17 @@
   "@printInternalAuditNote": {
     "description": "Print audit note button"
   },
-  "printInvoice": "Print Invoice",
+  "printInvoice": "Order Clip (Loon Fung copy)",
   "@printInvoice": {
-    "description": "Print invoice button"
+    "description": "Print Loon Fung counterfoil (order paper) button"
   },
-  "printCustomerReceipt": "Print receipt",
+  "printCustomerCounterfoil": "Order Clip (Ducklin copy)",
+  "@printCustomerCounterfoil": {
+    "description": "Print customer counterfoil (order paper) button"
+  },
+  "printCustomerReceipt": "貨品細明 Pickup Receipt",
   "@printCustomerReceipt": {
-    "description": "Print customer receipt button"
+    "description": "Print pickup receipt button"
   },
   "printAll": "Print All",
   "@printAll": {
@@ -666,6 +757,37 @@
   "@confirmPickup": {
     "description": "Button to confirm order pickup"
   },
+  "ok": "OK",
+  "@ok": {
+    "description": "OK button"
+  },
+  "orderNumberLabel": "Order number",
+  "tapToEnterOrderNumber": "Tap to enter order number",
+  "editOrderNumber": "Edit order number",
+  "pickupInvoice": "Invoice",
+  "pickupReceipt": "Receipt",
+  "invoiceCheckCodeLabel": "Invoice check code",
+  "receiptCheckCodeLabel": "Receipt check code",
+  "tapToSetInvoiceCheckCode": "Tap to set invoice check code",
+  "tapToSetReceiptCheckCode": "Tap to set receipt check code",
+  "orderPickedUp": "Order #{number} picked up",
+  "@orderPickedUp": {
+    "placeholders": {
+      "number": { "type": "String" }
+    }
+  },
+  "alreadyPickedUp": "Already picked up",
+  "scanOtherQRFromOrder": "Scan the {type} QR from this order",
+  "@scanOtherQRFromOrder": {
+    "placeholders": {
+      "type": { "type": "String" }
+    }
+  },
+  "orderNumbersDontMatch": "Order numbers don't match. Scan both QRs from the same order.",
+  "invalidQRFormatInvoice": "Invoice QR code should contain |. Please enter check code manually or scan again.",
+  "invalidQRFormatReceipt": "Receipt QR code should contain |. Please enter check code manually or scan again.",
+  "useKeyboardInput": "Use Keyboard Input",
+  "useCameraScanner": "Use Camera Scanner",
   "cancelOrder": "Cancel Order",
   "@cancelOrder": {
     "description": "Button to cancel an order"
@@ -769,6 +891,42 @@
   "updatePIN": "Update PIN",
   "@updatePIN": {
     "description": "Button to update PIN"
+  },
+  "configureDevice": "Configure Device",
+  "@configureDevice": {
+    "description": "Admin device configuration title"
+  },
+  "deviceId": "Device ID",
+  "@deviceId": {
+    "description": "Device ID label"
+  },
+  "copyDeviceId": "Copy",
+  "@copyDeviceId": {
+    "description": "Copy device ID button"
+  },
+  "deviceIdCopied": "Device ID copied to clipboard",
+  "@deviceIdCopied": {
+    "description": "Snackbar when device ID copied"
+  },
+  "addDeviceToStore": "Add device to store",
+  "@addDeviceToStore": {
+    "description": "Section title for assigning device to store"
+  },
+  "selectStore": "Select store",
+  "@selectStore": {
+    "description": "Store dropdown hint"
+  },
+  "saveDeviceStore": "Save",
+  "@saveDeviceStore": {
+    "description": "Save device-store assignment button"
+  },
+  "deviceConfiguredSuccessfully": "Device configured successfully",
+  "@deviceConfiguredSuccessfully": {
+    "description": "Success message after device config"
+  },
+  "onlyManagementCanConfigure": "Only management users can configure the device.",
+  "@onlyManagementCanConfigure": {
+    "description": "Error when non-admin tries device config"
   }
 }
 

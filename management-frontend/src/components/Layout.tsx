@@ -28,6 +28,9 @@ import {
   ShoppingCart as ShoppingCartIcon,
   MenuBook as MenuBookIcon,
   CurrencyExchange as CurrencyExchangeIcon,
+  Assignment as AssignmentIcon,
+  Event as EventIcon,
+  Assessment as AssessmentIcon,
   Person as PersonIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
@@ -58,6 +61,9 @@ export default function Layout() {
     { text: t('layout.orders'), icon: <ShoppingCartIcon />, path: '/orders' },
     { text: t('layout.catalogs'), icon: <MenuBookIcon />, path: '/catalogs' },
     { text: t('layout.currencyRates'), icon: <CurrencyExchangeIcon />, path: '/currency-rates' },
+    { text: t('layout.stocktake'), icon: <AssignmentIcon />, path: '/stocktake' },
+    { text: t('layout.stockReport'), icon: <AssessmentIcon />, path: '/stock-report' },
+    { text: t('layout.timetable'), icon: <EventIcon />, path: '/timetable' },
   ];
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {

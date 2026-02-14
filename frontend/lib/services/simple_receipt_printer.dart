@@ -83,8 +83,8 @@ class SimpleReceiptPrinter {
       bytes += generator.feed(1);
     }
 
-    // Print date
-    final dateStr = DateTime.now().toString().split('.')[0];
+    // Print order date and time
+    final dateStr = ReceiptPrinterHelpers.formatOrderDateTime(order['created_at']);
     final dateText = l10n.date(dateStr);
     bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
       generator,
@@ -115,9 +115,9 @@ class SimpleReceiptPrinter {
     bytes += generator.hr();
     bytes += generator.feed(1);
 
-    // Header with Product and Qty
+    // Header with Product and Qty (QTY right-aligned)
     // Print receipt name in header (use receipt name if available, otherwise use default)
-    final headerName = receiptName.isNotEmpty ? receiptName : '收據 Receipt';
+    final headerName = receiptName.isNotEmpty ? receiptName : '貨品細明 Pickup Receipt';
     bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
       generator,
       headerName,
@@ -127,10 +127,10 @@ class SimpleReceiptPrinter {
     bytes += generator.hr();
     bytes += generator.feed(1);
     
-    final productHeader = 'Product 產品'.padRight(40, ' ');
-    final qtyHeader = 'Qty';
-    final headerSpacing = ' ' * 6;
-    final headerLine = '$productHeader$qtyHeader$headerSpacing';
+    // Qty at the very right (no price column); 48+10 chars to use full width
+    const int lineChars = 58;
+    final productHeader = 'Product 產品'.padRight(lineChars - 3, ' ');
+    final headerLine = '${productHeader}Qty';
     
     final headerImageBytes = await ReceiptPrinterHelpers.renderTextAsImage(
       headerLine,
@@ -285,9 +285,10 @@ class SimpleReceiptPrinter {
         color: Colors.black,
       );
 
-      final charsPerLine = 40;
+      // Match header line width (58 chars) so Qty aligns at the very right
+      final charsPerLine = 48;
       final lineHeight = fontSize * 1.2;
-      final paperWidth = 384.0;
+      final paperWidth = 464.0; // 384 * 58/48
 
       List<String> lines = [];
       final nameParts = productName.split('\n');
