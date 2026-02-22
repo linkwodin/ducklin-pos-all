@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"pos-system/backend/internal/models"
@@ -164,23 +165,28 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 	}
 	h.db.Create(&auditLog)
 
-	// Record inventory snapshot when update is from stocktake (day_start or day_end)
-	if req.Reason == "stocktake_day_start" || req.Reason == "stocktake_day_end" {
+	// Record inventory snapshot when update is from stocktake (day_start or day_end).
+	// Frontend may send reason with suffix e.g. "stocktake_day_start | remark".
+	snapshotType := ""
+	if strings.HasPrefix(req.Reason, "stocktake_day_start") {
+		snapshotType = "stocktake_day_start"
+	} else if strings.HasPrefix(req.Reason, "stocktake_day_end") {
+		snapshotType = "stocktake_day_end"
+	}
+	if snapshotType != "" {
 		snapshotDate := time.Now().Format("2006-01-02")
 		var snap models.StocktakeInventorySnapshot
 		err := h.db.Where("store_id = ? AND product_id = ? AND snapshot_date = ? AND snapshot_type = ?",
-			stock.StoreID, stock.ProductID, snapshotDate, req.Reason).First(&snap).Error
+			stock.StoreID, stock.ProductID, snapshotDate, snapshotType).First(&snap).Error
 		if err != nil {
-			// Create new
 			h.db.Create(&models.StocktakeInventorySnapshot{
 				StoreID:      stock.StoreID,
 				ProductID:    stock.ProductID,
 				Quantity:     stock.Quantity,
 				SnapshotDate: snapshotDate,
-				SnapshotType: req.Reason,
+				SnapshotType: snapshotType,
 			})
 		} else {
-			// Update existing
 			snap.Quantity = stock.Quantity
 			h.db.Save(&snap)
 		}

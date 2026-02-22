@@ -137,6 +137,10 @@ func (h *StocktakeHandler) RecordFirstLoginOrResult(c *gin.Context) {
 			}
 		}
 		h.recordActivityEvent(userID, storeID, models.EventStocktakeDayStartDone, now, "")
+		// Snapshot current inventory for this store as day-start (so stocktake_inventory_snapshots is always populated when "done")
+		if storeID != nil {
+			h.snapshotStoreInventory(*storeID, date, "stocktake_day_start")
+		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	case "skipped":
@@ -173,6 +177,32 @@ func (h *StocktakeHandler) RecordFirstLoginOrResult(c *gin.Context) {
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be first_login, done, skipped, day_end_skipped, or logout"})
 		return
+	}
+}
+
+// snapshotStoreInventory copies current stocks for the store into stocktake_inventory_snapshots
+// so the snapshot table is populated when the user marks stocktake "done" (even if PUT /stock didn't send reason).
+func (h *StocktakeHandler) snapshotStoreInventory(storeID uint, snapshotDate string, snapshotType string) {
+	var stocks []models.Stock
+	if err := h.db.Where("store_id = ?", storeID).Find(&stocks).Error; err != nil {
+		return
+	}
+	for _, s := range stocks {
+		var snap models.StocktakeInventorySnapshot
+		err := h.db.Where("store_id = ? AND product_id = ? AND snapshot_date = ? AND snapshot_type = ?",
+			storeID, s.ProductID, snapshotDate, snapshotType).First(&snap).Error
+		if err != nil {
+			h.db.Create(&models.StocktakeInventorySnapshot{
+				StoreID:      storeID,
+				ProductID:    s.ProductID,
+				Quantity:     s.Quantity,
+				SnapshotDate: snapshotDate,
+				SnapshotType: snapshotType,
+			})
+		} else {
+			snap.Quantity = s.Quantity
+			h.db.Save(&snap)
+		}
 	}
 }
 
