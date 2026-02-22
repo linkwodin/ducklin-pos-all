@@ -51,10 +51,16 @@ class ApiService {
     // Add interceptor for JWT token and logging
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('jwt_token');
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
+        // Only send JWT to our API. External URLs (e.g. GCS, CDN) reject Bearer tokens and return 401.
+        final uri = options.uri.toString();
+        final isOurApi = _baseUrl != null &&
+            (uri.startsWith(_baseUrl!) || uri.startsWith(_baseUrl!.replaceFirst(RegExp(r'/api/v1/?$'), '')));
+        if (isOurApi) {
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('jwt_token');
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
         }
         
         // Log request to file
@@ -520,6 +526,25 @@ class ApiService {
   Future<Map<String, dynamic>> getOrder(String orderIdOrNumber) async {
     final response = await _dio.get('/orders/$orderIdOrNumber');
     return response.data;
+  }
+
+  /// GET /orders. Query: store_id, status, start_date, end_date (YYYY-MM-DD), limit.
+  /// Returns list of orders for the store so all POS devices see the same history.
+  Future<List<Map<String, dynamic>>> listOrders({
+    int? storeId,
+    String? status,
+    String? startDate,
+    String? endDate,
+    int limit = 100,
+  }) async {
+    final queryParams = <String, dynamic>{'limit': limit};
+    if (storeId != null) queryParams['store_id'] = storeId;
+    if (status != null && status.isNotEmpty) queryParams['status'] = status;
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+    final response = await _dio.get('/orders', queryParameters: queryParams);
+    final list = response.data is List ? response.data as List<dynamic> : [];
+    return list.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
   }
 
   /// GET /orders/stats/revenue. Query: start_date, end_date (YYYY-MM-DD), optional store_id.

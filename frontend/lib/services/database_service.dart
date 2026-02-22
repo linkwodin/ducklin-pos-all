@@ -3,6 +3,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import '../config/api_config.dart';
 
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._init();
@@ -202,7 +203,12 @@ class DatabaseService {
 
   Future<String> _getDatabasePath() async {
     final directory = await getApplicationDocumentsDirectory();
-    return path.join(directory.path, 'pos_system.db');
+    // Use env-specific DB so UAT/production builds do not reuse dev/test data
+    final env = ApiConfig.environment.toLowerCase();
+    final dbName = env == 'uat' || env == 'production' || env == 'prod'
+        ? 'pos_system_$env.db'
+        : 'pos_system.db';
+    return path.join(directory.path, dbName);
   }
 
   Future<void> _createDatabase(Database db, int version) async {

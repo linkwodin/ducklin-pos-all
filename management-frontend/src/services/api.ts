@@ -191,7 +191,12 @@ export const stockAPI = {
   getStockReport: async (params: { date: string; store_id?: number }): Promise<StockReportRow[]> => {
     const p: Record<string, string | number> = { date: params.date };
     if (params.store_id != null) p.store_id = params.store_id;
-    const { data } = await api.get('/stock/report', { params: p });
+    // Cache-bust so browser doesn't return 304 and user always gets fresh data
+    p._t = Date.now();
+    const { data } = await api.get('/stock/report', {
+      params: p,
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
     return data;
   },
 };

@@ -164,11 +164,33 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 	}
 	h.db.Create(&auditLog)
 
+	// Record inventory snapshot when update is from stocktake (day_start or day_end)
+	if req.Reason == "stocktake_day_start" || req.Reason == "stocktake_day_end" {
+		snapshotDate := time.Now().Format("2006-01-02")
+		var snap models.StocktakeInventorySnapshot
+		err := h.db.Where("store_id = ? AND product_id = ? AND snapshot_date = ? AND snapshot_type = ?",
+			stock.StoreID, stock.ProductID, snapshotDate, req.Reason).First(&snap).Error
+		if err != nil {
+			// Create new
+			h.db.Create(&models.StocktakeInventorySnapshot{
+				StoreID:      stock.StoreID,
+				ProductID:    stock.ProductID,
+				Quantity:     stock.Quantity,
+				SnapshotDate: snapshotDate,
+				SnapshotType: req.Reason,
+			})
+		} else {
+			// Update existing
+			snap.Quantity = stock.Quantity
+			h.db.Save(&snap)
+		}
+	}
+
 	c.JSON(http.StatusOK, stock)
 }
 
-// GetStockReport returns per-product day-start and day-end quantities for a given date,
-// derived from stock_update audit logs with reason stocktake_day_start / stocktake_day_end.
+// GetStockReport returns per-product day-start and day-end quantities for a given date.
+// Prefers stocktake_inventory_snapshots; falls back to audit_logs for historical dates.
 func (h *StockHandler) GetStockReport(c *gin.Context) {
 	dateStr := c.Query("date")
 	if dateStr == "" {
@@ -182,47 +204,63 @@ func (h *StockHandler) GetStockReport(c *gin.Context) {
 	}
 	storeIDStr := c.Query("store_id")
 
-	var logs []models.AuditLog
-	query := h.db.Where("action = ? AND entity_type = ?", "stock_update", "stock").
-		Where("DATE(created_at) = ?", date.Format("2006-01-02")).
-		Order("created_at ASC")
-	if storeIDStr != "" {
-		// Join to stocks to filter by store_id (GORM table name is "stocks")
-		query = query.Joins("INNER JOIN stocks ON audit_logs.entity_id = stocks.id AND stocks.store_id = ?", storeIDStr)
-	}
-	if err := query.Find(&logs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// changes: product_id, store_id, old_quantity, new_quantity, reason
-	type changeSet struct {
-		ProductID   uint    `json:"product_id"`
-		StoreID     uint    `json:"store_id"`
-		NewQuantity float64 `json:"new_quantity"`
-		Reason      string  `json:"reason"`
-	}
 	type key struct {
 		ProductID uint
 		StoreID   uint
 	}
 	dayStart := make(map[key]float64)
 	dayEnd := make(map[key]float64)
-	for _, log := range logs {
-		var c changeSet
-		if err := json.Unmarshal([]byte(log.Changes), &c); err != nil {
-			continue
+
+	// 1) Try snapshot table first
+	var snapshots []models.StocktakeInventorySnapshot
+	snapQuery := h.db.Where("snapshot_date = ?", dateStr)
+	if storeIDStr != "" {
+		snapQuery = snapQuery.Where("store_id = ?", storeIDStr)
+	}
+	if err := snapQuery.Find(&snapshots).Error; err == nil && len(snapshots) > 0 {
+		for _, s := range snapshots {
+			k := key{ProductID: s.ProductID, StoreID: s.StoreID}
+			switch s.SnapshotType {
+			case "stocktake_day_start":
+				dayStart[k] = s.Quantity
+			case "stocktake_day_end":
+				dayEnd[k] = s.Quantity
+			}
 		}
-		k := key{ProductID: c.ProductID, StoreID: c.StoreID}
-		switch c.Reason {
-		case "stocktake_day_start":
-			dayStart[k] = c.NewQuantity
-		case "stocktake_day_end":
-			dayEnd[k] = c.NewQuantity
+	} else {
+		// 2) Fall back to audit logs
+		var logs []models.AuditLog
+		query := h.db.Where("action = ? AND entity_type = ?", "stock_update", "stock").
+			Where("DATE(created_at) = ?", date.Format("2006-01-02")).
+			Order("created_at ASC")
+		if storeIDStr != "" {
+			query = query.Joins("INNER JOIN stocks ON audit_logs.entity_id = stocks.id AND stocks.store_id = ?", storeIDStr)
+		}
+		if err := query.Find(&logs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		type changeSet struct {
+			ProductID   uint    `json:"product_id"`
+			StoreID     uint    `json:"store_id"`
+			NewQuantity float64 `json:"new_quantity"`
+			Reason      string  `json:"reason"`
+		}
+		for _, log := range logs {
+			var c changeSet
+			if err := json.Unmarshal([]byte(log.Changes), &c); err != nil {
+				continue
+			}
+			k := key{ProductID: c.ProductID, StoreID: c.StoreID}
+			switch c.Reason {
+			case "stocktake_day_start":
+				dayStart[k] = c.NewQuantity
+			case "stocktake_day_end":
+				dayEnd[k] = c.NewQuantity
+			}
 		}
 	}
 
-	// Build unique keys and fetch product/store names
 	seen := make(map[key]bool)
 	for k := range dayStart {
 		seen[k] = true

@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <windows.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -28,7 +29,8 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+    // Show window maximized (full screen) on Windows
+    ::ShowWindow(GetHandle(), SW_MAXIMIZE);
   });
 
   // Flutter can complete the first frame before the "show window" callback is

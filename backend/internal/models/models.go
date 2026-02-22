@@ -259,6 +259,21 @@ type AuditLog struct {
 	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
+// StocktakeInventorySnapshot records inventory quantity per product per store after a stocktake.
+// One row per (store_id, product_id, snapshot_date, snapshot_type). Used for day-start/day-end stock report.
+type StocktakeInventorySnapshot struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	StoreID       uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"store_id"`
+	ProductID     uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"product_id"`
+	Quantity      float64   `gorm:"type:decimal(10,3);not null" json:"quantity"`
+	SnapshotDate  string    `gorm:"type:date;not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_date"` // yyyy-MM-dd
+	SnapshotType  string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_type"` // day_start, day_end
+	CreatedAt     time.Time `gorm:"type:datetime;not null" json:"created_at"`
+
+	Store   Store   `gorm:"foreignKey:StoreID" json:"store,omitempty"`
+	Product Product `gorm:"foreignKey:ProductID" json:"product,omitempty"`
+}
+
 // StocktakeDayStartRecord records first login of the day and day-start stocktake result (done or skipped with reason).
 // One record per user per store per calendar day (user may work in multiple stores). Used for management timetable.
 type StocktakeDayStartRecord struct {

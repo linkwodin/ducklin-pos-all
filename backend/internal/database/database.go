@@ -212,6 +212,7 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 		&models.PriceHistory{},
 		&models.CurrencyRate{},
 		&models.AuditLog{},
+		&models.StocktakeInventorySnapshot{},
 		&models.StocktakeDayStartRecord{},
 		&models.UserActivityEvent{},
 	)

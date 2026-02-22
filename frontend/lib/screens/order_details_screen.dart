@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -374,26 +375,52 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     }
   }
 
+  void _popBack() {
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(_orderUpdated);
+    }
+  }
+
+  Widget _wrapWithEscape(Widget child) {
+    return Shortcuts(
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          DismissIntent: CallbackAction<DismissIntent>(onInvoke: (_) {
+            _popBack();
+            return null;
+          }),
+        },
+        child: Focus(
+          autofocus: true,
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     
     if (_isLoading) {
-      return Scaffold(
+      return _wrapWithEscape(Scaffold(
         appBar: AppBar(
           title: Text(l10n.orderDetails ?? 'Order Details'),
         ),
         body: const Center(child: CircularProgressIndicator()),
-      );
+      ));
     }
 
     if (_order == null) {
-      return Scaffold(
+      return _wrapWithEscape(Scaffold(
         appBar: AppBar(
           title: Text(l10n.orderDetails ?? 'Order Details'),
         ),
         body: Center(child: Text(l10n.noOrdersFound)),
-      );
+      ));
     }
 
     final order = _order!;
@@ -408,15 +435,12 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     final completedAt = order['completed_at'];
     final pickedUpAt = order['picked_up_at'];
 
-    return Scaffold(
+    return _wrapWithEscape(Scaffold(
       appBar: AppBar(
         title: Text(l10n.orderDetails ?? 'Order Details'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            // Return true if order was updated to trigger refresh
-            Navigator.of(context).pop(_orderUpdated);
-          },
+          onPressed: _popBack,
         ),
       ),
       body: SingleChildScrollView(
@@ -687,7 +711,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildInfoRow(String label, String value) {

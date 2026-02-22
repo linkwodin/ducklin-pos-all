@@ -165,31 +165,100 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
     super.dispose();
   }
 
+  /// Converts an order from API shape (created_at string) to local shape (created_at ms).
+  static Map<String, dynamic> _apiOrderToLocal(Map<String, dynamic> api) {
+    final createdAt = api['created_at'];
+    final pickedUpAt = api['picked_up_at'];
+    return {
+      'id': api['id'],
+      'order_number': api['order_number'],
+      'store_id': api['store_id'] ?? 1,
+      'user_id': api['user_id'] ?? 0,
+      'sector_id': api['sector_id'],
+      'subtotal': api['subtotal'] ?? 0.0,
+      'discount_amount': api['discount_amount'] ?? 0.0,
+      'total_amount': api['total_amount'] ?? 0.0,
+      'status': api['status'] ?? 'pending',
+      'qr_code_data': api['qr_code_data'],
+      'created_at': createdAt != null
+          ? (createdAt is int
+              ? createdAt
+              : (DateTime.tryParse(createdAt.toString())?.millisecondsSinceEpoch ?? 0))
+          : null,
+      'picked_up_at': pickedUpAt != null
+          ? (pickedUpAt is int
+              ? pickedUpAt
+              : (DateTime.tryParse(pickedUpAt.toString())?.millisecondsSinceEpoch))
+          : null,
+      'synced': 1,
+    };
+  }
+
   Future<void> _loadOrders() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Load all orders from local database
       final db = await DatabaseService.instance.database;
-      final allOrders = await db.query(
+      final localOrders = await db.query(
         'orders',
         orderBy: 'created_at DESC',
         limit: 100,
       );
 
-      setState(() {
-        _orders = allOrders;
-        _isLoading = false;
-      });
-      _applyFilters();
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      int? storeId;
       if (mounted) {
+        storeId = Provider.of<OrderProvider>(context, listen: false).storeId;
+      }
+      if (storeId == null && mounted) {
+        try {
+          final deviceInfo = await DatabaseService.instance.getDeviceInfo();
+          storeId = deviceInfo?['store_id'] as int? ?? 1;
+        } catch (_) {}
+      }
+
+      List<Map<String, dynamic>> serverOrders = [];
+      if (storeId != null) {
+        try {
+          final list = await ApiService.instance.listOrders(storeId: storeId, limit: 100);
+          serverOrders = list.map(_apiOrderToLocal).toList();
+        } catch (e) {
+          debugPrint('OrderHistory: could not fetch orders from server: $e');
+        }
+      }
+
+      final byNumber = <String, Map<String, dynamic>>{};
+      for (final o in serverOrders) {
+        final num = o['order_number']?.toString();
+        if (num != null) byNumber[num] = o;
+      }
+      for (final o in localOrders) {
+        final num = o['order_number']?.toString();
+        if (num != null && !byNumber.containsKey(num)) byNumber[num] = o;
+      }
+      final combined = byNumber.values.toList();
+      combined.sort((a, b) {
+        final ams = (a['created_at'] is int) ? a['created_at'] as int : 0;
+        final bms = (b['created_at'] is int) ? b['created_at'] as int : 0;
+        return bms.compareTo(ams);
+      });
+
+      if (mounted) {
+        setState(() {
+          _orders = combined;
+          _isLoading = false;
+        });
+        _applyFilters();
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
         context.showNotification('Error loading orders: $e', isError: true);
+      } else {
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -307,6 +376,7 @@ class OrderHistoryScreenState extends State<OrderHistoryScreen> {
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(l10n.searchOrder),
         actions: [
           IconButton(

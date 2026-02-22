@@ -179,14 +179,9 @@ class OrderProvider with ChangeNotifier {
         debugPrint('OrderProvider: Order created successfully: $order');
 
         final orderId = order['id'] as int;
-        try {
-          await ApiService.instance.markOrderPaid(orderId);
-          await ApiService.instance.markOrderComplete(orderId);
-        } catch (e) {
-          debugPrint('OrderProvider: Mark paid/complete failed (order still created): $e');
-        }
+        // Order stays pending until picked up; do not mark paid/complete here
 
-        // Save to local database (status completed so POS and management show same)
+        final status = order['status'] as String? ?? 'pending';
         await DatabaseService.instance.saveOrder({
           'order_number': order['order_number'],
           'store_id': _storeId,
@@ -195,7 +190,7 @@ class OrderProvider with ChangeNotifier {
           'subtotal': subtotal,
           'discount_amount': discountAmount,
           'total_amount': total,
-          'status': 'completed',
+          'status': status,
           'qr_code_data': order['qr_code_data'],
           'created_at': DateTime.now().millisecondsSinceEpoch,
           'synced': 1,
@@ -213,9 +208,7 @@ class OrderProvider with ChangeNotifier {
         await DatabaseService.instance.saveOrderItems(orderId, orderItems);
 
         clearCart();
-        final orderWithStatus = Map<String, dynamic>.from(order);
-        orderWithStatus['status'] = 'completed';
-        return orderWithStatus;
+        return Map<String, dynamic>.from(order);
       } catch (e, stackTrace) {
         // Network error: save to local DB with ORD-{day}-T-{storeId}-{localId}, then return full order for printing
         debugPrint('OrderProvider: Network error, saving offline');

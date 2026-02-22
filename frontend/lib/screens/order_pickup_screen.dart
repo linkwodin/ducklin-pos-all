@@ -896,49 +896,8 @@ class _OrderPickupScreenState extends State<OrderPickupScreen> {
     
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(l10n.orderPickup ?? 'Order Pickup'),
-        leading: _uiStep == 2
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() {
-                    _uiStep = 1;
-                    _scanInputController.clear();
-                    _invoiceOrderController.clear();
-                    _invoiceCheckController.clear();
-                    _receiptOrderController.clear();
-                    _receiptCheckController.clear();
-                    _currentOrderNumber = null;
-                    _firstScanOrderNumber = null;
-                    _firstScanCheckCode = null;
-                    _firstScanReceiptType = null;
-                    _secondScanOrderNumber = null;
-                    _secondScanCheckCode = null;
-                    _secondScanReceiptType = null;
-                    _scanStep = 1;
-                    _message = null;
-                    _isSuccess = false;
-                    _isWarning = false;
-                    _lastProcessedValue = '';
-                    _orderDetails = null;
-                    _orderDetailsLoading = false;
-                    _orderDetailsError = null;
-                  });
-                  // Use a delayed callback to ensure widget tree is rebuilt
-                  Future.delayed(const Duration(milliseconds: 200), () {
-                    if (mounted && _uiStep == 1) {
-                      _requestScanFocus();
-                    }
-                  });
-                  // Also request focus immediately after setState
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted && _uiStep == 1) {
-                      _requestScanFocus();
-                    }
-                  });
-                },
-              )
-            : null,
         actions: null,
       ),
       body: _uiStep == 1

@@ -138,21 +138,17 @@ class _FullSyncProgressScreenState extends State<FullSyncProgressScreen> {
             final backendOrderId = response['id'] as int?;
             if (backendOrderId != null) {
               try {
-                await ApiService.instance.markOrderPaid(backendOrderId);
-                await ApiService.instance.markOrderComplete(backendOrderId);
-                // If order was picked up locally before sync, record pickup on backend too
                 if (order['picked_up_at'] != null) {
-                  try {
-                    await ApiService.instance.confirmOrderPickup(order['order_number'] as String);
-                  } catch (_) {}
+                  await ApiService.instance.markOrderPaid(backendOrderId);
+                  await ApiService.instance.confirmOrderPickup(order['order_number'] as String);
+                  await DatabaseService.instance.updateOrderStatusByOrderNumber(
+                    order['order_number'] as String,
+                    status: 'picked_up',
+                  );
                 }
               } catch (_) {}
             }
             await DatabaseService.instance.markOrderSynced(orderId);
-            await DatabaseService.instance.updateOrderStatusByOrderNumber(
-              order['order_number'] as String,
-              status: 'completed',
-            );
           } catch (_) {}
           done++;
           _setStep(3, current: done, total: totalItems);
