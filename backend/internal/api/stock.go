@@ -89,6 +89,78 @@ func (h *StockHandler) GetStoreStock(c *gin.Context) {
 	c.JSON(http.StatusOK, stock)
 }
 
+// AssignProductsToStoreRequest is the body for assigning products to a store (creates stock records with quantity 0 if not present).
+type AssignProductsToStoreRequest struct {
+	StoreID    uint   `json:"store_id" binding:"required"`
+	ProductIDs []uint `json:"product_ids" binding:"required,min=1"`
+}
+
+func (h *StockHandler) AssignProductsToStore(c *gin.Context) {
+	if !requireManagementOrSupervisor(c) {
+		return
+	}
+	var req AssignProductsToStoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var store models.Store
+	if err := h.db.First(&store, req.StoreID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Store not found"})
+		return
+	}
+	assigned := 0
+	now := time.Now()
+	for _, productID := range req.ProductIDs {
+		var existing models.Stock
+		err := h.db.Where("product_id = ? AND store_id = ?", productID, req.StoreID).First(&existing).Error
+		if err == nil {
+			continue
+		}
+		var product models.Product
+		if err := h.db.First(&product, productID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Product not found: " + strconv.FormatUint(uint64(productID), 10)})
+			return
+		}
+		stock := models.Stock{
+			ProductID:         productID,
+			StoreID:           req.StoreID,
+			Quantity:          0,
+			LowStockThreshold: 0,
+			LastUpdated:       now,
+		}
+		if err := h.db.Create(&stock).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		assigned++
+	}
+	c.JSON(http.StatusOK, gin.H{"assigned": assigned, "store_id": req.StoreID, "product_ids": req.ProductIDs})
+}
+
+// UnassignProductsFromStoreRequest removes product stock records from a store (delete stock rows with quantity 0 only, or any).
+type UnassignProductsFromStoreRequest struct {
+	StoreID    uint   `json:"store_id" binding:"required"`
+	ProductIDs []uint `json:"product_ids" binding:"required,min=1"`
+}
+
+func (h *StockHandler) UnassignProductsFromStore(c *gin.Context) {
+	if !requireManagementOrSupervisor(c) {
+		return
+	}
+	var req UnassignProductsFromStoreRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result := h.db.Where("store_id = ? AND product_id IN ?", req.StoreID, req.ProductIDs).Delete(&models.Stock{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"unassigned": int(result.RowsAffected), "store_id": req.StoreID, "product_ids": req.ProductIDs})
+}
+
 func (h *StockHandler) GetLowStock(c *gin.Context) {
 	var stock []models.Stock
 	if err := h.db.Where("quantity <= low_stock_threshold").

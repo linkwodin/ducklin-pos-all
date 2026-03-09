@@ -167,6 +167,10 @@
   "@report": {
     "description": "Report navigation item"
   },
+  "wholesale": "Wholesale",
+  "@wholesale": {
+    "description": "Wholesale orders / packing navigation item"
+  },
   "settings": "Settings",
   "@settings": {
     "description": "Settings navigation item"

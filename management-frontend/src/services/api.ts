@@ -17,6 +17,11 @@ import type {
   Order,
   StocktakeDayStartRecord,
   UserActivityEvent,
+  WholesaleOrder,
+  WholesaleClient,
+  WholesaleClientStore,
+  CompanySettings,
+  Shipment,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -41,11 +46,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 errors
+// Handle 401 errors — skip redirect for the login endpoint itself
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -53,6 +59,18 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Company settings (for PDF/document header)
+export const settingsAPI = {
+  getCompany: async (): Promise<CompanySettings> => {
+    const { data } = await api.get('/settings/company');
+    return data;
+  },
+  updateCompany: async (body: Partial<CompanySettings>): Promise<CompanySettings> => {
+    const { data } = await api.put('/settings/company', body);
+    return data;
+  },
+};
 
 // Auth API
 export const authAPI = {
@@ -64,8 +82,8 @@ export const authAPI = {
 
 // Products API
 export const productsAPI = {
-  list: async (category?: string): Promise<Product[]> => {
-    const { data } = await api.get('/products', { params: { category } });
+  list: async (category?: string, effectiveFrom?: string, effectiveTo?: string): Promise<Product[]> => {
+    const { data } = await api.get('/products', { params: { category, effective_from: effectiveFrom, effective_to: effectiveTo } });
     return data;
   },
   get: async (id: number): Promise<Product> => {
@@ -98,6 +116,8 @@ export const productsAPI = {
   updateCostSimple: async (id: number, cost: {
     wholesale_cost_gbp?: number;
     direct_retail_online_store_price_gbp?: number;
+    effective_from?: string;
+    effective_to?: string;
   }): Promise<ProductCost> => {
     const { data } = await api.put(`/products/${id}/cost`, cost);
     return data;
@@ -115,11 +135,18 @@ export const productsAPI = {
   setDiscount: async (
     productId: number,
     sectorId: number,
-    discountPercent: number
+    discountPercent: number,
+    sectorPriceGbp?: number,
+    effectiveFrom?: string,
+    effectiveTo?: string,
   ): Promise<ProductSectorDiscount> => {
-    const { data } = await api.post(`/products/${productId}/discounts/${sectorId}`, {
+    const body: Record<string, unknown> = {
       discount_percent: discountPercent,
-    });
+      sector_price_gbp: sectorPriceGbp ?? 0,
+    };
+    if (effectiveFrom) body.effective_from = effectiveFrom;
+    if (effectiveTo) body.effective_to = effectiveTo;
+    const { data } = await api.post(`/products/${productId}/discounts/${sectorId}`, body);
     return data;
   },
   importExcel: async (
@@ -148,6 +175,11 @@ export const categoriesAPI = {
     await api.put(`/categories/${encodeURIComponent(oldName)}/rename`, {
       new_name: newName,
     });
+  },
+  /** Trim leading/trailing spaces from all product categories to merge duplicates */
+  normalize: async (): Promise<{ products_updated: number }> => {
+    const { data } = await api.post('/categories/normalize');
+    return data;
   },
 };
 
@@ -178,6 +210,14 @@ export const stockAPI = {
   },
   getStoreStock: async (storeId: number): Promise<Stock[]> => {
     const { data } = await api.get(`/stock/${storeId}`);
+    return data;
+  },
+  assignProductsToStore: async (storeId: number, productIds: number[]): Promise<{ assigned: number; store_id: number; product_ids: number[] }> => {
+    const { data } = await api.post('/stock/assign', { store_id: storeId, product_ids: productIds });
+    return data;
+  },
+  unassignProductsFromStore: async (storeId: number, productIds: number[]): Promise<{ unassigned: number; store_id: number; product_ids: number[] }> => {
+    const { data } = await api.post('/stock/unassign', { store_id: storeId, product_ids: productIds });
     return data;
   },
   getLowStock: async (): Promise<Stock[]> => {
@@ -432,6 +472,147 @@ export const ordersAPI = {
     store_id?: number;
   }): Promise<Array<{ date: string; product_id: number; product_name: string; product_name_chinese: string; quantity: number; revenue: number }>> => {
     const { data } = await api.get('/orders/stats/product-sales', { params });
+    return data;
+  },
+};
+
+// Wholesale clients (management CRUD; list used when creating wholesale orders)
+export const wholesaleClientsAPI = {
+  list: async (params?: { active_only?: boolean }): Promise<WholesaleClient[]> => {
+    const { data } = await api.get('/wholesale-clients', {
+      params: params?.active_only ? { active_only: 1 } : undefined,
+    });
+    return data;
+  },
+  get: async (id: number): Promise<WholesaleClient> => {
+    const { data } = await api.get(`/wholesale-clients/${id}`);
+    return data;
+  },
+  create: async (body: Partial<WholesaleClient>): Promise<WholesaleClient> => {
+    const { data } = await api.post('/wholesale-clients', body);
+    return data;
+  },
+  update: async (id: number, body: Partial<WholesaleClient>): Promise<WholesaleClient> => {
+    const { data } = await api.put(`/wholesale-clients/${id}`, body);
+    return data;
+  },
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/wholesale-clients/${id}`);
+  },
+  createStore: async (clientId: number, body: Partial<WholesaleClientStore>): Promise<WholesaleClientStore> => {
+    const { data } = await api.post(`/wholesale-clients/${clientId}/stores`, body);
+    return data;
+  },
+  updateStore: async (clientId: number, storeId: number, body: Partial<WholesaleClientStore>): Promise<WholesaleClientStore> => {
+    const { data } = await api.put(`/wholesale-clients/${clientId}/stores/${storeId}`, body);
+    return data;
+  },
+  deleteStore: async (clientId: number, storeId: number): Promise<void> => {
+    await api.delete(`/wholesale-clients/${clientId}/stores/${storeId}`);
+  },
+};
+
+// Wholesale orders (pos_user/admin create; management/supervisor approve/reject; admin assigns stores)
+export const wholesaleOrdersAPI = {
+  create: async (body: {
+    wholesale_client_id: number;
+    wholesale_client_store_id?: number;
+    store_id: number;
+    sector_id?: number;
+    po_number?: string;
+    order_channel?: string;
+    po_date?: string;
+    payment_terms?: string;
+    notes?: string;
+    total_discount?: number;
+    shipping_fee?: number;
+    items: { product_id: number; quantity: number; line_discount_amount?: number }[];
+  }): Promise<WholesaleOrder> => {
+    const { data } = await api.post('/wholesale-orders', body);
+    return data;
+  },
+  list: async (params?: { status?: string; store_id?: string; client?: string; po_number?: string; order_number?: string; ref_no?: string }): Promise<WholesaleOrder[]> => {
+    const { data } = await api.get('/wholesale-orders', { params });
+    return data;
+  },
+  getRecentOrderChannels: async (): Promise<string[]> => {
+    const { data } = await api.get<{ channels: string[] }>('/wholesale-orders/recent-order-channels');
+    return data?.channels ?? [];
+  },
+  get: async (id: number): Promise<WholesaleOrder> => {
+    const { data } = await api.get(`/wholesale-orders/${id}`);
+    return data;
+  },
+  update: async (id: number, body: { po_number?: string; order_channel?: string; ref_no?: string; po_date?: string; shipping_fee?: number; items?: { id: number; unit_price: number }[] }): Promise<WholesaleOrder> => {
+    const { data } = await api.put(`/wholesale-orders/${id}`, body);
+    return data;
+  },
+  approve: async (id: number): Promise<WholesaleOrder> => {
+    const { data } = await api.put(`/wholesale-orders/${id}/approve`);
+    return data;
+  },
+  reject: async (id: number, reason?: string): Promise<WholesaleOrder> => {
+    const { data } = await api.put(`/wholesale-orders/${id}/reject`, { reason: reason ?? '' });
+    return data;
+  },
+  assignStores: async (
+    id: number,
+    assignments: { wholesale_order_item_id: number; store_id: number | null }[],
+  ): Promise<WholesaleOrder> => {
+    const { data } = await api.put(`/wholesale-orders/${id}/assign`, { assignments });
+    return data;
+  },
+  completeAssignment: async (id: number): Promise<WholesaleOrder> => {
+    const { data } = await api.put(`/wholesale-orders/${id}/complete-assignment`);
+    return data;
+  },
+  regenerateOrderConfirmation: async (id: number): Promise<WholesaleOrder> => {
+    const { data } = await api.post(`/wholesale-orders/${id}/regenerate-order-confirmation`);
+    return data;
+  },
+  generateInvoice: async (id: number): Promise<WholesaleOrder> => {
+    const { data } = await api.post(`/wholesale-orders/${id}/generate-invoice`);
+    return data;
+  },
+  getAuditLogs: async (id: number): Promise<AuditLog[]> => {
+    const { data } = await api.get(`/wholesale-orders/${id}/audit-logs`);
+    return data;
+  },
+  emailDocument: async (id: number, body: { document_type: string; recipient?: string; shipment_id?: number }): Promise<{ message: string; recipient: string }> => {
+    const { data } = await api.post(`/wholesale-orders/${id}/email-document`, body);
+    return data;
+  },
+};
+
+// Shipments (for order detail: list is on order; update courier/tracking)
+export const shipmentsAPI = {
+  get: async (id: number): Promise<Shipment> => {
+    const { data } = await api.get(`/shipments/${id}`);
+    return data;
+  },
+  update: async (
+    id: number,
+    body: { courier?: string; tracking_number?: string },
+  ): Promise<Shipment> => {
+    const { data } = await api.put(`/shipments/${id}`, body);
+    return data;
+  },
+  regenerateDeliveryNote: async (id: number): Promise<Shipment> => {
+    const { data } = await api.post(`/shipments/${id}/regenerate-delivery-note`);
+    return data;
+  },
+  completePacking: async (
+    id: number,
+    body?: { case_qty?: { wholesale_order_item_id: number; case_qty: number }[] },
+  ): Promise<Shipment> => {
+    const { data } = await api.post(`/shipments/${id}/complete-packing`, body ?? {});
+    return data;
+  },
+  updateCaseQty: async (
+    id: number,
+    body: { case_qty: { wholesale_order_item_id: number; case_qty: number }[] },
+  ): Promise<Shipment> => {
+    const { data } = await api.put(`/shipments/${id}/case-qty`, body);
     return data;
   },
 };

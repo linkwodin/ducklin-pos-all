@@ -146,6 +146,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get report => '報表';
 
   @override
+  String get wholesale => '批發';
+
+  @override
   String get settings => '設定';
 
   @override
@@ -886,6 +889,9 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get report => '报表';
 
   @override
+  String get wholesale => '批发';
+
+  @override
   String get settings => '设置';
 
   @override
@@ -1586,6 +1592,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get report => '報表';
+
+  @override
+  String get wholesale => '批發';
 
   @override
   String get settings => '設定';

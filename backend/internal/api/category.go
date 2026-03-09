@@ -2,10 +2,12 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"pos-system/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 )
 
@@ -17,15 +19,31 @@ func NewCategoryHandler(db *gorm.DB) *CategoryHandler {
 	return &CategoryHandler{db: db}
 }
 
-// ListCategories returns all distinct categories from products
+// normalizeCategory trims and applies Unicode NFC so duplicate-looking names merge.
+func normalizeCategory(s string) string {
+	return norm.NFC.String(strings.TrimSpace(s))
+}
+
+// ListCategories returns distinct category names from products, normalized (trim + NFC)
+// so that "罐頭鮑魚" and " 罐頭鮑魚 " or different Unicode forms appear as one.
 func (h *CategoryHandler) ListCategories(c *gin.Context) {
-	var categories []string
+	var raw []string
 	if err := h.db.Model(&models.Product{}).
 		Where("category IS NOT NULL AND category != '' AND is_active = ?", true).
 		Distinct("category").
-		Pluck("category", &categories).Error; err != nil {
+		Pluck("category", &raw).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	seen := make(map[string]bool)
+	var categories []string
+	for _, s := range raw {
+		n := normalizeCategory(s)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		categories = append(categories, n)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"categories": categories})
@@ -79,6 +97,31 @@ func (h *CategoryHandler) DeleteCategory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":          "Category deleted successfully",
 		"products_updated": result.RowsAffected,
+	})
+}
+
+// NormalizeCategories normalizes all product categories (trim + Unicode NFC) so
+// duplicate-looking names (e.g. "罐頭鮑魚" vs " 罐頭鮑魚 " or different Unicode) become one.
+func (h *CategoryHandler) NormalizeCategories(c *gin.Context) {
+	var products []models.Product
+	if err := h.db.Where("category IS NOT NULL AND category != ''").Find(&products).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	updated := 0
+	for _, p := range products {
+		normalized := normalizeCategory(p.Category)
+		if normalized != p.Category {
+			if err := h.db.Model(&p).Update("category", normalized).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			updated++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "Categories normalized",
+		"products_updated": updated,
 	})
 }
 

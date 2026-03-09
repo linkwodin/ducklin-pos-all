@@ -54,6 +54,21 @@ check_prerequisites() {
 deploy_backend() {
     print_info "Deploying backend to Cloud Run..."
     
+    # Ensure PDF fonts (Arial/Liberation Sans, Noto) are present so the Docker image includes them
+    FONTS_DIR="$BACKEND_DIR/pdf-assets/fonts"
+    if [ ! -f "$FONTS_DIR/Arial.ttf" ]; then
+        print_info "Downloading PDF fonts (Arial substitute) into $FONTS_DIR..."
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+        if [ -f "$REPO_ROOT/scripts/download-arial-font.sh" ]; then
+            "$REPO_ROOT/scripts/download-arial-font.sh"
+        else
+            print_warn "scripts/download-arial-font.sh not found; ensure $FONTS_DIR has Arial.ttf and Noto fonts for PDFs."
+        fi
+    else
+        print_info "PDF fonts present in $FONTS_DIR"
+    fi
+    
     cd "$BACKEND_DIR"
     
     # Check if cloudbuild.yaml exists
@@ -248,6 +263,17 @@ main() {
             print_error "deploy-firebase.sh not found"
             exit 1
         fi
+    elif [ "$1" == "all" ] && [ "$2" == "uat" ]; then
+        # Deploy backend to GCP (Cloud Run) and management portal to Firebase (UAT)
+        print_info "Deploying all UAT: backend (GCP) + frontend (Firebase)..."
+        deploy_backend
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -f "$SCRIPT_DIR/deploy-firebase.sh" ]; then
+            "$SCRIPT_DIR/deploy-firebase.sh" "uat"
+        else
+            print_error "deploy-firebase.sh not found"
+            exit 1
+        fi
     elif [ "$1" == "all" ] || [ -z "$1" ]; then
         deploy_backend
         deploy_frontend "production"
@@ -255,6 +281,7 @@ main() {
         print_error "Invalid argument: $1"
         print_info "Usage: ./scripts/deploy.sh [backend|frontend|frontend-uat|frontend-firebase|all] [uat|production]"
         print_info "  Examples:"
+        print_info "    ./scripts/deploy.sh all uat               # Backend to GCP + frontend to Firebase UAT"
         print_info "    ./scripts/deploy.sh frontend              # Deploy to Cloud Storage (production)"
         print_info "    ./scripts/deploy.sh frontend-uat          # Deploy to Cloud Storage (UAT)"
         print_info "    ./scripts/deploy.sh frontend-firebase     # Deploy to Firebase Hosting (UAT)"

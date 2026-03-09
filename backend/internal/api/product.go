@@ -36,6 +36,15 @@ func NewProductHandler(db *gorm.DB, cfg *config.Config) *ProductHandler {
 	return &ProductHandler{db: db, cfg: cfg}
 }
 
+// truncateToDate strips the time portion, keeping only the date at midnight UTC.
+func truncateToDate(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func today() time.Time {
+	return truncateToDate(time.Now())
+}
+
 type CreateProductRequest struct {
 	Name        string `json:"name" binding:"required"`
 	NameChinese string `json:"name_chinese"`
@@ -57,16 +66,18 @@ type SetCostRequest struct {
 	FreightBufferHKD                float64 `json:"freight_buffer_hkd"`
 	ImportDutyPercent               float64 `json:"import_duty_percent"`
 	PackagingGBP                    float64 `json:"packaging_gbp"`
-	DirectRetailOnlineStorePriceGBP float64 `json:"direct_retail_online_store_price_gbp"` // Direct Retail Online Store price
+	DirectRetailOnlineStorePriceGBP float64 `json:"direct_retail_online_store_price_gbp"`
+	EffectiveFrom                   string  `json:"effective_from"`
+	EffectiveTo                     string  `json:"effective_to"`
 }
 
 func (h *ProductHandler) ListProducts(c *gin.Context) {
 	var products []models.Product
 	query := h.db.Where("is_active = ?", true)
 
-	// Filter by category if provided
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
+	// Filter by category if provided (match trimmed so normalized names work)
+	if category := strings.TrimSpace(c.Query("category")); category != "" {
+		query = query.Where("TRIM(category) = ?", category)
 	}
 
 	if err := query.Find(&products).Error; err != nil {
@@ -74,23 +85,86 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 		return
 	}
 
-	// Load current costs
+	// Determine which cost record to load per product.
+	// If effective_from & effective_to are provided, first try exact range match,
+	// then fall back to cost effective on effective_from date, then current.
+	var qEfFrom, qEfTo *time.Time
+	if ef := c.Query("effective_from"); ef != "" {
+		if t, err := time.Parse("2006-01-02", ef); err == nil {
+			qEfFrom = &t
+		}
+	}
+	if et := c.Query("effective_to"); et != "" {
+		if t, err := time.Parse("2006-01-02", et); err == nil {
+			qEfTo = &t
+		}
+	}
+
+	now := time.Now()
 	for i := range products {
 		var cost models.ProductCost
-		// Use Find with Limit(1) instead of First to avoid "record not found" error logging
-		// Find doesn't return an error when no records are found
-		result := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, time.Now()).
-			Order("effective_from DESC").Limit(1).Find(&cost)
-		if result.Error != nil {
-			// Log actual errors
-			fmt.Printf("Error loading cost for product %d: %v\n", products[i].ID, result.Error)
-			products[i].CurrentCost = nil
-		} else if result.RowsAffected == 0 {
-			// No cost record exists, set to nil (will be handled by frontend)
-			products[i].CurrentCost = nil
-		} else {
-			products[i].CurrentCost = &cost
+		var found bool
+
+		if qEfFrom != nil && qEfTo != nil {
+			// Try exact date range match first
+			res := h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
+				products[i].ID, *qEfFrom, *qEfTo).First(&cost)
+			if res.Error == nil {
+				found = true
+			} else {
+				// Fall back: cost effective on the requested from-date
+				res = h.db.Where("product_id = ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
+					products[i].ID, *qEfFrom, *qEfFrom).
+					Order("effective_from DESC").Limit(1).Find(&cost)
+				if res.Error == nil && res.RowsAffected > 0 {
+					found = true
+				}
+			}
 		}
+
+		if !found {
+			result := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, now).
+				Order("effective_from DESC").Limit(1).Find(&cost)
+			if result.Error != nil {
+				fmt.Printf("Error loading cost for product %d: %v\n", products[i].ID, result.Error)
+				products[i].CurrentCost = nil
+			} else if result.RowsAffected == 0 {
+				products[i].CurrentCost = nil
+			} else {
+				found = true
+			}
+		}
+
+		if found {
+			products[i].CurrentCost = &cost
+		} else {
+			products[i].CurrentCost = nil
+		}
+
+		var discounts []models.ProductSectorDiscount
+		if qEfFrom != nil && qEfTo != nil {
+			// Try exact date range match first
+			h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
+				products[i].ID, *qEfFrom, *qEfTo).Find(&discounts)
+			if len(discounts) == 0 {
+				// Fall back to discounts active on the requested from-date
+				h.db.Where("product_id = ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
+					products[i].ID, *qEfFrom, *qEfFrom).Find(&discounts)
+			}
+		} else {
+			h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, now).
+				Find(&discounts)
+		}
+		// When multiple records exist per sector, keep the one matching the date range
+		seen := map[uint]bool{}
+		filtered := discounts[:0]
+		for _, d := range discounts {
+			if !seen[d.SectorID] {
+				seen[d.SectorID] = true
+				filtered = append(filtered, d)
+			}
+		}
+		products[i].Discounts = filtered
 	}
 
 	c.JSON(http.StatusOK, products)
@@ -159,7 +233,7 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		NameChinese: req.NameChinese,
 		Barcode:     req.Barcode,
 		SKU:         req.SKU,
-		Category:    req.Category,
+		Category:    normalizeCategory(req.Category),
 		ImageURL:    imageURL,
 		UnitType:    req.UnitType,
 		IsActive:    true,
@@ -228,7 +302,7 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 	product.NameChinese = req.NameChinese
 	product.Barcode = req.Barcode
 	product.SKU = req.SKU
-	product.Category = req.Category
+	product.Category = normalizeCategory(req.Category)
 	product.ImageURL = imageURL
 	product.UnitType = req.UnitType
 
@@ -414,7 +488,7 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 				NameChinese: nameZh,
 				Barcode:     barcode,
 				SKU:         sku,
-				Category:    category,
+				Category:    normalizeCategory(category),
 				UnitType:    unit,
 				IsActive:    true,
 			}
@@ -440,7 +514,7 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 				}
 			}
 			if category != "" {
-				product.Category = category
+				product.Category = normalizeCategory(category)
 			}
 			if err := h.db.Save(&product).Error; err != nil {
 				rowErrors = append(rowErrors, fmt.Sprintf("row %d: failed to update product: %v", rowNum, err))
@@ -533,21 +607,58 @@ func (h *ProductHandler) SetProductCost(c *gin.Context) {
 	// Calculate costs based on Excel formula
 	cost := h.calculateProductCost(product.ID, req)
 
-	// Deactivate previous cost
-	now := time.Now()
-	h.db.Model(&models.ProductCost{}).
-		Where("product_id = ? AND effective_to IS NULL", product.ID).
-		Update("effective_to", now)
-
-	// Create new cost
-	if err := h.db.Create(&cost).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	// Parse optional date range
+	var efFrom, efTo *time.Time
+	if req.EffectiveFrom != "" {
+		t, err := time.Parse("2006-01-02", req.EffectiveFrom)
+		if err == nil {
+			efFrom = &t
+		}
+	}
+	if req.EffectiveTo != "" {
+		t, err := time.Parse("2006-01-02", req.EffectiveTo)
+		if err == nil {
+			efTo = &t
+		}
 	}
 
-	// Record price history
-	h.recordPriceHistory(product.ID, nil, cost.WholesaleCostGBP, 0, cost.WholesaleCostGBP)
+	if efFrom != nil && efTo != nil {
+		// Date-range mode: upsert by matching product + date range
+		var existing models.ProductCost
+		err := h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
+			product.ID, *efFrom, *efTo).First(&existing).Error
+		if err == nil {
+			// Override existing record
+			cost.ID = existing.ID
+			cost.CreatedAt = existing.CreatedAt
+		}
+		cost.EffectiveFrom = efFrom
+		cost.EffectiveTo = efTo
+		if cost.ID != 0 {
+			if err := h.db.Save(&cost).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			if err := h.db.Create(&cost).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	} else {
+		// Original behaviour: deactivate previous, create new
+		tod := today()
+		h.db.Model(&models.ProductCost{}).
+			Where("product_id = ? AND effective_to IS NULL", product.ID).
+			Update("effective_to", tod)
+		cost.EffectiveFrom = &tod
+		if err := h.db.Create(&cost).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
+	h.recordPriceHistory(product.ID, nil, cost.WholesaleCostGBP, 0, cost.WholesaleCostGBP)
 	c.JSON(http.StatusCreated, cost)
 }
 
@@ -562,78 +673,112 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 	var req struct {
 		WholesaleCostGBP                *float64 `json:"wholesale_cost_gbp"`
 		DirectRetailOnlineStorePriceGBP *float64 `json:"direct_retail_online_store_price_gbp"`
+		EffectiveFrom                   *string  `json:"effective_from"`
+		EffectiveTo                     *string  `json:"effective_to"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get current cost or create new one
-	var cost models.ProductCost
-	err := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", product.ID, time.Now()).
-		Order("effective_from DESC").First(&cost).Error
-
-	isNewRecord := false
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Create new cost with minimal required fields
-		now := time.Now()
-		cost = models.ProductCost{
-			ProductID:                       product.ID,
-			ExchangeRate:                    1,
-			UnitWeightG:                     1,
-			WeightG:                         1,
-			FreightRateHKDPerKG:             0,
-			WholesaleCostGBP:                0,
-			DirectRetailOnlineStorePriceGBP: 0,
-			EffectiveFrom:                   &now,
+	// Parse optional date range
+	var efFrom, efTo *time.Time
+	if req.EffectiveFrom != nil && *req.EffectiveFrom != "" {
+		t, err := time.Parse("2006-01-02", *req.EffectiveFrom)
+		if err == nil {
+			efFrom = &t
 		}
-		isNewRecord = true
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	}
+	if req.EffectiveTo != nil && *req.EffectiveTo != "" {
+		t, err := time.Parse("2006-01-02", *req.EffectiveTo)
+		if err == nil {
+			efTo = &t
+		}
 	}
 
-	// Update fields if provided
+	hasDateRange := efFrom != nil && efTo != nil
+
+	var cost models.ProductCost
+	isNewRecord := false
+
+	if hasDateRange {
+		// Look for existing cost with matching date range to override
+		err := h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
+			product.ID, *efFrom, *efTo).First(&cost).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Also check for open-ended record starting at the same date
+			err2 := h.db.Where("product_id = ? AND effective_from = ? AND effective_to IS NULL",
+				product.ID, *efFrom).First(&cost).Error
+			if errors.Is(err2, gorm.ErrRecordNotFound) {
+				cost = models.ProductCost{
+					ProductID:       product.ID,
+					ExchangeRate:    1,
+					UnitWeightG:     1,
+					WeightG:         1,
+					EffectiveFrom:   efFrom,
+					EffectiveTo:     efTo,
+				}
+				isNewRecord = true
+			}
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		// Update the date range on existing record
+		cost.EffectiveFrom = efFrom
+		cost.EffectiveTo = efTo
+	} else {
+		// Original behaviour: get current active cost
+		err := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", product.ID, today()).
+			Order("effective_from DESC").First(&cost).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			tod := today()
+			cost = models.ProductCost{
+				ProductID:       product.ID,
+				ExchangeRate:    1,
+				UnitWeightG:     1,
+				WeightG:         1,
+				EffectiveFrom:   &tod,
+			}
+			isNewRecord = true
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	if req.WholesaleCostGBP != nil {
 		if isNewRecord {
-			// For new records, just set the value
+			cost.WholesaleCostGBP = *req.WholesaleCostGBP
+		} else if hasDateRange {
 			cost.WholesaleCostGBP = *req.WholesaleCostGBP
 		} else if cost.WholesaleCostGBP != *req.WholesaleCostGBP {
-			// Deactivate previous cost if wholesale cost changed
-			now := time.Now()
+			tod := today()
 			h.db.Model(&models.ProductCost{}).
 				Where("product_id = ? AND effective_to IS NULL", product.ID).
-				Update("effective_to", now)
-
-			// Create new cost record with updated value
-			cost.ID = 0 // Reset ID for new record
+				Update("effective_to", tod)
+			cost.ID = 0
 			cost.WholesaleCostGBP = *req.WholesaleCostGBP
-			cost.EffectiveFrom = &now
+			cost.EffectiveFrom = &tod
 			cost.EffectiveTo = nil
 			isNewRecord = true
-		} else {
-			cost.WholesaleCostGBP = *req.WholesaleCostGBP
 		}
 	}
 
 	if req.DirectRetailOnlineStorePriceGBP != nil {
 		cost.DirectRetailOnlineStorePriceGBP = *req.DirectRetailOnlineStorePriceGBP
-		// If only price changed (not wholesale cost), we still need to create a new record for history
-		if !isNewRecord && req.WholesaleCostGBP == nil {
-			// Price-only update: deactivate old record and create new one
-			now := time.Now()
+		if !isNewRecord && !hasDateRange && req.WholesaleCostGBP == nil {
+			tod := today()
 			h.db.Model(&models.ProductCost{}).
 				Where("product_id = ? AND effective_to IS NULL", product.ID).
-				Update("effective_to", now)
-
-			cost.ID = 0 // Reset ID for new record
-			cost.EffectiveFrom = &now
+				Update("effective_to", tod)
+			cost.ID = 0
+			cost.EffectiveFrom = &tod
 			cost.EffectiveTo = nil
 			isNewRecord = true
 		}
 	}
 
-	// Save cost (create or update)
 	if isNewRecord || cost.ID == 0 {
 		if err := h.db.Create(&cost).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -646,7 +791,6 @@ func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
 		}
 	}
 
-	// Record price history
 	if req.WholesaleCostGBP != nil {
 		h.recordPriceHistory(product.ID, nil, cost.WholesaleCostGBP, 0, cost.WholesaleCostGBP)
 	}
@@ -715,51 +859,101 @@ func (h *ProductHandler) SetDiscount(c *gin.Context) {
 	}
 
 	var req struct {
-		DiscountPercent float64 `json:"discount_percent" binding:"required"`
+		DiscountPercent float64 `json:"discount_percent"`
+		SectorPriceGBP float64 `json:"sector_price_gbp"`
+		EffectiveFrom   string  `json:"effective_from"`
+		EffectiveTo     string  `json:"effective_to"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Deactivate previous discount
-	now := time.Now()
-	h.db.Model(&models.ProductSectorDiscount{}).
-		Where("product_id = ? AND sector_id = ? AND effective_to IS NULL", product.ID, sector.ID).
-		Update("effective_to", now)
-
-	// Create new discount
-	discount := models.ProductSectorDiscount{
-		ProductID:       product.ID,
-		SectorID:        sector.ID,
-		DiscountPercent: req.DiscountPercent,
-		EffectiveFrom:   now,
+	var efFrom, efTo *time.Time
+	if req.EffectiveFrom != "" {
+		t, err := time.Parse("2006-01-02", req.EffectiveFrom)
+		if err == nil {
+			efFrom = &t
+		}
+	}
+	if req.EffectiveTo != "" {
+		t, err := time.Parse("2006-01-02", req.EffectiveTo)
+		if err == nil {
+			efTo = &t
+		}
 	}
 
-	if err := h.db.Create(&discount).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var discount models.ProductSectorDiscount
+
+	if efFrom != nil && efTo != nil {
+		// Date-range mode: upsert by matching product + sector + date range
+		err := h.db.Where("product_id = ? AND sector_id = ? AND effective_from = ? AND effective_to = ?",
+			product.ID, sector.ID, *efFrom, *efTo).First(&discount).Error
+		if err == nil {
+			discount.DiscountPercent = req.DiscountPercent
+			discount.SectorPriceGBP = req.SectorPriceGBP
+			if err := h.db.Save(&discount).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			discount = models.ProductSectorDiscount{
+				ProductID:       product.ID,
+				SectorID:        sector.ID,
+				DiscountPercent: req.DiscountPercent,
+				SectorPriceGBP:  req.SectorPriceGBP,
+				EffectiveFrom:   *efFrom,
+				EffectiveTo:     efTo,
+			}
+			if err := h.db.Create(&discount).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	} else {
+		// Current mode: deactivate old, create new
+		tod := today()
+		h.db.Model(&models.ProductSectorDiscount{}).
+			Where("product_id = ? AND sector_id = ? AND effective_to IS NULL", product.ID, sector.ID).
+			Update("effective_to", tod)
+
+		discount = models.ProductSectorDiscount{
+			ProductID:       product.ID,
+			SectorID:        sector.ID,
+			DiscountPercent: req.DiscountPercent,
+			SectorPriceGBP:  req.SectorPriceGBP,
+			EffectiveFrom:   tod,
+		}
+		if err := h.db.Create(&discount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
-	// Record price history using Direct Retail Online Store Price
 	var cost models.ProductCost
 	h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", product.ID, time.Now()).
 		Order("effective_from DESC").First(&cost)
 
-	// Use Direct Retail Online Store Price as base, fallback to WholesaleCostGBP if not set
 	basePrice := cost.DirectRetailOnlineStorePriceGBP
 	if basePrice <= 0 {
 		basePrice = cost.WholesaleCostGBP
 	}
 
-	// Apply sector discount rate first, then product discount
-	var sectorDiscountRate float64
-	if sector.DiscountRate > 0 {
-		sectorDiscountRate = sector.DiscountRate
+	var finalPrice float64
+	if req.SectorPriceGBP > 0 {
+		finalPrice = req.SectorPriceGBP
+	} else {
+		var sectorDiscountRate float64
+		if sector.DiscountRate > 0 {
+			sectorDiscountRate = sector.DiscountRate
+		}
+		priceAfterSectorDiscount := basePrice * (1 - sectorDiscountRate/100.0)
+		finalPrice = priceAfterSectorDiscount * (1 - req.DiscountPercent/100.0)
 	}
-	priceAfterSectorDiscount := basePrice * (1 - sectorDiscountRate/100.0)
-	finalPrice := priceAfterSectorDiscount * (1 - req.DiscountPercent/100.0)
-	totalDiscountPercent := sectorDiscountRate + req.DiscountPercent
+	totalDiscountPercent := req.DiscountPercent
+	if sector.DiscountRate > 0 {
+		totalDiscountPercent += sector.DiscountRate
+	}
 
 	h.recordPriceHistory(product.ID, &sector.ID, basePrice, totalDiscountPercent, finalPrice)
 

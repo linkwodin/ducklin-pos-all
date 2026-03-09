@@ -19,6 +19,8 @@ type Config struct {
 	Environment     string // "development" or "production"
 	UploadDir       string // Directory for local file uploads
 	BaseURL         string // Base URL for serving uploaded files
+	PDFFontPath     string // Optional path to TTF for PDF (UTF-8: Chinese, £). e.g. uploads/assets/fonts/NotoSansTC-Regular.ttf
+	PDFLogoPath     string // Optional path to logo image for PDF header. e.g. uploads/assets/images/pdf_logo.png
 }
 
 func Load() *Config {
@@ -38,6 +40,8 @@ func Load() *Config {
 		Environment:     getEnv("ENVIRONMENT", "development"),
 		UploadDir:       getEnv("UPLOAD_DIR", "./uploads"),
 		BaseURL:         getEnv("BASE_URL", "http://localhost:8868"),
+		PDFFontPath:     getEnv("PDF_FONT_PATH", ""),
+		PDFLogoPath:     getEnv("PDF_LOGO_PATH", "uploads/assets/images/pdf_logo.png"),
 	}
 }
 

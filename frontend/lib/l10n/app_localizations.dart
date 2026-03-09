@@ -370,6 +370,12 @@ abstract class AppLocalizations {
   /// **'Report'**
   String get report;
 
+  /// Wholesale orders / packing navigation item
+  ///
+  /// In en, this message translates to:
+  /// **'Wholesale'**
+  String get wholesale;
+
   /// Settings navigation item
   ///
   /// In en, this message translates to:

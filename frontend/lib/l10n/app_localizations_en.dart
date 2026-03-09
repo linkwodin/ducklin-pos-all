@@ -146,6 +146,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get report => 'Report';
 
   @override
+  String get wholesale => 'Wholesale';
+
+  @override
   String get settings => 'Settings';
 
   @override

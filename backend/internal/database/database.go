@@ -192,6 +192,27 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Backfill empty ref_no before adding unique index (OC Number)
+	_ = db.Exec("UPDATE wholesale_orders SET ref_no = CAST(id AS CHAR) WHERE ref_no = '' OR ref_no IS NULL").Error
+
+	// Resolve duplicate ref_no so unique index can be applied (e.g. D123 → D123, D123.1, D123.2)
+	var duplicates []struct {
+		RefNo string
+		Cnt   int64
+	}
+	db.Raw("SELECT ref_no, COUNT(*) as cnt FROM wholesale_orders GROUP BY ref_no HAVING cnt > 1").Scan(&duplicates)
+	for _, d := range duplicates {
+		var ids []uint
+		db.Model(&models.WholesaleOrder{}).Where("ref_no = ?", d.RefNo).Order("id ASC").Pluck("id", &ids)
+		for i, oid := range ids {
+			newRef := d.RefNo
+			if i > 0 {
+				newRef = fmt.Sprintf("%s.%d", d.RefNo, i+1)
+			}
+			db.Exec("UPDATE wholesale_orders SET ref_no = ? WHERE id = ?", newRef, oid)
+		}
+	}
+
 	// Auto-migrate all models
 	log.Println("Running database migrations...")
 	err = db.AutoMigrate(
@@ -215,9 +236,29 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 		&models.StocktakeInventorySnapshot{},
 		&models.StocktakeDayStartRecord{},
 		&models.UserActivityEvent{},
+		&models.WholesaleClient{},
+		&models.WholesaleClientStore{},
+		&models.WholesaleOrder{},
+		&models.WholesaleOrderItem{},
+		&models.WholesaleOrderDocument{},
+		&models.CompanySettings{},
+		&models.Shipment{},
+		&models.ShipmentItem{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
+	}
+
+	// Convert effective_from/effective_to from datetime to date
+	for _, stmt := range []string{
+		"ALTER TABLE product_costs MODIFY effective_from DATE",
+		"ALTER TABLE product_costs MODIFY effective_to DATE",
+		"ALTER TABLE product_sector_discounts MODIFY effective_from DATE",
+		"ALTER TABLE product_sector_discounts MODIFY effective_to DATE",
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			log.Printf("Column migration (may already be date): %v", err)
+		}
 	}
 
 	log.Println("Database connection established and migrations completed successfully")

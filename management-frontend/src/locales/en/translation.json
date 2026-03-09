@@ -27,7 +27,7 @@
     "notes": "Notes"
   },
   "layout": {
-    "title": "POS Management System",
+    "title": "Management System",
     "logout": "Logout",
     "profile": "Profile",
     "dashboard": "Dashboard",
@@ -36,6 +36,7 @@
     "categories": "Categories",
     "sectors": "Sectors",
     "stock": "Stock",
+    "assignProductToStore": "Assign product to store",
     "shipment": "Shipment",
     "users": "Users",
     "stores": "Stores",
@@ -45,7 +46,16 @@
     "currencyRates": "Currency Rates",
     "stocktake": "Stocktake",
     "stockReport": "Stock report",
-    "timetable": "Store daily log"
+    "timetable": "Store daily log",
+    "menuCatalog": "Catalog",
+    "menuInventory": "Inventory",
+    "menuStocktakeReports": "Stocktake & reports",
+    "menuOrders": "Orders",
+    "wholesaleOrders": "Wholesale orders",
+    "wholesaleClients": "Wholesale clients",
+    "menuSettings": "Settings",
+    "companySettings": "Company settings",
+    "payment": "Payment"
   },
   "login": {
     "title": "POS Management System",

@@ -31,6 +31,7 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [normalizing, setNormalizing] = useState(false);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const { enqueueSnackbar } = useSnackbar();
@@ -109,20 +110,49 @@ export default function CategoriesPage() {
     }
   };
 
+  const handleNormalize = async () => {
+    try {
+      setNormalizing(true);
+      const { products_updated } = await categoriesAPI.normalize();
+      enqueueSnackbar(
+        products_updated > 0
+          ? `Normalized ${products_updated} product category name(s). Duplicate names merged.`
+          : 'Category names are already normalized.',
+        { variant: 'success' }
+      );
+      fetchCategories();
+    } catch (error: any) {
+      enqueueSnackbar(error.response?.data?.error || 'Failed to normalize categories', {
+        variant: 'error',
+      });
+    } finally {
+      setNormalizing(false);
+    }
+  };
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 3 }}>
         <Typography variant="h4">Categories</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setNewCategoryName('');
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={handleNormalize}
+            disabled={normalizing}
+          >
+            {normalizing ? 'Normalizing…' : 'Normalize names (fix duplicates)'}
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setNewCategoryName('');
             setOpen(true);
           }}
-        >
-          Add Category
-        </Button>
+          >
+            Add Category
+          </Button>
+        </Box>
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>

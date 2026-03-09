@@ -31,6 +31,7 @@ import 'order_pickup_screen.dart';
 import 'user_profile_screen.dart';
 import 'settings_screen.dart';
 import 'full_sync_progress_screen.dart';
+import 'wholesale_packing_screen.dart';
 import 'product_selection_screen.dart' show productSelectionScreenKey;
 
 class POSScreen extends StatefulWidget {
@@ -44,6 +45,7 @@ class _POSScreenState extends State<POSScreen> {
   int _selectedIndex = 0;
   String? _userRole;
   double groupAlignment = -1.0;
+  int _pendingShipmentsCount = 0;
 
   // Global keys to access state of screens that need refreshing
   final GlobalKey<OrderHistoryScreenState> _orderHistoryKey = GlobalKey<OrderHistoryScreenState>();
@@ -58,15 +60,15 @@ class _POSScreenState extends State<POSScreen> {
   bool get _showUserManagement =>
       _userRole == 'admin' || _userRole == 'management' || _userRole == 'supervisor';
 
-  // Page index: for pos_user we have 5 nav items (Report at index 4). For admin we have 6 (UserMgmt at 4, Report at 5).
-  // _pages order: [Order, Pickup, History, Inventory, Report, UserManagement]
+  // Page index: nav has Order(0), Pickup(1), Search(2), Inventory(3), Wholesale(4), [UserMgmt(5) if admin], Report(5 or 6).
+  // _pages order: [Order, Pickup, History, Inventory, WholesalePacking, Report, UserManagement]
   int get _pageIndex {
-    if (_selectedIndex < 4) return _selectedIndex;
-    if (_showUserManagement) return _selectedIndex == 4 ? 5 : 4; // 4->UserMgmt(5), 5->Report(4)
-    return 4; // pos_user: nav index 4 = Report = _pages[4]
+    if (_selectedIndex <= 4) return _selectedIndex;
+    if (_showUserManagement) return _selectedIndex == 5 ? 6 : 5; // 5->UserMgmt(6), 6->Report(5)
+    return 5; // pos_user: nav index 5 = Report = _pages[5]
   }
 
-  // List of pages for navigation: Order, Pickup, History, Inventory, Report, UserManagement
+  // List of pages for navigation: Order, Pickup, History, Inventory, Wholesale, Report, UserManagement
   List<Widget> get _pages => [
     OrderScreen(
       onInvoiceReceiptQRScanned: (data) {
@@ -111,6 +113,7 @@ class _POSScreenState extends State<POSScreen> {
     ),
     OrderHistoryScreen(key: _orderHistoryKey),
     InventoryScreen(),
+    WholesalePackingScreen(onShipmentsChanged: _refreshPendingShipmentsCount),
     ReportScreen(
       onTapPendingOrders: () {
         setState(() {
@@ -266,6 +269,26 @@ class _POSScreenState extends State<POSScreen> {
         orderProvider.setStore(1);
       }
     }
+    _refreshPendingShipmentsCount();
+  }
+
+  Future<void> _refreshPendingShipmentsCount() async {
+    final orderProvider = Provider.of<OrderProvider>(context, listen: false);
+    final storeId = orderProvider.storeId;
+    if (storeId != null) {
+      try {
+        final shipments = await ApiService.instance.listShipments(storeId: storeId);
+        final count = shipments.where((s) {
+          final status = (s is Map && s['status'] != null) ? s['status'].toString() : '';
+          return status != 'completed';
+        }).length;
+        if (mounted) {
+          setState(() {
+            _pendingShipmentsCount = count;
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadUserRole() async {
@@ -382,6 +405,9 @@ class _POSScreenState extends State<POSScreen> {
                       // Refresh order history when navigating to it (index 2)
                       if (index == 2 && _orderHistoryKey.currentState != null) {
                         _orderHistoryKey.currentState!.refreshOrders();
+                      }
+                      if (index == 4) {
+                        _refreshPendingShipmentsCount();
                       }
                       // IMPORTANT: Do NOT change focus here anymore.
                       // Let each screen and dialog manage its own focus
@@ -503,6 +529,71 @@ class _POSScreenState extends State<POSScreen> {
                         icon: const Icon(Icons.inventory_2_outlined),
                         selectedIcon: const Icon(Icons.inventory),
                         label: Text(l10n.inventory),
+                      ),
+                      NavigationRailDestination(
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.local_shipping_outlined),
+                            if (_pendingShipmentsCount > 0)
+                              Positioned(
+                                right: -6,
+                                top: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    _pendingShipmentsCount > 9 ? '9+' : '$_pendingShipmentsCount',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        selectedIcon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.local_shipping),
+                            if (_pendingShipmentsCount > 0)
+                              Positioned(
+                                right: -6,
+                                top: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    _pendingShipmentsCount > 9 ? '9+' : '$_pendingShipmentsCount',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        label: Text(l10n.wholesale),
                       ),
                       if (_showUserManagement)
                         NavigationRailDestination(
@@ -855,29 +946,33 @@ class OrderScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Consumer<OrderProvider>(
-                  builder: (context, orderProvider, _) {
-                    return ElevatedButton(
-                      onPressed: orderProvider.cartItems.isEmpty
-                          ? null
-                          : () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const CheckoutScreen()),
-                              );
-                            },
-                      style: ElevatedButton.styleFrom(
-                        // 2x height checkout button
-                        minimumSize: const Size(double.infinity, 96),
-                        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-                        textStyle: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      child: Text(l10n.checkout),
-                    );
-                  },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Consumer<OrderProvider>(
+                      builder: (context, orderProvider, _) {
+                        return ElevatedButton(
+                          onPressed: orderProvider.cartItems.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+                                  );
+                                },
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 96),
+                            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+                            textStyle: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          child: Text(l10n.checkout),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ],

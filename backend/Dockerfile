@@ -28,10 +28,13 @@ WORKDIR /root/
 
 # Copy the binary from builder
 COPY --from=builder /app/main .
-COPY --from=builder /app/fonts ./fonts
 
-# Create uploads directory (for local storage fallback)
-RUN mkdir -p uploads
+# Copy PDF assets (fonts and logo) for invoice/order confirmation generation
+COPY --from=builder /app/pdf-assets/fonts ./uploads/assets/fonts
+COPY --from=builder /app/pdf-assets/images ./uploads/assets/images
+
+# Create uploads directory for runtime files (wholesale-docs, etc.)
+RUN mkdir -p uploads/wholesale-docs
 
 # Expose port (Cloud Run uses PORT environment variable)
 EXPOSE 8080

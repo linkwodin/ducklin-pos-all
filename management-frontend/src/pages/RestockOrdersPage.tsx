@@ -28,6 +28,7 @@ import { restockAPI, storesAPI, productsAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { RestockOrder, Store, Product } from '../types';
 import { format } from 'date-fns';
+import ProductAutocomplete from '../components/ProductAutocomplete';
 
 export default function RestockOrdersPage() {
   const [orders, setOrders] = useState<RestockOrder[]>([]);
@@ -345,23 +346,14 @@ function RestockOrderDialog({
             </Button>
             {formData.items.map((item, index) => (
               <Box key={index} sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <TextField
-                  select
-                  label="Product"
-                  required
-                  sx={{ flex: 2 }}
-                  size="small"
-                  value={item.product_id}
-                  onChange={(e) =>
-                    handleItemChange(index, 'product_id', Number(e.target.value))
-                  }
-                >
-                  {products.map((product) => (
-                    <MenuItem key={product.id} value={product.id}>
-                      {product.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                <Box sx={{ flex: 2 }}>
+                  <ProductAutocomplete
+                    products={products}
+                    value={item.product_id || null}
+                    onChange={(id) => handleItemChange(index, 'product_id', id ?? 0)}
+                    label="Product"
+                  />
+                </Box>
                 <TextField
                   label="Quantity"
                   type="number"

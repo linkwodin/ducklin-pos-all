@@ -10,6 +10,11 @@ uploads/
 *.gif
 *.webp
 
+# But track PDF assets (fonts and logo for invoice generation)
+!pdf-assets/
+!pdf-assets/**
+!pdf-assets/images/*.png
+
 # Build output
 pos-backend
 *.exe

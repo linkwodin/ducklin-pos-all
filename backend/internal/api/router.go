@@ -41,6 +41,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	currencyHandler := NewCurrencyHandler(db)
 	auditHandler := NewAuditHandler(db)
 	stocktakeHandler := NewStocktakeHandler(db)
+	wholesaleOrderHandler := NewWholesaleOrderHandler(db, cfg)
+	wholesaleClientHandler := NewWholesaleClientHandler(db)
+	settingsHandler := NewSettingsHandler(db)
 
 	// Public routes
 	public := router.Group("/api/v1")
@@ -77,6 +80,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// Categories
 		protected.GET("/categories", categoryHandler.ListCategories)
 		protected.POST("/categories", categoryHandler.CreateCategory)
+		protected.POST("/categories/normalize", categoryHandler.NormalizeCategories)
 		protected.DELETE("/categories/:name", categoryHandler.DeleteCategory)
 		protected.PUT("/categories/:name/rename", categoryHandler.RenameCategory)
 
@@ -87,6 +91,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// Stock
 		protected.GET("/stock", stockHandler.ListStock)
 		protected.GET("/stock/report", stockHandler.GetStockReport)
+		protected.POST("/stock/assign", stockHandler.AssignProductsToStore)
+		protected.POST("/stock/unassign", stockHandler.UnassignProductsFromStore)
 		protected.GET("/stock/:store_id", stockHandler.GetStoreStock)
 		protected.GET("/stock/low-stock", stockHandler.GetLowStock)
 		protected.GET("/stock/incoming", stockHandler.GetIncomingStock) // Get on-the-way stock
@@ -119,6 +125,39 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		protected.PUT("/orders/:id/cancel", orderHandler.MarkCancelled)
 		protected.PUT("/orders/pickup/:order_number", orderHandler.MarkPickedUp)
 
+		// Wholesale clients (management/supervisor CRUD; pos_user can list for creating orders)
+		protected.GET("/wholesale-clients", wholesaleClientHandler.List)
+		protected.GET("/wholesale-clients/:id", wholesaleClientHandler.Get)
+		protected.POST("/wholesale-clients", wholesaleClientHandler.Create)
+		protected.PUT("/wholesale-clients/:id", wholesaleClientHandler.Update)
+		protected.DELETE("/wholesale-clients/:id", wholesaleClientHandler.Delete)
+		protected.POST("/wholesale-clients/:id/stores", wholesaleClientHandler.CreateStore)
+		protected.PUT("/wholesale-clients/:id/stores/:store_id", wholesaleClientHandler.UpdateStore)
+		protected.DELETE("/wholesale-clients/:id/stores/:store_id", wholesaleClientHandler.DeleteStore)
+
+		// Wholesale orders (pos_user/admin create; management/supervisor approve/reject/assign)
+		protected.POST("/wholesale-orders", wholesaleOrderHandler.Create)
+		protected.GET("/wholesale-orders", wholesaleOrderHandler.List)
+		protected.GET("/wholesale-orders/recent-order-channels", wholesaleOrderHandler.RecentOrderChannels)
+		protected.GET("/wholesale-orders/:id", wholesaleOrderHandler.Get)
+		protected.PUT("/wholesale-orders/:id", wholesaleOrderHandler.Update)
+		protected.PUT("/wholesale-orders/:id/approve", wholesaleOrderHandler.Approve)
+		protected.PUT("/wholesale-orders/:id/reject", wholesaleOrderHandler.Reject)
+		protected.PUT("/wholesale-orders/:id/assign", wholesaleOrderHandler.AssignStores)
+		protected.PUT("/wholesale-orders/:id/complete-assignment", wholesaleOrderHandler.CompleteAssignment)
+		protected.POST("/wholesale-orders/:id/regenerate-order-confirmation", wholesaleOrderHandler.RegenerateOrderConfirmation)
+		protected.POST("/wholesale-orders/:id/generate-invoice", wholesaleOrderHandler.GenerateInvoice)
+		protected.GET("/wholesale-orders/:id/audit-logs", wholesaleOrderHandler.GetAuditLogs)
+		protected.POST("/wholesale-orders/:id/email-document", wholesaleOrderHandler.EmailDocument)
+
+		// Shipments (POS: list by store_id, complete packing; management: list/update)
+		protected.GET("/shipments", wholesaleOrderHandler.ListShipments)
+		protected.GET("/shipments/:id", wholesaleOrderHandler.GetShipment)
+		protected.PUT("/shipments/:id", wholesaleOrderHandler.UpdateShipment)
+		protected.POST("/shipments/:id/complete-packing", wholesaleOrderHandler.CompletePacking)
+		protected.POST("/shipments/:id/regenerate-delivery-note", wholesaleOrderHandler.RegenerateDeliveryNote)
+		protected.PUT("/shipments/:id/case-qty", wholesaleOrderHandler.UpdateShipmentCaseQty)
+
 		// Users
 		protected.GET("/users", userHandler.ListUsers)
 		protected.GET("/users/:id", userHandler.GetUser)
@@ -141,6 +180,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		// Catalogs
 		protected.GET("/catalogs/:sector_id", catalogHandler.GenerateCatalog)
 		protected.GET("/catalogs/:sector_id/download", catalogHandler.DownloadCatalog)
+
+		// Company settings (for PDF/document company address and contact)
+		protected.GET("/settings/company", settingsHandler.GetCompanySettings)
+		protected.PUT("/settings/company", settingsHandler.UpdateCompanySettings)
 
 		// Currency Rates
 		protected.GET("/currency-rates", currencyHandler.ListCurrencyRates)

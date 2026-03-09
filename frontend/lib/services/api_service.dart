@@ -377,6 +377,106 @@ class ApiService {
     return response.data is List ? response.data as List<dynamic> : [];
   }
 
+  /// List wholesale clients (active only for dropdown when creating orders).
+  Future<List<dynamic>> listWholesaleClients({bool activeOnly = true}) async {
+    final response = await _dio.get(
+      '/wholesale-clients',
+      queryParameters: activeOnly ? {'active_only': 1} : null,
+    );
+    return response.data is List ? response.data as List<dynamic> : [];
+  }
+
+  /// List approved wholesale orders for packing (pos_user). Pass store_id to get orders that have
+  /// at least one item assigned to this store or unassigned. Returns list of orders with items (including assigned_store).
+  Future<List<dynamic>> listWholesaleOrdersForPacking(int storeId) async {
+    final response = await _dio.get(
+      '/wholesale-orders',
+      queryParameters: {'status': 'approved', 'store_id': storeId.toString()},
+    );
+    return response.data is List ? response.data as List<dynamic> : [];
+  }
+
+  /// List shipments for a store (for POS packing). Returns shipments with order, store, and items.
+  Future<List<dynamic>> listShipments({required int storeId}) async {
+    final response = await _dio.get(
+      '/shipments',
+      queryParameters: {'store_id': storeId.toString()},
+    );
+    return response.data is List ? response.data as List<dynamic> : [];
+  }
+
+  /// Get one shipment by ID.
+  Future<Map<String, dynamic>> getShipment(int shipmentId) async {
+    final response = await _dio.get('/shipments/$shipmentId');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Update shipment courier and/or tracking number.
+  Future<Map<String, dynamic>> updateShipment(
+    int shipmentId, {
+    String? courier,
+    String? trackingNumber,
+  }) async {
+    final data = <String, dynamic>{};
+    if (courier != null) data['courier'] = courier;
+    if (trackingNumber != null) data['tracking_number'] = trackingNumber;
+    final response = await _dio.put('/shipments/$shipmentId', data: data);
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Complete packing: generate delivery note PDF and mark shipment completed.
+  Future<Map<String, dynamic>> completeShipmentPacking(int shipmentId) async {
+    final response = await _dio.post('/shipments/$shipmentId/complete-packing');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Regenerate delivery note PDF for a shipment (management).
+  Future<Map<String, dynamic>> regenerateShipmentDeliveryNote(int shipmentId) async {
+    final response = await _dio.post('/shipments/$shipmentId/regenerate-delivery-note');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Create wholesale order (pos_user/supervisor/admin). Requires approval by admin/manager.
+  /// Body: wholesale_client_id, store_id, sector_id (optional), notes (optional), items: [{ product_id, quantity }].
+  /// Returns created order with order_number, status: pending_approval.
+  Future<Map<String, dynamic>> createWholesaleOrder({
+    required int wholesaleClientId,
+    required int storeId,
+    int? sectorId,
+    String? notes,
+    required List<Map<String, dynamic>> items,
+    double? totalDiscount,
+  }) async {
+    final data = <String, dynamic>{
+      'wholesale_client_id': wholesaleClientId,
+      'store_id': storeId,
+      'items': items
+          .map((e) => {
+                'product_id': e['product_id'],
+                'quantity': e['quantity'],
+                'line_discount_amount': e['line_discount_amount'] ?? 0,
+              })
+          .toList(),
+    };
+    if (sectorId != null) data['sector_id'] = sectorId;
+    if (notes != null && notes.isNotEmpty) data['notes'] = notes;
+    if (totalDiscount != null && totalDiscount > 0) {
+      data['total_discount'] = totalDiscount;
+    }
+    final response = await _dio.post('/wholesale-orders', data: data);
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<List<dynamic>> getUsersForDevice(String deviceCode) async {
     try {
       print('API Service: Fetching users for device: $deviceCode');

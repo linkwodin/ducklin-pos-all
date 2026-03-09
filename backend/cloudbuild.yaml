@@ -109,9 +109,7 @@ steps:
         echo "Environment: $$ENVIRONMENT"
         echo "Connection name: $$CONNECTION_NAME"
         
-        # Deploy the service first with basic env vars (without DATABASE_URL)
-        echo "Step 1: Deploying service with basic configuration..."
-        echo "Deploying image: $$IMAGE_TAG"
+        # Single deploy with env vars + Cloud SQL so DB connection works reliably
         gcloud run deploy $$SERVICE_NAME \
           --image=$$IMAGE_TAG \
           --region=europe-west1 \
@@ -122,25 +120,10 @@ steps:
           --timeout=300 \
           --max-instances=10 \
           --cpu-boost \
-          --set-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL" \
           --no-cpu-throttling \
-          --project=$$PROJ_ID
-        
-        # Then update with DATABASE_URL separately to avoid issues with special characters
-        echo "Step 2: Setting DATABASE_URL..."
-        gcloud run services update $$SERVICE_NAME \
-          --region=europe-west1 \
-          --update-env-vars="DATABASE_URL=$$DATABASE_URL" \
-          --project=$$PROJ_ID
-        
-        echo "✅ Service deployed successfully"
-        
-        # Then add Cloud SQL connection (this will work even if already exists)
-        echo "Adding Cloud SQL connection..."
-        gcloud run services update $$SERVICE_NAME \
-          --region=europe-west1 \
+          --set-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL,DATABASE_URL=$$DATABASE_URL" \
           --add-cloudsql-instances=$$CONNECTION_NAME \
-          --project=$$PROJ_ID 2>&1 || echo "⚠️  Cloud SQL connection may already be configured or failed to add"
+          --project=$$PROJ_ID
         
         echo "✅ Deployment completed"
 

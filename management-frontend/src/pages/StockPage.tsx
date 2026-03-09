@@ -34,6 +34,7 @@ import type { Stock, Store, Product, AuditLog } from '../types';
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import UserDisplay from '../components/UserDisplay';
+import ProductAutocomplete from '../components/ProductAutocomplete';
 
 export default function StockPage() {
   const { t } = useTranslation();
@@ -409,23 +410,14 @@ function RestockDialog({
             </Button>
             {formData.items.map((item, index) => (
                 <Box key={index} sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
-                  <TextField
-                    select
-                    label={t('stock.productSelect')}
-                    required
-                    sx={{ flex: 2 }}
-                    size="small"
-                    value={item.product_id}
-                    onChange={(e) =>
-                      handleItemChange(index, 'product_id', Number(e.target.value))
-                    }
-                  >
-                    {products.map((product) => (
-                      <MenuItem key={product.id} value={product.id}>
-                        {product.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  <Box sx={{ flex: 2 }}>
+                    <ProductAutocomplete
+                      products={products}
+                      value={item.product_id || null}
+                      onChange={(id) => handleItemChange(index, 'product_id', id ?? 0)}
+                      label={t('stock.productSelect')}
+                    />
+                  </Box>
                   <TextField
                     label={t('stock.quantityInput')}
                     type="number"

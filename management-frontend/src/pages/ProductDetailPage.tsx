@@ -588,9 +588,9 @@ function DiscountManagement({
     }
   };
 
-  const handleSetDiscount = async (sectorId: number, discountPercent: number) => {
+  const handleSetDiscount = async (sectorId: number, discountPercent: number, sectorPriceGbp: number) => {
     try {
-      await productsAPI.setDiscount(productId, sectorId, discountPercent);
+      await productsAPI.setDiscount(productId, sectorId, discountPercent, sectorPriceGbp);
       enqueueSnackbar('Discount set successfully', { variant: 'success' });
       setOpen(false);
       fetchData();
@@ -605,14 +605,14 @@ function DiscountManagement({
   return (
     <Box>
       <Button variant="contained" onClick={() => setOpen(true)} sx={{ mb: 2 }}>
-        Set Discount
+        Set Sector Price
       </Button>
       <TableContainer>
         <Table>
           <TableHead>
             <TableRow>
               <TableCell>Sector</TableCell>
-              <TableCell>Discount %</TableCell>
+              <TableCell>Sector Price</TableCell>
               <TableCell>Effective From</TableCell>
             </TableRow>
           </TableHead>
@@ -620,14 +620,14 @@ function DiscountManagement({
             {discounts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={3} align="center">
-                  No discounts set
+                  No sector prices set
                 </TableCell>
               </TableRow>
             ) : (
               discounts.map((discount) => (
                 <TableRow key={discount.id}>
                   <TableCell>{discount.sector?.name || '-'}</TableCell>
-                  <TableCell>{discount.discount_percent}%</TableCell>
+                  <TableCell>{discount.sector_price_gbp > 0 ? `£${discount.sector_price_gbp.toFixed(2)}` : '—'}</TableCell>
                   <TableCell>
                     {format(new Date(discount.effective_from), 'MMM dd, yyyy')}
                   </TableCell>
@@ -656,21 +656,21 @@ function DiscountDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (sectorId: number, discountPercent: number) => void;
+  onSave: (sectorId: number, discountPercent: number, sectorPriceGbp: number) => void;
   sectors: any[];
 }) {
   const [sectorId, setSectorId] = useState<number | ''>('');
-  const [discountPercent, setDiscountPercent] = useState(0);
+  const [sectorPriceGbp, setSectorPriceGbp] = useState(0);
 
   const handleSubmit = () => {
-    if (sectorId && discountPercent >= 0) {
-      onSave(Number(sectorId), discountPercent);
+    if (sectorId && sectorPriceGbp > 0) {
+      onSave(Number(sectorId), 0, sectorPriceGbp);
     }
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Set Discount</DialogTitle>
+      <DialogTitle>Set Sector Price</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           <TextField
@@ -688,19 +688,20 @@ function DiscountDialog({
             ))}
           </TextField>
           <TextField
-            label="Discount Percent"
+            label="Sector Price (£)"
             type="number"
             required
             fullWidth
-            value={discountPercent}
-            onChange={(e) => setDiscountPercent(parseFloat(e.target.value))}
-            inputProps={{ min: 0, max: 100, step: 0.01 }}
+            value={sectorPriceGbp}
+            onChange={(e) => setSectorPriceGbp(parseFloat(e.target.value) || 0)}
+            inputProps={{ min: 0, step: 0.01 }}
+            helperText="Direct price for this sector"
           />
         </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained">
+        <Button onClick={handleSubmit} variant="contained" disabled={!sectorId || sectorPriceGbp <= 0}>
           Save
         </Button>
       </DialogActions>
