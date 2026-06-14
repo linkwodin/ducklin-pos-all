@@ -13,11 +13,10 @@ import {
   TextField,
 } from '@mui/material';
 import {
-  Inventory as InventoryIcon,
   Warning as WarningIcon,
   LocalShipping as LocalShippingIcon,
-  People as PeopleIcon,
   AttachMoney as AttachMoneyIcon,
+  PendingActions as PendingActionsIcon,
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -31,8 +30,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { productsAPI, stockAPI, restockAPI, usersAPI, ordersAPI, storesAPI } from '../services/api';
-import type { Store } from '../types';
+import { stockAPI, restockAPI, ordersAPI, storesAPI, wholesaleOrdersAPI } from '../services/api';
+import type { Store, WholesaleOrder } from '../types';
 import { useTranslation } from 'react-i18next';
 
 interface RevenueStat {
@@ -67,24 +66,25 @@ export default function Dashboard() {
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | ''>('');
   const [stats, setStats] = useState({
-    totalProducts: 0,
     lowStockItems: 0,
     pendingRestocks: 0,
-    totalUsers: 0,
+    pendingWholesaleOrders: 0,
   });
   const [revenueStats, setRevenueStats] = useState<RevenueStat[]>([]);
   const [productSalesStats, setProductSalesStats] = useState<ProductSalesStat[]>([]);
+  const [wholesaleSalesStats, setWholesaleSalesStats] = useState<Array<{ date: string; revenue: number; order_count: number }>>([]);
   const [todayRevenue, setTodayRevenue] = useState<number>(0);
   const [revenueByStore, setRevenueByStore] = useState<Array<{ store: Store; stats: RevenueStat[] }>>([]);
   const [loadingByStore, setLoadingByStore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingWholesale, setLoadingWholesale] = useState(true);
 
   const storeIdParam = selectedStoreId === '' ? undefined : (selectedStoreId as number);
 
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        const list = await storesAPI.list();
+        const list = await storesAPI.list({ exclude_warehouse_only: true });
         setStores(list || []);
       } catch (e) {
         console.error('Failed to fetch stores:', e);
@@ -97,21 +97,18 @@ export default function Dashboard() {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const [products, lowStock, restocks, users, revenue, productSales] = await Promise.all([
-          productsAPI.list(),
+        const [lowStock, restocks, revenue, productSales] = await Promise.all([
           stockAPI.getLowStock(),
           restockAPI.list(undefined, 'initiated'),
-          usersAPI.list(),
           ordersAPI.getDailyRevenueStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
           ordersAPI.getDailyProductSalesStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
         ]);
 
-        setStats({
-          totalProducts: products?.length || 0,
+        setStats((prev) => ({
+          ...prev,
           lowStockItems: lowStock?.length || 0,
           pendingRestocks: restocks?.length || 0,
-          totalUsers: users?.length || 0,
-        });
+        }));
         setRevenueStats(revenue || []);
         setProductSalesStats(productSales || []);
       } catch (error) {
@@ -123,6 +120,51 @@ export default function Dashboard() {
 
     fetchStats();
   }, [storeIdParam, dateRangeStart, dateRangeEnd]);
+
+  // Pending wholesale orders (pending_approval + assign_shipment) and wholesale sales for graph
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingWholesale(true);
+        const [pendingApproval, assignShipment, allOrders] = await Promise.all([
+          wholesaleOrdersAPI.list({ status: 'pending_approval' }),
+          wholesaleOrdersAPI.list({ status: 'assign_shipment' }),
+          wholesaleOrdersAPI.list(),
+        ]);
+        if (cancelled) return;
+        setStats((prev) => ({
+          ...prev,
+          pendingWholesaleOrders: (pendingApproval?.length || 0) + (assignShipment?.length || 0),
+        }));
+        const totalForOrder = (o: WholesaleOrder) =>
+          o.items?.reduce((sum, it) => sum + (it.line_total ?? 0), 0) ?? 0;
+        const start = new Date(dateRangeStart);
+        const end = new Date(dateRangeEnd);
+        const byDate: Record<string, { revenue: number; order_count: number }> = {};
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const key = d.toISOString().slice(0, 10);
+          byDate[key] = { revenue: 0, order_count: 0 };
+        }
+        (allOrders || []).forEach((o) => {
+          const date = o.created_at?.slice(0, 10);
+          if (!date || date < dateRangeStart || date > dateRangeEnd) return;
+          if (!byDate[date]) byDate[date] = { revenue: 0, order_count: 0 };
+          byDate[date].revenue += totalForOrder(o);
+          byDate[date].order_count += 1;
+        });
+        const series = Object.entries(byDate)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([date, v]) => ({ date, revenue: v.revenue, order_count: v.order_count }));
+        setWholesaleSalesStats(series);
+      } catch (e) {
+        if (!cancelled) console.error('Failed to fetch wholesale stats:', e);
+      } finally {
+        if (!cancelled) setLoadingWholesale(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dateRangeStart, dateRangeEnd]);
 
   useEffect(() => {
     const fetchToday = async () => {
@@ -209,12 +251,6 @@ export default function Dashboard() {
 
   const statCards = [
     {
-      title: t('dashboard.totalProducts'),
-      value: stats.totalProducts,
-      icon: <InventoryIcon sx={{ fontSize: 40 }} />,
-      color: '#1976d2',
-    },
-    {
       title: t('dashboard.lowStockItems'),
       value: stats.lowStockItems,
       icon: <WarningIcon sx={{ fontSize: 40 }} />,
@@ -227,12 +263,18 @@ export default function Dashboard() {
       color: '#ed6c02',
     },
     {
-      title: t('dashboard.totalUsers'),
-      value: stats.totalUsers,
-      icon: <PeopleIcon sx={{ fontSize: 40 }} />,
-      color: '#2e7d32',
+      title: t('dashboard.pendingWholesaleOrders'),
+      value: stats.pendingWholesaleOrders,
+      icon: <PendingActionsIcon sx={{ fontSize: 40 }} />,
+      color: '#1976d2',
     },
   ];
+
+  const wholesaleChartData = wholesaleSalesStats.map((s) => ({
+    date: new Date(s.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    revenue: parseFloat(s.revenue.toFixed(2)),
+    orders: s.order_count,
+  }));
 
   const colors = ['#1976d2', '#d32f2f', '#ed6c02', '#2e7d32', '#9c27b0'];
 
@@ -481,6 +523,43 @@ export default function Dashboard() {
                     />
                   ))}
                 </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Wholesale order sales */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              {t('dashboard.wholesaleOrderSales')}
+            </Typography>
+            {loadingWholesale ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <Typography>{t('common.loading')}</Typography>
+              </Box>
+            ) : wholesaleChartData.length === 0 ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <Typography color="text.secondary">{t('dashboard.noRevenueData')}</Typography>
+              </Box>
+            ) : (
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={wholesaleChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis tickFormatter={(v) => `£${v}`} />
+                  <Tooltip formatter={(value: number) => [`£${value.toFixed(2)}`, t('dashboard.revenue')]} />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#2e7d32"
+                    strokeWidth={2}
+                    name={t('dashboard.revenue')}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                </LineChart>
               </ResponsiveContainer>
             )}
           </Paper>

@@ -27,6 +27,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func fillProductRequestWeightFields(c *gin.Context, req *CreateProductRequest) {
+	fillProductRequestSaleFields(c, req)
+}
+
 type ProductHandler struct {
 	db  *gorm.DB
 	cfg *config.Config
@@ -46,13 +50,29 @@ func today() time.Time {
 }
 
 type CreateProductRequest struct {
-	Name        string `json:"name" binding:"required"`
+	ProductLineID uint   `json:"product_line_id"`
+	VariantLabel  string `json:"variant_label"`
+	UnitsPerPack  float64 `json:"units_per_pack"`
+	Name        string `json:"name"`
 	NameChinese string `json:"name_chinese"`
 	Barcode     string `json:"barcode"`
 	SKU         string `json:"sku"`
 	Category    string `json:"category"`
 	ImageURL    string `json:"image_url"`
-	UnitType    string `json:"unit_type" binding:"required,oneof=quantity weight"`
+	UnitType    string `json:"unit_type"`
+	SellByQty   bool   `json:"sell_by_qty"`
+	SellByWeight bool  `json:"sell_by_weight"`
+	WeightBarcode string `json:"weight_barcode"`
+	// Optional: 1-8 digit prefix for weight-product receipt barcodes (weight unit only).
+	WeightBarcodePrefix string `json:"weight_barcode_prefix"`
+	// Optional: grams the retail price applies to (weight products only; 0 = 1 kg default).
+	PriceWeightG float64 `json:"price_weight_g"`
+	// CanSellByWeight enables weight sales and dual inventory (prepacked + loose weight).
+	CanSellByWeight bool `json:"can_sell_by_weight"`
+	// PrepackWeightG: grams per prepacked unit for pack/unpack (required when CanSellByWeight).
+	PrepackWeightG float64 `json:"prepack_weight_g"`
+	// Optional: units per box for wholesale orders (0 or missing = unknown)
+	WholesaleUnitsPerBox float64 `json:"wholesale_units_per_box"`
 }
 
 type SetCostRequest struct {
@@ -73,7 +93,7 @@ type SetCostRequest struct {
 
 func (h *ProductHandler) ListProducts(c *gin.Context) {
 	var products []models.Product
-	query := h.db.Where("is_active = ?", true)
+	query := h.db.Where("is_active = ?", true).Preload("ProductLine")
 
 	// Filter by category if provided (match trimmed so normalized names work)
 	if category := strings.TrimSpace(c.Query("category")); category != "" {
@@ -88,6 +108,8 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	// Determine which cost record to load per product.
 	// If effective_from & effective_to are provided, first try exact range match,
 	// then fall back to cost effective on effective_from date, then current.
+	// This endpoint is frequently used by the wholesale order creation UI, so avoid
+	// N+1 queries by batching cost/discount lookups across all products.
 	var qEfFrom, qEfTo *time.Time
 	if ef := c.Query("effective_from"); ef != "" {
 		if t, err := time.Parse("2006-01-02", ef); err == nil {
@@ -101,64 +123,166 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 	}
 
 	now := time.Now()
-	for i := range products {
-		var cost models.ProductCost
-		var found bool
+	productIDs := make([]uint, 0, len(products))
+	for _, p := range products {
+		productIDs = append(productIDs, p.ID)
+	}
+	if len(productIDs) == 0 {
+		c.JSON(http.StatusOK, products)
+		return
+	}
 
-		if qEfFrom != nil && qEfTo != nil {
-			// Try exact date range match first
-			res := h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
-				products[i].ID, *qEfFrom, *qEfTo).First(&cost)
-			if res.Error == nil {
-				found = true
-			} else {
-				// Fall back: cost effective on the requested from-date
-				res = h.db.Where("product_id = ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
-					products[i].ID, *qEfFrom, *qEfFrom).
-					Order("effective_from DESC").Limit(1).Find(&cost)
-				if res.Error == nil && res.RowsAffected > 0 {
-					found = true
+	// ---- Costs (batched) ----
+	// Rule in date-range mode (PO date):
+	// - pick candidate cost for the PO-date (exact effective range first, then effective-on-date)
+	// - if candidate.WholesaleCostGBP <= 0 (unset), use the "current" latest cost up to now
+	// - if candidate is missing, use the "current" latest cost up to now
+	//
+	// Keep it batched: query candidate costs in bulk, query current costs in bulk, then decide per product in memory.
+	costByProduct := map[uint]*models.ProductCost{}
+	if qEfFrom != nil && qEfTo != nil {
+		// Candidate 1: exact effective range.
+		var exactCosts []models.ProductCost
+		_ = h.db.Where(
+			"product_id IN ? AND effective_from = ? AND effective_to = ?",
+			productIDs, *qEfFrom, *qEfTo,
+		).Find(&exactCosts).Error
+		for i := range exactCosts {
+			pid := exactCosts[i].ProductID
+			if _, exists := costByProduct[pid]; !exists {
+				c := exactCosts[i]
+				costByProduct[pid] = &c
+			}
+		}
+
+		// Candidate 2: effective-on-date for products where exact was missing.
+		missingExactIDs := make([]uint, 0, len(productIDs))
+		for _, pid := range productIDs {
+			if costByProduct[pid] == nil {
+				missingExactIDs = append(missingExactIDs, pid)
+			}
+		}
+		if len(missingExactIDs) > 0 {
+			var fallbackCosts []models.ProductCost
+			_ = h.db.Where(
+				"product_id IN ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
+				missingExactIDs, *qEfFrom, *qEfFrom,
+			).Order("effective_from DESC").Find(&fallbackCosts).Error
+			for i := range fallbackCosts {
+				pid := fallbackCosts[i].ProductID
+				if costByProduct[pid] != nil {
+					continue
 				}
+				c := fallbackCosts[i]
+				costByProduct[pid] = &c
 			}
 		}
 
-		if !found {
-			result := h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, now).
-				Order("effective_from DESC").Limit(1).Find(&cost)
-			if result.Error != nil {
-				fmt.Printf("Error loading cost for product %d: %v\n", products[i].ID, result.Error)
-				products[i].CurrentCost = nil
-			} else if result.RowsAffected == 0 {
-				products[i].CurrentCost = nil
-			} else {
-				found = true
+		// Current: latest configured cost up to now (regardless of effective_to).
+		currentByProduct := map[uint]models.ProductCost{}
+		var currentCosts []models.ProductCost
+		_ = h.db.Where(
+			"product_id IN ? AND (effective_from IS NULL OR effective_from <= ?)",
+			productIDs, now,
+		).Order("effective_from DESC").Find(&currentCosts).Error
+		for i := range currentCosts {
+			pid := currentCosts[i].ProductID
+			if _, exists := currentByProduct[pid]; !exists {
+				currentByProduct[pid] = currentCosts[i]
 			}
 		}
 
-		if found {
-			products[i].CurrentCost = &cost
-		} else {
-			products[i].CurrentCost = nil
+		// Final decision per product.
+		finalByProduct := map[uint]*models.ProductCost{}
+		for _, pid := range productIDs {
+			cand := costByProduct[pid]
+			curr, ok := currentByProduct[pid]
+			// Previous-season "price" should be the retail price field.
+			// If it's unset (stored as 0), we fall back to current retail.
+			if cand != nil && cand.DirectRetailOnlineStorePriceGBP > 0 {
+				finalByProduct[pid] = cand
+				continue
+			}
+			if ok {
+				c := curr
+				finalByProduct[pid] = &c
+				continue
+			}
+			// If neither candidate nor current exists, keep whatever we have.
+			finalByProduct[pid] = cand
 		}
 
-		var discounts []models.ProductSectorDiscount
-		if qEfFrom != nil && qEfTo != nil {
-			// Try exact date range match first
-			h.db.Where("product_id = ? AND effective_from = ? AND effective_to = ?",
-				products[i].ID, *qEfFrom, *qEfTo).Find(&discounts)
-			if len(discounts) == 0 {
-				// Fall back to discounts active on the requested from-date
-				h.db.Where("product_id = ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
-					products[i].ID, *qEfFrom, *qEfFrom).Find(&discounts)
-			}
-		} else {
-			h.db.Where("product_id = ? AND (effective_to IS NULL OR effective_to > ?)", products[i].ID, now).
-				Find(&discounts)
+		for i := range products {
+			products[i].CurrentCost = finalByProduct[products[i].ID]
 		}
-		// When multiple records exist per sector, keep the one matching the date range
+	} else {
+		// Current mode: just return latest configured cost up to now.
+		currentCosts := []models.ProductCost{}
+		_ = h.db.Where(
+			"product_id IN ? AND (effective_from IS NULL OR effective_from <= ?)",
+			productIDs, now,
+		).Order("effective_from DESC").Find(&currentCosts).Error
 		seen := map[uint]bool{}
-		filtered := discounts[:0]
-		for _, d := range discounts {
+		for i := range currentCosts {
+			pid := currentCosts[i].ProductID
+			if seen[pid] {
+				continue
+			}
+			seen[pid] = true
+			c := currentCosts[i]
+			costByProduct[pid] = &c
+		}
+		for i := range products {
+			products[i].CurrentCost = costByProduct[products[i].ID]
+		}
+	}
+
+	// ---- Discounts (batched) ----
+	discountsByProduct := map[uint][]models.ProductSectorDiscount{}
+	if qEfFrom != nil && qEfTo != nil {
+		// Exact range
+		var exactDiscounts []models.ProductSectorDiscount
+		_ = h.db.Where("product_id IN ? AND effective_from = ? AND effective_to = ?",
+			productIDs, *qEfFrom, *qEfTo).Order("id DESC").Find(&exactDiscounts).Error
+		hasExact := map[uint]bool{}
+		for i := range exactDiscounts {
+			pid := exactDiscounts[i].ProductID
+			hasExact[pid] = true
+			discountsByProduct[pid] = append(discountsByProduct[pid], exactDiscounts[i])
+		}
+
+		// Fallback products that have no exact discounts.
+		var missingIDs []uint
+		for _, id := range productIDs {
+			if !hasExact[id] {
+				missingIDs = append(missingIDs, id)
+			}
+		}
+		if len(missingIDs) > 0 {
+			var fallbackDiscounts []models.ProductSectorDiscount
+			_ = h.db.Where("product_id IN ? AND (effective_from IS NULL OR effective_from <= ?) AND (effective_to IS NULL OR effective_to >= ?)",
+				missingIDs, *qEfFrom, *qEfFrom).Order("effective_from DESC").Find(&fallbackDiscounts).Error
+			for i := range fallbackDiscounts {
+				pid := fallbackDiscounts[i].ProductID
+				discountsByProduct[pid] = append(discountsByProduct[pid], fallbackDiscounts[i])
+			}
+		}
+	} else {
+		// Current mode
+		var currentDiscounts []models.ProductSectorDiscount
+		_ = h.db.Where("product_id IN ? AND (effective_to IS NULL OR effective_to > ?)",
+			productIDs, now).Order("effective_from DESC").Find(&currentDiscounts).Error
+		for i := range currentDiscounts {
+			pid := currentDiscounts[i].ProductID
+			discountsByProduct[pid] = append(discountsByProduct[pid], currentDiscounts[i])
+		}
+	}
+
+	for i := range products {
+		// When multiple records exist per sector, keep the first one (deterministic due to ORDER BY above).
+		seen := map[uint]bool{}
+		filtered := make([]models.ProductSectorDiscount, 0, len(discountsByProduct[products[i].ID]))
+		for _, d := range discountsByProduct[products[i].ID] {
 			if !seen[d.SectorID] {
 				seen[d.SectorID] = true
 				filtered = append(filtered, d)
@@ -172,7 +296,7 @@ func (h *ProductHandler) ListProducts(c *gin.Context) {
 
 func (h *ProductHandler) GetProduct(c *gin.Context) {
 	var product models.Product
-	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
+	if err := h.db.Preload("ProductLine").First(&product, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		return
 	}
@@ -184,6 +308,25 @@ func (h *ProductHandler) GetProduct(c *gin.Context) {
 	product.CurrentCost = &cost
 
 	c.JSON(http.StatusOK, product)
+}
+
+func fillProductLineRequestFields(c *gin.Context, req *CreateProductRequest) {
+	if pl := strings.TrimSpace(c.PostForm("product_line_id")); pl != "" {
+		if v, err := strconv.ParseUint(pl, 10, 64); err == nil {
+			req.ProductLineID = uint(v)
+		}
+	}
+	req.VariantLabel = strings.TrimSpace(c.PostForm("variant_label"))
+	if up := strings.TrimSpace(c.PostForm("units_per_pack")); up != "" {
+		if v, err := strconv.ParseFloat(up, 64); err == nil {
+			req.UnitsPerPack = v
+		}
+	}
+	if wub := strings.TrimSpace(c.PostForm("wholesale_units_per_box")); wub != "" {
+		if v, err := strconv.ParseFloat(wub, 64); err == nil {
+			req.WholesaleUnitsPerBox = v
+		}
+	}
 }
 
 func (h *ProductHandler) CreateProduct(c *gin.Context) {
@@ -199,17 +342,50 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		req.SKU = c.PostForm("sku")
 		req.Category = c.PostForm("category")
 		req.UnitType = c.PostForm("unit_type")
+		if pw := strings.TrimSpace(c.PostForm("price_weight_g")); pw != "" {
+			v, err := strconv.ParseFloat(pw, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "price_weight_g must be a number"})
+				return
+			}
+			req.PriceWeightG = v
+		}
 
-		if req.Name == "" || req.UnitType == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "name and unit_type are required"})
+		if (req.Name == "" && req.ProductLineID == 0) || req.UnitType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name (or product_line_id) and unit_type are required"})
 			return
 		}
+		fillProductRequestWeightFields(c, &req)
+		fillProductLineRequestFields(c, &req)
 	} else {
 		// Handle JSON (backward compatibility)
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+
+	if req.ProductLineID == 0 && strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required when creating a new product line"})
+		return
+	}
+	if strings.TrimSpace(req.UnitType) == "" {
+		req.UnitType = "quantity"
+	}
+	if err := validateProductSaleModes(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	prefix, prefixErr := deriveWeightBarcodePrefix(req, req.UnitType)
+	if prefixErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": prefixErr.Error()})
+		return
+	}
+	priceWeightG, pwErr := normalizePriceWeightG(isWeightUnitType(req.UnitType), req.PriceWeightG)
+	if pwErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": pwErr.Error()})
+		return
 	}
 
 	// Handle image upload (file upload only, no URL)
@@ -228,18 +404,64 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 		imageURL = req.ImageURL
 	}
 
-	product := models.Product{
-		Name:        req.Name,
-		NameChinese: req.NameChinese,
-		Barcode:     req.Barcode,
-		SKU:         req.SKU,
-		Category:    normalizeCategory(req.Category),
-		ImageURL:    imageURL,
-		UnitType:    req.UnitType,
-		IsActive:    true,
+	line, lineErr := resolveProductLine(h.db, req, imageURL)
+	if lineErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product_line_id"})
+		return
+	}
+	if imageURL != "" && line.ImageURL == "" {
+		line.ImageURL = imageURL
+		_ = h.db.Model(line).Update("image_url", imageURL).Error
 	}
 
-	if err := h.db.Create(&product).Error; err != nil {
+	if isWeightUnitType(req.UnitType) {
+		hasWeight, err := productLineHasActiveWeightVariant(h.db, line.ID, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if hasWeight {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "this product line already has a weight variant"})
+			return
+		}
+	}
+
+	variantLabel := strings.TrimSpace(req.VariantLabel)
+	unitsPerPack := req.UnitsPerPack
+	wholesaleUnitsPerBox := req.WholesaleUnitsPerBox
+	if isWeightUnitType(req.UnitType) {
+		variantLabel = normalizeWeightVariantGramsLabel(variantLabel)
+		unitsPerPack = 0
+		if g, ok := weightGramsFromVariantLabel(variantLabel); ok {
+			priceWeightG = g
+		}
+	}
+
+	displayName := variantDisplayName(line.Name, variantLabel, req.UnitType)
+	if strings.TrimSpace(req.Name) != "" && req.ProductLineID == 0 {
+		displayName = strings.TrimSpace(req.Name)
+		line.Name = displayName
+		_ = h.db.Model(line).Update("name", displayName).Error
+	}
+
+	product := models.Product{
+		ProductLineID:        line.ID,
+		Name:                 displayName,
+		NameChinese:          coalesceString(req.NameChinese, line.NameChinese),
+		SKU:                  req.SKU,
+		Category:             coalesceCategory(req.Category, line.Category),
+		ImageURL:             coalesceString(imageURL, line.ImageURL),
+		VariantLabel:         variantLabel,
+		UnitsPerPack:         unitsPerPack,
+		UnitType:             req.UnitType,
+		WeightBarcodePrefix:  prefix,
+		PriceWeightG:         priceWeightG,
+		WholesaleUnitsPerBox: wholesaleUnitsPerBox,
+		IsActive:             true,
+	}
+	applyProductSaleFields(&product, req)
+
+	if err := saveProduct(h.db, &product); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -266,17 +488,46 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 		req.SKU = c.PostForm("sku")
 		req.Category = c.PostForm("category")
 		req.UnitType = c.PostForm("unit_type")
+		if pw := strings.TrimSpace(c.PostForm("price_weight_g")); pw != "" {
+			v, err := strconv.ParseFloat(pw, 64)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "price_weight_g must be a number"})
+				return
+			}
+			req.PriceWeightG = v
+		}
 
-		if req.Name == "" || req.UnitType == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "name and unit_type are required"})
+		if (req.Name == "" && req.ProductLineID == 0) || req.UnitType == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name (or product_line_id) and unit_type are required"})
 			return
 		}
+		fillProductRequestWeightFields(c, &req)
+		fillProductLineRequestFields(c, &req)
 	} else {
 		// Handle JSON (backward compatibility)
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+
+	if strings.TrimSpace(req.UnitType) == "" {
+		req.UnitType = "quantity"
+	}
+	if err := validateProductSaleModes(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	prefix, prefixErr := deriveWeightBarcodePrefix(req, req.UnitType)
+	if prefixErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": prefixErr.Error()})
+		return
+	}
+	priceWeightG, pwErr := normalizePriceWeightG(isWeightUnitType(req.UnitType), req.PriceWeightG)
+	if pwErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": pwErr.Error()})
+		return
 	}
 
 	// Handle image upload (file upload only, no URL)
@@ -298,15 +549,50 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 		imageURL = product.ImageURL
 	}
 
-	product.Name = req.Name
+	if req.ProductLineID > 0 {
+		product.ProductLineID = req.ProductLineID
+	}
+	lineID := product.ProductLineID
+	if isWeightUnitType(req.UnitType) {
+		hasWeight, err := productLineHasActiveWeightVariant(h.db, lineID, product.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if hasWeight {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "this product line already has a weight variant"})
+			return
+		}
+	}
+	if isWeightUnitType(req.UnitType) {
+		product.VariantLabel = normalizeWeightVariantGramsLabel(req.VariantLabel)
+		product.UnitsPerPack = 0
+		if g, ok := weightGramsFromVariantLabel(product.VariantLabel); ok {
+			priceWeightG = g
+		}
+	} else {
+		product.VariantLabel = strings.TrimSpace(req.VariantLabel)
+		product.UnitsPerPack = req.UnitsPerPack
+	}
+	if product.ProductLineID > 0 {
+		var line models.ProductLine
+		if err := h.db.First(&line, product.ProductLineID).Error; err == nil {
+			product.Name = variantDisplayName(line.Name, product.VariantLabel, req.UnitType)
+		}
+	} else if strings.TrimSpace(req.Name) != "" {
+		product.Name = strings.TrimSpace(req.Name)
+	}
 	product.NameChinese = req.NameChinese
-	product.Barcode = req.Barcode
 	product.SKU = req.SKU
 	product.Category = normalizeCategory(req.Category)
 	product.ImageURL = imageURL
 	product.UnitType = req.UnitType
+	product.WeightBarcodePrefix = prefix
+	product.PriceWeightG = priceWeightG
+	product.WholesaleUnitsPerBox = req.WholesaleUnitsPerBox
+	applyProductSaleFields(&product, req)
 
-	if err := h.db.Save(&product).Error; err != nil {
+	if err := saveProduct(h.db, &product); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

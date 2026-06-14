@@ -109,7 +109,10 @@ steps:
         echo "Environment: $$ENVIRONMENT"
         echo "Connection name: $$CONNECTION_NAME"
         
-        # Single deploy with env vars + Cloud SQL so DB connection works reliably
+        # Env vars: use --update-env-vars (not --set-env-vars). --set-env-vars replaces
+        # the ENTIRE env block on every deploy, so SMTP / secrets added in Console vanish
+        # after the next Cloud Build. --update-env-vars only changes these keys and keeps
+        # the rest (e.g. SMTP_*, Secret Manager–backed env on the service).
         gcloud run deploy $$SERVICE_NAME \
           --image=$$IMAGE_TAG \
           --region=europe-west1 \
@@ -121,7 +124,7 @@ steps:
           --max-instances=10 \
           --cpu-boost \
           --no-cpu-throttling \
-          --set-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL,DATABASE_URL=$$DATABASE_URL" \
+          --update-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL,DATABASE_URL=$$DATABASE_URL" \
           --add-cloudsql-instances=$$CONNECTION_NAME \
           --project=$$PROJ_ID
         

@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
+import '../utils/weight_pricing.dart';
+import '../utils/product_inventory.dart';
 
 class OrderProvider with ChangeNotifier {
   List<Map<String, dynamic>> _cartItems = [];
@@ -36,9 +38,8 @@ class OrderProvider with ChangeNotifier {
 
   double get subtotal {
     return _cartItems.fold(0.0, (sum, item) {
-      final quantity = (item['quantity'] as num).toDouble();
-      final unitPrice = (item['unit_price'] as num).toDouble();
-      return sum + (quantity * unitPrice);
+      return sum + ((item['line_total'] as num?)?.toDouble() ?? 0.0) +
+          ((item['discount_amount'] as num?)?.toDouble() ?? 0.0);
     });
   }
 
@@ -64,41 +65,61 @@ class OrderProvider with ChangeNotifier {
 
   String? get lastAddedMessage => _lastAddedMessage;
 
-  void addToCart(Map<String, dynamic> product, {double? quantity, double? weight, String? message}) {
+  void addToCart(
+    Map<String, dynamic> product, {
+    double? quantity,
+    double? weight,
+    String? message,
+    bool? sellAsWeight,
+  }) {
+    final asWeight = sellAsWeight ??
+        (weight != null
+            ? true
+            : (quantity != null ? false : scanIsWeightMode(product)));
+    if (asWeight && !productSellByWeight(product)) {
+      debugPrint('OrderProvider: product ${product['id']} cannot be sold by weight');
+      return;
+    }
+    if (!asWeight && !productSellByQty(product)) {
+      debugPrint('OrderProvider: product ${product['id']} cannot be sold by qty');
+      return;
+    }
+
+    final lineUnitType = saleLineUnitType(asWeight: asWeight);
     final existingIndex = _cartItems.indexWhere(
-      (item) => item['product_id'] == product['id'],
+      (item) =>
+          item['product_id'] == product['id'] &&
+          (item['unit_type'] ?? 'quantity') == lineUnitType,
     );
 
     final qty = quantity ?? weight ?? 1.0;
     final unitPrice = _getProductPrice(product);
     final discountPercent = _getDiscountPercent(product);
-    final discountAmount = unitPrice * (discountPercent / 100.0) * qty;
-    final lineTotal = (unitPrice * qty) - discountAmount;
+    final lineFactor = orderLineFactor(product, qty, lineUnitType: lineUnitType);
+    final discountAmount = unitPrice * (discountPercent / 100.0) * lineFactor;
+    final lineTotal = (unitPrice * lineFactor) - discountAmount;
 
     if (existingIndex >= 0) {
-      // Update existing item
       final existing = _cartItems[existingIndex];
       final existingQty = (existing['quantity'] as num).toDouble();
       final newQty = existingQty + qty;
-      final newDiscountAmount = unitPrice * (discountPercent / 100.0) * newQty;
-      final newLineTotal = (unitPrice * newQty) - newDiscountAmount;
-      final unitType = product['unit_type'] ?? 'quantity';
+      final newLineFactor = orderLineFactor(product, newQty, lineUnitType: lineUnitType);
+      final newDiscountAmount = unitPrice * (discountPercent / 100.0) * newLineFactor;
+      final newLineTotal = (unitPrice * newLineFactor) - newDiscountAmount;
 
       _cartItems[existingIndex] = {
         ...existing,
         'quantity': newQty,
-        'unit_type': unitType, // Ensure unit_type is set
+        'unit_type': lineUnitType,
         'discount_amount': newDiscountAmount,
         'line_total': newLineTotal,
       };
     } else {
-      // Add new item
-      final unitType = product['unit_type'] ?? 'quantity';
       _cartItems.add({
         'product_id': product['id'],
         'product': product,
         'quantity': qty,
-        'unit_type': unitType, // Store unit type (quantity or weight)
+        'unit_type': lineUnitType,
         'unit_price': unitPrice,
         'discount_percent': discountPercent,
         'discount_amount': discountAmount,
@@ -119,20 +140,30 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  void removeFromCart(int productId) {
-    _cartItems.removeWhere((item) => item['product_id'] == productId);
+  void removeFromCart(int productId, {String? unitType}) {
+    _cartItems.removeWhere((item) {
+      if (item['product_id'] != productId) return false;
+      if (unitType == null) return true;
+      return (item['unit_type'] ?? 'quantity') == unitType;
+    });
     notifyListeners();
   }
 
-  void updateCartItemQuantity(int productId, double quantity) {
-    final index = _cartItems.indexWhere((item) => item['product_id'] == productId);
+  void updateCartItemQuantity(int productId, double quantity, {String? unitType}) {
+    final index = _cartItems.indexWhere((item) {
+      if (item['product_id'] != productId) return false;
+      if (unitType == null) return true;
+      return (item['unit_type'] ?? 'quantity') == unitType;
+    });
     if (index >= 0) {
       final item = _cartItems[index];
       final product = item['product'] as Map<String, dynamic>;
+      final lineUnitType = (item['unit_type'] ?? 'quantity').toString();
       final unitPrice = (item['unit_price'] as num).toDouble();
       final discountPercent = (item['discount_percent'] as num).toDouble();
-      final discountAmount = unitPrice * (discountPercent / 100.0) * quantity;
-      final lineTotal = (unitPrice * quantity) - discountAmount;
+      final lineFactor = orderLineFactor(product, quantity, lineUnitType: lineUnitType);
+      final discountAmount = unitPrice * (discountPercent / 100.0) * lineFactor;
+      final lineTotal = (unitPrice * lineFactor) - discountAmount;
 
       _cartItems[index] = {
         ...item,
@@ -199,6 +230,7 @@ class OrderProvider with ChangeNotifier {
           'order_id': orderId,
           'product_id': item['product_id'],
           'quantity': item['quantity'],
+          'unit_type': item['unit_type'] ?? 'quantity',
           'unit_price': item['unit_price'],
           'discount_percent': item['discount_percent'],
           'discount_amount': item['discount_amount'],

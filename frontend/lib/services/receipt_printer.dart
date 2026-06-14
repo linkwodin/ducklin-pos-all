@@ -39,13 +39,14 @@ class ReceiptPrinter {
     final generator = esc_pos_utils.Generator(esc_pos_utils.PaperSize.mm80, profile);
 
     // Route to appropriate printer (order receipt / full is disabled — do not print)
+    final orderForPrint = await ReceiptPrinterHelpers.enrichOrderForReceipt(order);
     switch (receiptType) {
       case ReceiptType.full:
         // Order receipt (訂單收據) is not printed — no-op
         return;
       case ReceiptType.auditNote:
         await FullReceiptPrinter.printReceipt(
-          order: order,
+          order: orderForPrint,
           l10n: l10n,
           generator: generator,
           printerConfig: printerConfig,
@@ -53,7 +54,7 @@ class ReceiptPrinter {
         );
         break;
       case ReceiptType.noPriceWithBarcode: {
-        final orderWithTitle = Map<String, dynamic>.from(order);
+        final orderWithTitle = Map<String, dynamic>.from(orderForPrint);
         orderWithTitle['receipt_name'] = '下單紙 (龍鳳存根)\nOrder Clip (Loon Fung copy)';
         await BarcodeReceiptPrinter.printReceipt(
           order: orderWithTitle,
@@ -64,7 +65,7 @@ class ReceiptPrinter {
         break;
       }
       case ReceiptType.customerCounterfoil: {
-        final orderWithTitle = Map<String, dynamic>.from(order);
+        final orderWithTitle = Map<String, dynamic>.from(orderForPrint);
         orderWithTitle['receipt_name'] = '下單紙 (客戶存根)\nOrder Clip (Customer copy)';
         await BarcodeReceiptPrinter.printReceipt(
           order: orderWithTitle,
@@ -76,7 +77,7 @@ class ReceiptPrinter {
       }
       case ReceiptType.noPriceNoBarcode:
         await SimpleReceiptPrinter.printReceipt(
-          order: order,
+          order: orderForPrint,
           l10n: l10n,
           generator: generator,
           printerConfig: printerConfig,

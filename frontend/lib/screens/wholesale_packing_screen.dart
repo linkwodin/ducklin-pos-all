@@ -1,11 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../providers/order_provider.dart';
-import '../providers/language_provider.dart';
 import '../services/api_service.dart';
-import '../widgets/cached_product_image.dart';
-import 'shipment_packing_detail_screen.dart';
+import '../utils/shipment_couriers.dart';
+import '../utils/shipment_order_time.dart';
+import '../utils/shipment_status.dart';
+import '../utils/wholesale_order_assignment.dart';
+import '../widgets/shipment_monitor_grid.dart';
 import 'create_wholesale_order_screen.dart';
+import 'shipment_courier_pickup_screen.dart';
+import 'shipment_packing_detail_screen.dart';
+import 'shipment_packing_queue_screen.dart';
 
 class WholesalePackingScreen extends StatefulWidget {
   final VoidCallback? onShipmentsChanged;
@@ -16,23 +25,71 @@ class WholesalePackingScreen extends StatefulWidget {
 }
 
 class _WholesalePackingScreenState extends State<WholesalePackingScreen> {
-  List<dynamic> _shipments = [];
+  static const _viewStorageKey = 'wholesaleShipmentsView';
+  static const _monitorRefreshMs = 30000;
+  static const _monitorCompletedDays = 3;
+  static const _listCompletedDays = 10;
+
+  List<Map<String, dynamic>> _shipments = [];
   bool _loading = true;
   String? _error;
+  String _search = '';
+  String _viewMode = 'monitor';
+  List<String> _courierOptions = defaultShipmentCouriers;
+  Timer? _refreshTimer;
+  final TextEditingController _searchController = TextEditingController();
+
+  bool get _includeOldCompleted => _viewMode == 'list';
+  int get _completedDaysLabel => _includeOldCompleted ? _listCompletedDays : _monitorCompletedDays;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadViewMode();
+    _loadCompanySettings();
+    _loadShipments();
   }
 
-  Future<void> _load() async {
-    final orderProvider = Provider.of<OrderProvider>(context, listen: false);
-    final storeId = orderProvider.storeId;
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadViewMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_viewStorageKey);
+    if (!mounted) return;
+    setState(() => _viewMode = saved == 'list' ? 'list' : 'monitor');
+    _configureRefreshTimer();
+  }
+
+  Future<void> _saveViewMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_viewStorageKey, mode);
+  }
+
+  Future<void> _loadCompanySettings() async {
+    try {
+      final settings = await ApiService.instance.getCompanySettings();
+      if (!mounted) return;
+      setState(() {
+        _courierOptions = shipmentCourierOptionsFromSettings(settings['shipment_couriers']?.toString());
+      });
+    } catch (_) {}
+  }
+
+  int? _storeId(BuildContext context) {
+    return Provider.of<OrderProvider>(context, listen: false).storeId;
+  }
+
+  Future<void> _loadShipments() async {
+    final storeId = _storeId(context);
     if (storeId == null) {
       setState(() {
         _loading = false;
-        _error = 'Store not set';
+        _error = 'No store selected';
         _shipments = [];
       });
       return;
@@ -42,226 +99,301 @@ class _WholesalePackingScreenState extends State<WholesalePackingScreen> {
       _error = null;
     });
     try {
-      final list = await ApiService.instance.listShipments(storeId: storeId);
+      final list = await ApiService.instance.listShipments(
+        storeId: storeId,
+        includeOldCompleted: _includeOldCompleted,
+      );
+      if (!mounted) return;
       setState(() {
-        _shipments = list;
+        _shipments = list.whereType<Map<String, dynamic>>().toList();
         _loading = false;
       });
       widget.onShipmentsChanged?.call();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _error = e.toString().replaceFirst(RegExp(r'^Exception:?\s*'), '');
-        _shipments = [];
         _loading = false;
+        _error = e.toString();
+        _shipments = [];
       });
     }
   }
 
-  String _productName(dynamic item, bool useChinese) {
-    final p = item is Map ? item['product'] : null;
-    if (p is! Map) return 'Product #${item is Map ? item['product_id'] : '?'}';
-    final name = p['name']?.toString() ?? '';
-    final zh = p['name_chinese']?.toString();
-    if (useChinese && zh != null && zh.isNotEmpty) return zh;
-    return name.isNotEmpty ? name : (zh ?? 'Product #${item['product_id']}');
+  void _configureRefreshTimer() {
+    _refreshTimer?.cancel();
+    if (_viewMode != 'monitor') return;
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: _monitorRefreshMs), (_) {
+      if (mounted) _loadShipments();
+    });
   }
 
-  void _showImageEnlarge(BuildContext context, String? imageUrl, String productName) {
-    if (imageUrl == null || imageUrl.isEmpty) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(productName, style: Theme.of(context).textTheme.titleSmall),
-            ),
-            CachedProductImage(imageUrl: imageUrl, width: 320, height: 320, fit: BoxFit.contain),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          ],
+  bool _shipmentMatchesSearch(Map<String, dynamic> shipment, String rawQuery) {
+    final q = rawQuery.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final order = shipment['wholesale_order'] as Map<String, dynamic>?;
+    final fields = <String>[
+      order?['order_number']?.toString() ?? '',
+      (order?['order_number']?.toString() ?? '').replaceFirst(RegExp(r'^WO-', caseSensitive: false), ''),
+      order?['ref_no']?.toString() ?? '',
+      order?['po_number']?.toString() ?? '',
+      order?['wholesale_client']?['name']?.toString() ?? '',
+    ].where((v) => v.trim().isNotEmpty).map((v) => v.toLowerCase());
+    return fields.any((field) => field.contains(q));
+  }
+
+  List<Map<String, dynamic>> get _filteredShipments {
+    final q = _search.trim();
+    var list = q.isEmpty
+        ? [..._shipments]
+        : _shipments.where((s) => _shipmentMatchesSearch(s, q)).toList();
+
+    if (_viewMode == 'monitor') {
+      final cutoff = DateTime.now().subtract(Duration(days: _monitorCompletedDays));
+      list = list.where((s) {
+        if (s['status'] != 'completed') return true;
+        final updatedAt = DateTime.tryParse(s['updated_at']?.toString() ?? '');
+        return updatedAt != null && !updatedAt.isBefore(cutoff);
+      }).toList();
+    }
+    list.sort(sortShipmentsByOrderTimeDesc);
+    return list;
+  }
+
+  void _patchShipment(Map<String, dynamic> updated) {
+    setState(() {
+      _shipments = _shipments
+          .map((s) => (s['id'] == updated['id'] ? mergeShipmentListRow(s, updated) : s))
+          .toList();
+    });
+    widget.onShipmentsChanged?.call();
+  }
+
+  void _openShipment(Map<String, dynamic> shipment) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ShipmentPackingDetailScreen(
+          shipment: shipment,
+          courierOptions: _courierOptions,
+          onUpdated: (updated) {
+            _patchShipment(updated);
+            _loadShipments();
+          },
         ),
       ),
     );
   }
 
-  void _openUrl(String url) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delivery note'),
-        content: SelectableText(url),
+  void _startPackingQueue(List<Map<String, dynamic>> queue) {
+    final filtered = queue.where((s) => shipmentNeedsPacking(s['status']?.toString() ?? '')).toList();
+    if (filtered.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ShipmentPackingQueueScreen(
+          queue: filtered,
+          courierOptions: _courierOptions,
+          onShipmentPacked: _patchShipment,
+        ),
+      ),
+    ).then((_) => _loadShipments());
+  }
+
+  void _startCourierPickup(List<Map<String, dynamic>> queue) {
+    final filtered = queue.where((s) => s['status'] == 'packed').toList();
+    if (filtered.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ShipmentCourierPickupScreen(
+          queue: filtered,
+          courierOptions: _courierOptions,
+          onShipmentShipped: _patchShipment,
+        ),
+      ),
+    ).then((_) => _loadShipments());
+  }
+
+  Future<void> _setViewMode(String mode) async {
+    setState(() => _viewMode = mode);
+    await _saveViewMode(mode);
+    _configureRefreshTimer();
+    await _loadShipments();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filteredShipments;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Wholesale shipments'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'monitor', icon: Icon(Icons.grid_view), label: Text('Monitor')),
+              ButtonSegment(value: 'list', icon: Icon(Icons.view_list), label: Text('List')),
+            ],
+            selected: {_viewMode},
+            onSelectionChanged: (values) => _setViewMode(values.first),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loading ? null : _loadShipments,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateWholesaleOrderScreen()),
+          );
+          if (mounted) _loadShipments();
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('New order'),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    labelText: 'Search',
+                    hintText: 'Order #, ref, PO, client',
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _search.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _search = '');
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (v) => setState(() => _search = v),
+                ),
+                if (_viewMode == 'monitor')
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Monitor refreshes every 30 seconds. Tap ▶ on a column to start packing or courier pickup.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _viewMode == 'monitor'
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return RefreshIndicator(
+                          onRefresh: _loadShipments,
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: SizedBox(
+                              height: constraints.maxHeight,
+                              width: constraints.maxWidth,
+                              child: _buildMonitorBody(filtered),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _loadShipments,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      children: _buildListBody(filtered),
+                    ),
+                  ),
+          ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final orderProvider = Provider.of<OrderProvider>(context);
-    final languageProvider = Provider.of<LanguageProvider>(context);
-    final useChinese = languageProvider.locale.languageCode == 'zh';
+  Widget _buildMonitorBody(List<Map<String, dynamic>> filtered) {
+    if (_loading && filtered.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!, style: const TextStyle(color: Colors.red)));
+    }
+    if (filtered.isEmpty) {
+      return const Center(child: Text('No shipments', style: TextStyle(color: Colors.grey)));
+    }
+    return ShipmentMonitorGrid(
+      shipments: filtered,
+      completedDaysLabel: _completedDaysLabel,
+      onOpenShipment: _openShipment,
+      onStartPackingQueue: _startPackingQueue,
+      onStartCourierPickup: _startCourierPickup,
+    );
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Wholesale packing'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loading ? null : _load,
-            tooltip: 'Refresh',
-          ),
-        ],
+  List<Widget> _buildListBody(List<Map<String, dynamic>> filtered) {
+    if (_loading && filtered.isEmpty) {
+      return [const SizedBox(height: 240, child: Center(child: CircularProgressIndicator()))];
+    }
+    if (_error != null) {
+      return [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_error!, style: const TextStyle(color: Colors.red)),
+        ),
+      ];
+    }
+    if (filtered.isEmpty) {
+      return [
+        const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No shipments', style: TextStyle(color: Colors.grey))),
+        ),
+      ];
+    }
+    return filtered.map((s) => _buildListTile(s)).toList();
+  }
+
+  Widget _buildListTile(Map<String, dynamic> s) {
+    final order = s['wholesale_order'] as Map<String, dynamic>?;
+    final itemCount = (s['items'] as List<dynamic>? ?? []).length;
+    final totalQty = (s['items'] as List<dynamic>? ?? []).whereType<Map<String, dynamic>>().fold<double>(
+          0,
+          (sum, si) => sum + effectiveShipmentItemQty(si),
+        );
+    final needsPacking = shipmentNeedsPacking(s['status']?.toString() ?? '');
+    return Card(
+      child: ListTile(
+        onTap: () => _openShipment(s),
+        title: Text(order?['order_number']?.toString() ?? '#${s['wholesale_order_id']}',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(
+          [
+            if (order?['po_number'] != null) 'PO ${order!['po_number']}',
+            order?['wholesale_client']?['name']?.toString(),
+            if (itemCount > 0) '$itemCount items ($totalQty qty)',
+            s['status']?.toString(),
+          ].whereType<String>().join(' · '),
+        ),
+        trailing: FilledButton.tonal(
+          onPressed: () => _openShipment(s),
+          child: Text(needsPacking ? 'Process' : 'View'),
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CreateWholesaleOrderScreen()),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Create wholesale order'),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('Retry')),
-                      ],
-                    ),
-                  ),
-                )
-              : _shipments.isEmpty
-                  ? const Center(child: Text('No shipments to pack for this store'))
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _shipments.length,
-                        itemBuilder: (context, index) {
-                          final shipment = _shipments[index] as Map<String, dynamic>;
-                          final shipmentId = shipment['id'] is int ? shipment['id'] as int : (shipment['id'] as num).toInt();
-                          final order = shipment['wholesale_order'] as Map<String, dynamic>?;
-                          final orderNumber = order?['order_number']?.toString() ?? '—';
-                          final client = order?['wholesale_client'] as Map<String, dynamic>?;
-                          final clientName = client?['name']?.toString() ?? '—';
-                          final status = shipment['status']?.toString() ?? 'packing';
-                          final isCompleted = status == 'completed';
-                          final deliveryNoteUrl = shipment['delivery_note_pdf_url']?.toString();
-                          final items = shipment['items'] as List<dynamic>? ?? [];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          orderNumber,
-                                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: isCompleted ? Colors.green[100] : Colors.orange[100],
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          isCompleted ? 'Completed' : 'Packing',
-                                          style: Theme.of(context).textTheme.labelMedium,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (clientName != '—')
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(clientName, style: Theme.of(context).textTheme.bodySmall),
-                                    ),
-                                  const SizedBox(height: 12),
-                                  ...items.map<Widget>((si) {
-                                    final woItem = si is Map ? si['wholesale_order_item'] as Map<String, dynamic>? : null;
-                                    if (woItem == null) return const SizedBox.shrink();
-                                    final qty = woItem['quantity'] is num ? (woItem['quantity'] as num).toDouble() : 0.0;
-                                    final qtyStr = qty == qty.toInt() ? qty.toInt().toString() : qty.toString();
-                                    final product = woItem['product'] as Map<String, dynamic>?;
-                                    final imageUrl = product?['image_url']?.toString();
-                                    final productName = _productName(woItem, useChinese);
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Row(
-                                        children: [
-                                          GestureDetector(
-                                            onTap: () => _showImageEnlarge(context, imageUrl, productName),
-                                            child: SizedBox(
-                                              width: 44,
-                                              height: 44,
-                                              child: imageUrl != null && imageUrl.isNotEmpty
-                                                  ? CachedProductImage(imageUrl: imageUrl, width: 44, height: 44, fit: BoxFit.cover)
-                                                  : Container(
-                                                      color: Colors.grey[300],
-                                                      child: const Center(child: Text('?', style: TextStyle(color: Colors.grey))),
-                                                    ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(child: Text('$productName × $qtyStr')),
-                                        ],
-                                      ),
-                                    );
-                                  }),
-                                  const SizedBox(height: 12),
-                                  if (isCompleted && deliveryNoteUrl != null && deliveryNoteUrl.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: OutlinedButton.icon(
-                                        icon: const Icon(Icons.picture_as_pdf),
-                                        label: const Text('View delivery note'),
-                                        onPressed: () => _openUrl(deliveryNoteUrl),
-                                      ),
-                                    )
-                                  else if (!isCompleted)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: FilledButton.icon(
-                                        icon: const Icon(Icons.qr_code_scanner),
-                                        label: const Text('Pack (scan items)'),
-                                        onPressed: () async {
-                                          await Navigator.push<void>(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => ShipmentPackingDetailScreen(
-                                                shipment: shipment,
-                                                onCompleted: _load,
-                                              ),
-                                            ),
-                                          );
-                                          _load();
-                                        },
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
     );
   }
 }

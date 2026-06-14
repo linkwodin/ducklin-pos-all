@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -21,12 +21,13 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Link,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
   AttachMoney as AttachMoneyIcon,
   TrendingUp as TrendingUpIcon,
   LocalOffer as LocalOfferIcon,
+  ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -40,7 +41,10 @@ import {
 } from 'recharts';
 import { productsAPI, sectorsAPI, currencyRatesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import type { Product, ProductCost, PriceHistory, CurrencyRate } from '../types';
+import ProductVariantForm from '../components/ProductVariantForm';
+import { formatPerWeightVariantLabel, weightVariantGramsFromProduct } from '../utils/productForm';
 import { format } from 'date-fns';
 import {
   Select,
@@ -52,7 +56,7 @@ import {
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const [product, setProduct] = useState<Product | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
@@ -108,53 +112,81 @@ export default function ProductDetailPage() {
     }));
 
   if (!product) {
-    return <Typography>Loading...</Typography>;
+    return <Typography>{t('productDetail.loading')}</Typography>;
   }
 
   return (
     <Box>
-      <Button
-        startIcon={<ArrowBackIcon />}
-        onClick={() => navigate('/products')}
-        sx={{ mb: 2 }}
-      >
-        Back to Products
-      </Button>
+      <Typography variant="body2" component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 2 }}>
+        <Link component={RouterLink} to="/" color="primary" underline="none">{t('common.home')}</Link>
+        <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+        <Link component={RouterLink} to="/products" color="primary" underline="none">{t('products.title')}</Link>
+        {product?.product_line_id ? (
+          <>
+            <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+            <Link component={RouterLink} to="/product-lines" color="primary" underline="none">
+              {t('productLines.title')}
+            </Link>
+            <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+            <Link
+              component={RouterLink}
+              to={`/product-lines/${product.product_line_id}`}
+              color="primary"
+              underline="none"
+            >
+              {product.product_line?.name ?? t('productLineDetail.title')}
+            </Link>
+          </>
+        ) : null}
+        {product?.name && (
+          <>
+            <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+            <span>{product.name}</span>
+          </>
+        )}
+      </Typography>
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={8}>
             <Typography variant="h4" gutterBottom>
               {product.name}
             </Typography>
-            {product.name_chinese && (
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                {product.name_chinese}
+            {product.product_line && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {t('productLines.title')}: {product.product_line.name}
+                {product.unit_type === 'weight'
+                  ? (() => {
+                      const per = formatPerWeightVariantLabel(weightVariantGramsFromProduct(product));
+                      return per ? ` · ${per}` : '';
+                    })()
+                  : product.variant_label
+                    ? ` · ${product.variant_label}`
+                    : ''}
               </Typography>
             )}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2">
-                <strong>SKU:</strong> {product.sku || '-'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Barcode:</strong> {product.barcode || '-'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Category:</strong> {product.category || '-'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Unit Type:</strong> {product.unit_type}
-              </Typography>
-            </Box>
+            <ProductVariantForm
+              product={product}
+              onSaved={(updated) => {
+                setProduct(updated);
+                enqueueSnackbar(t('productDetail.settingsSaved', 'Product settings saved'), {
+                  variant: 'success',
+                });
+              }}
+            />
           </Grid>
-          <Grid item xs={12} md={6}>
-            {product.image_url && (
+          <Grid item xs={12} md={4}>
+            {product.image_url ? (
               <Box
                 component="img"
                 src={product.image_url}
                 alt={product.name}
-                sx={{ maxWidth: '100%', maxHeight: 300, borderRadius: 2 }}
+                sx={{ maxWidth: '100%', maxHeight: 320, borderRadius: 2, display: 'block', mx: 'auto' }}
               />
+            ) : (
+              <Typography variant="body2" color="text.secondary" align="center">
+                {t('productDetail.noImage', 'No image')}
+              </Typography>
             )}
           </Grid>
         </Grid>
@@ -162,9 +194,9 @@ export default function ProductDetailPage() {
 
       <Paper sx={{ p: 2 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
-          <Tab icon={<AttachMoneyIcon />} label="Cost Configuration" />
-          <Tab icon={<TrendingUpIcon />} label="Price History" />
-          <Tab icon={<LocalOfferIcon />} label="Discounts" />
+          <Tab icon={<AttachMoneyIcon />} label={t('productDetail.tabCostConfig')} />
+          <Tab icon={<TrendingUpIcon />} label={t('productDetail.tabPriceHistory')} />
+          <Tab icon={<LocalOfferIcon />} label={t('productDetail.tabDiscounts')} />
         </Tabs>
 
         {tabValue === 0 && (
@@ -173,18 +205,18 @@ export default function ProductDetailPage() {
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="h6">Current Cost Configuration</Typography>
+                    <Typography variant="h6">{t('productDetail.currentCostConfig')}</Typography>
                     <Button
                       variant="outlined"
                       onClick={() => setCostDialogOpen(true)}
                     >
-                      Update Cost
+                      {t('productDetail.updateCost')}
                     </Button>
                   </Box>
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
                       <Typography variant="body2" color="text.secondary">
-                        Exchange Rate
+                        {t('productDetail.exchangeRate')}
                       </Typography>
                       <Typography variant="body1">
                         {product.current_cost.exchange_rate}
@@ -192,7 +224,7 @@ export default function ProductDetailPage() {
                     </Grid>
                     <Grid item xs={6}>
                       <Typography variant="body2" color="text.secondary">
-                        Wholesale Cost (GBP)
+                        {t('productDetail.wholesaleCostGbp')}
                       </Typography>
                       <Typography variant="h6" color="primary">
                         £{product.current_cost.wholesale_cost_gbp.toFixed(2)}
@@ -200,7 +232,7 @@ export default function ProductDetailPage() {
                     </Grid>
                     <Grid item xs={6}>
                       <Typography variant="body2" color="text.secondary">
-                        Unit Weight (g)
+                        {t('productDetail.unitWeightG')}
                       </Typography>
                       <Typography variant="body1">
                         {product.current_cost.unit_weight_g}g
@@ -208,7 +240,7 @@ export default function ProductDetailPage() {
                     </Grid>
                     <Grid item xs={6}>
                       <Typography variant="body2" color="text.secondary">
-                        Weight (g)
+                        {t('productDetail.weightG')}
                       </Typography>
                       <Typography variant="body1">
                         {product.current_cost.weight_g}g
@@ -220,13 +252,13 @@ export default function ProductDetailPage() {
             ) : (
               <Box>
                 <Typography variant="body1" gutterBottom>
-                  No cost configuration set
+                  {t('productDetail.noCostConfig')}
                 </Typography>
                 <Button
                   variant="contained"
                   onClick={() => setCostDialogOpen(true)}
                 >
-                  Set Cost
+                  {t('productDetail.setCost')}
                 </Button>
               </Box>
             )}
@@ -247,18 +279,18 @@ export default function ProductDetailPage() {
                     type="monotone"
                     dataKey="wholesale"
                     stroke="#8884d8"
-                    name="Wholesale Cost (GBP)"
+                    name={t('productDetail.chartWholesaleCost')}
                   />
                   <Line
                     type="monotone"
                     dataKey="final"
                     stroke="#82ca9d"
-                    name="Final Price (GBP)"
+                    name={t('productDetail.chartFinalPrice')}
                   />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <Typography>No price history available</Typography>
+              <Typography>{t('productDetail.noPriceHistory')}</Typography>
             )}
           </Box>
         )}
@@ -294,6 +326,7 @@ function CostDialog({
   onSave: (data: Partial<ProductCost>) => void;
   currentCost?: ProductCost;
 }) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     currency_code: 'HKD',
     exchange_rate: 0,
@@ -385,24 +418,24 @@ function CostDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Set Product Cost</DialogTitle>
+      <DialogTitle>{t('productDetail.costDialogTitle')}</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           <FormControl fullWidth required>
-            <InputLabel>Currency</InputLabel>
+            <InputLabel>{t('productDetail.currency')}</InputLabel>
             <Select
               value={formData.currency_code}
-              label="Currency"
+              label={t('productDetail.currency')}
               onChange={(e) => handleCurrencyChange(e.target.value)}
               disabled={loadingRates}
             >
               {loadingRates ? (
                 <MenuItem disabled>
                   <CircularProgress size={20} sx={{ mr: 1 }} />
-                  Loading currencies...
+                  {t('productDetail.loadingCurrencies')}
                 </MenuItem>
               ) : currencyRates.length === 0 ? (
-                <MenuItem disabled>No currency rates available. Please add currencies first.</MenuItem>
+                <MenuItem disabled>{t('productDetail.noCurrencyRates')}</MenuItem>
               ) : (
                 currencyRates.map((rate) => (
                   <MenuItem key={rate.currency_code} value={rate.currency_code}>
@@ -420,16 +453,16 @@ function CostDialog({
             </Select>
           </FormControl>
           <TextField
-            label="Exchange Rate (to GBP)"
+            label={t('productDetail.exchangeRateToGbp')}
             type="number"
             required
             fullWidth
             disabled
             value={formData.exchange_rate}
-            helperText="Automatically set based on selected currency"
+            helperText={t('productDetail.exchangeRateHelper')}
           />
           <TextField
-            label="Purchasing Cost (HKD)"
+            label={t('productDetail.purchasingCostHkd')}
             type="number"
             fullWidth
             value={formData.purchasing_cost_hkd}
@@ -441,7 +474,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Unit Weight (g)"
+            label={t('productDetail.unitWeightG')}
             type="number"
             required
             fullWidth
@@ -451,7 +484,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Purchasing Cost Buffer (%)"
+            label={t('productDetail.purchasingCostBufferPercent')}
             type="number"
             fullWidth
             value={formData.purchasing_cost_buffer_percent}
@@ -463,7 +496,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Weight (g)"
+            label={t('productDetail.weightG')}
             type="number"
             required
             fullWidth
@@ -473,7 +506,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Weight Buffer (%)"
+            label={t('productDetail.weightBufferPercent')}
             type="number"
             fullWidth
             value={formData.weight_buffer_percent}
@@ -485,7 +518,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Freight Rate (HKD per KG)"
+            label={t('productDetail.freightRateHkdPerKg')}
             type="number"
             required
             fullWidth
@@ -498,7 +531,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Freight Buffer (HKD)"
+            label={t('productDetail.freightBufferHkd')}
             type="number"
             fullWidth
             value={formData.freight_buffer_hkd}
@@ -510,7 +543,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Import Duty (%)"
+            label={t('productDetail.importDutyPercent')}
             type="number"
             fullWidth
             value={formData.import_duty_percent}
@@ -522,7 +555,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Packaging (GBP)"
+            label={t('productDetail.packagingGbp')}
             type="number"
             fullWidth
             value={formData.packaging_gbp}
@@ -534,7 +567,7 @@ function CostDialog({
             }
           />
           <TextField
-            label="Direct Retail Online Store Price (GBP)"
+            label={t('productDetail.directRetailPriceGbp')}
             type="number"
             fullWidth
             inputProps={{ min: 0, step: 0.01 }}
@@ -545,14 +578,14 @@ function CostDialog({
                 direct_retail_online_store_price_gbp: parseFloat(e.target.value) || 0,
               })
             }
-            helperText="Used for e-catalog price calculation with sector discount"
+            helperText={t('productDetail.directRetailPriceHelper')}
           />
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
         <Button onClick={handleSubmit} variant="contained">
-          Save
+          {t('common.save')}
         </Button>
       </DialogActions>
     </Dialog>

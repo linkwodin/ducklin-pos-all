@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../config/api_config.dart';
+import '../utils/product_barcode.dart';
 
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._init();
@@ -32,7 +33,7 @@ class DatabaseService {
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
     final db = await openDatabase(
       dbPath,
-      version: 9, // v9: pending_user_activity_events for offline user event sync
+      version: 14, // v14: product_line_id, variant_label, units_per_pack
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -54,6 +55,59 @@ class DatabaseService {
         print('DatabaseService: pos_price column missing, adding it...');
         await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
         print('DatabaseService: pos_price column added successfully');
+      }
+      final hasWeightPrefix = result.any((column) => column['name'] == 'weight_barcode_prefix');
+      if (!hasWeightPrefix) {
+        await db.execute('ALTER TABLE products ADD COLUMN weight_barcode_prefix TEXT');
+      }
+      final hasPriceWeightG = result.any((column) => column['name'] == 'price_weight_g');
+      if (!hasPriceWeightG) {
+        await db.execute('ALTER TABLE products ADD COLUMN price_weight_g REAL DEFAULT 0');
+      }
+      final hasCanSellByWeight = result.any((column) => column['name'] == 'can_sell_by_weight');
+      if (!hasCanSellByWeight) {
+        await db.execute('ALTER TABLE products ADD COLUMN can_sell_by_weight INTEGER DEFAULT 0');
+      }
+      final hasPrepackWeightG = result.any((column) => column['name'] == 'prepack_weight_g');
+      if (!hasPrepackWeightG) {
+        await db.execute('ALTER TABLE products ADD COLUMN prepack_weight_g REAL DEFAULT 0');
+      }
+      final hasSellByQty = result.any((column) => column['name'] == 'sell_by_qty');
+      if (!hasSellByQty) {
+        await db.execute('ALTER TABLE products ADD COLUMN sell_by_qty INTEGER DEFAULT 1');
+      }
+      final hasSellByWeight = result.any((column) => column['name'] == 'sell_by_weight');
+      if (!hasSellByWeight) {
+        await db.execute('ALTER TABLE products ADD COLUMN sell_by_weight INTEGER DEFAULT 0');
+      }
+      final hasWeightBarcode = result.any((column) => column['name'] == 'weight_barcode');
+      if (!hasWeightBarcode) {
+        await db.execute('ALTER TABLE products ADD COLUMN weight_barcode TEXT');
+      }
+      final hasProductLineId = result.any((column) => column['name'] == 'product_line_id');
+      if (!hasProductLineId) {
+        await db.execute('ALTER TABLE products ADD COLUMN product_line_id INTEGER DEFAULT 0');
+      }
+      final hasVariantLabel = result.any((column) => column['name'] == 'variant_label');
+      if (!hasVariantLabel) {
+        await db.execute('ALTER TABLE products ADD COLUMN variant_label TEXT');
+      }
+      final hasUnitsPerPack = result.any((column) => column['name'] == 'units_per_pack');
+      if (!hasUnitsPerPack) {
+        await db.execute('ALTER TABLE products ADD COLUMN units_per_pack REAL DEFAULT 0');
+      }
+      final stockInfo = await db.rawQuery('PRAGMA table_info(stock)');
+      final hasWeightQty = stockInfo.any((column) => column['name'] == 'weight_quantity_g');
+      if (!hasWeightQty) {
+        await db.execute('ALTER TABLE stock ADD COLUMN weight_quantity_g REAL DEFAULT 0');
+      }
+      final hasTrackPrepacked = stockInfo.any((column) => column['name'] == 'track_prepacked');
+      if (!hasTrackPrepacked) {
+        await db.execute('ALTER TABLE stock ADD COLUMN track_prepacked INTEGER DEFAULT 1');
+      }
+      final hasTrackWeight = stockInfo.any((column) => column['name'] == 'track_weight');
+      if (!hasTrackWeight) {
+        await db.execute('ALTER TABLE stock ADD COLUMN track_weight INTEGER DEFAULT 0');
       }
     } catch (e) {
       print('DatabaseService: Error ensuring schema: $e');
@@ -188,8 +242,93 @@ class DatabaseService {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_pending_user_activity_events_user ON pending_user_activity_events(user_id)');
       print('DatabaseService: Database upgrade to v9 (pending_user_activity_events) completed');
     }
+
+    if (oldVersion < 10) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN weight_barcode_prefix TEXT');
+      } catch (e) {
+        print('DatabaseService: Column products.weight_barcode_prefix may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v10 (products.weight_barcode_prefix) completed');
+    }
+
+    if (oldVersion < 11) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN price_weight_g REAL DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column products.price_weight_g may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v11 (products.price_weight_g) completed');
+    }
     
-    // Safety check: Ensure pos_price column exists (in case database was created at v5 without it)
+    if (oldVersion < 12) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN can_sell_by_weight INTEGER DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column products.can_sell_by_weight may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN prepack_weight_g REAL DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column products.prepack_weight_g may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE stock ADD COLUMN weight_quantity_g REAL DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column stock.weight_quantity_g may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE stock ADD COLUMN track_prepacked INTEGER DEFAULT 1');
+      } catch (e) {
+        print('DatabaseService: Column stock.track_prepacked may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE stock ADD COLUMN track_weight INTEGER DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column stock.track_weight may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE pending_stocktake_items ADD COLUMN weight_quantity_g REAL');
+      } catch (e) {
+        print('DatabaseService: Column pending_stocktake_items.weight_quantity_g may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v12 (dual inventory) completed');
+    }
+
+    if (oldVersion < 13) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN sell_by_qty INTEGER DEFAULT 1');
+      } catch (e) {
+        print('DatabaseService: Column products.sell_by_qty may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN sell_by_weight INTEGER DEFAULT 0');
+      } catch (e) {
+        print('DatabaseService: Column products.sell_by_weight may already exist: $e');
+      }
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN weight_barcode TEXT');
+      } catch (e) {
+        print('DatabaseService: Column products.weight_barcode may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v13 (sell_by_qty/weight barcodes) completed');
+    }
+
+    if (oldVersion < 14) {
+      for (final col in [
+        'ALTER TABLE products ADD COLUMN product_line_id INTEGER DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN variant_label TEXT',
+        'ALTER TABLE products ADD COLUMN units_per_pack REAL DEFAULT 0',
+      ]) {
+        try {
+          await db.execute(col);
+        } catch (e) {
+          print('DatabaseService: v14 column may already exist: $e');
+        }
+      }
+      print('DatabaseService: Database upgrade to v14 (product lines) completed');
+    }
+    
     try {
       await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
       print('DatabaseService: Added pos_price column (safety check)');
@@ -242,6 +381,16 @@ class DatabaseService {
         category TEXT,
         image_url TEXT,
         unit_type TEXT NOT NULL,
+        weight_barcode_prefix TEXT,
+        price_weight_g REAL DEFAULT 0,
+        can_sell_by_weight INTEGER DEFAULT 0,
+        prepack_weight_g REAL DEFAULT 0,
+        sell_by_qty INTEGER DEFAULT 1,
+        sell_by_weight INTEGER DEFAULT 0,
+        weight_barcode TEXT,
+        product_line_id INTEGER DEFAULT 0,
+        variant_label TEXT,
+        units_per_pack REAL DEFAULT 0,
         is_active INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT,
@@ -280,6 +429,9 @@ class DatabaseService {
         product_id INTEGER NOT NULL,
         store_id INTEGER NOT NULL,
         quantity REAL NOT NULL DEFAULT 0,
+        weight_quantity_g REAL DEFAULT 0,
+        track_prepacked INTEGER DEFAULT 1,
+        track_weight INTEGER DEFAULT 0,
         last_updated INTEGER,
         FOREIGN KEY (product_id) REFERENCES products(id)
       )
@@ -456,6 +608,21 @@ class DatabaseService {
         'category': product['category'],
         'image_url': product['image_url'],
         'unit_type': product['unit_type'],
+        'weight_barcode_prefix': product['weight_barcode_prefix'],
+        'price_weight_g': (product['price_weight_g'] as num?)?.toDouble() ?? 0.0,
+        'can_sell_by_weight': (product['can_sell_by_weight'] == true || product['can_sell_by_weight'] == 1) ? 1 : 0,
+        'prepack_weight_g': (product['prepack_weight_g'] as num?)?.toDouble() ?? 0.0,
+        'sell_by_qty': _boolToInt(product['sell_by_qty'], defaultValue: product['unit_type'] != 'weight'),
+        'sell_by_weight': _boolToInt(
+          product['sell_by_weight'],
+          defaultValue: product['can_sell_by_weight'] == true ||
+              product['can_sell_by_weight'] == 1 ||
+              product['unit_type'] == 'weight',
+        ),
+        'weight_barcode': product['weight_barcode']?.toString() ?? '',
+        'product_line_id': (product['product_line_id'] as num?)?.toInt() ?? 0,
+        'variant_label': product['variant_label']?.toString() ?? '',
+        'units_per_pack': (product['units_per_pack'] as num?)?.toDouble() ?? 0.0,
         'is_active': (product['is_active'] ?? true) ? 1 : 0,
         'created_at': product['created_at']?.toString() ?? '',
         'updated_at': product['updated_at']?.toString() ?? '',
@@ -508,25 +675,59 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
+    final scan = await resolveProductScan(barcode);
+    return scan;
+  }
+
+  /// Lookup product by qty, weight, or weight-prefix barcode; sets `_scan_mode`.
+  Future<Map<String, dynamic>?> resolveProductScan(String barcode) async {
+    final code = barcode.trim();
+    if (code.isEmpty) return null;
+    final products = await getProducts();
+    return resolveProductScanFromList(code, products);
+  }
+
+  static int _boolToInt(dynamic value, {required bool defaultValue}) {
+    if (value == null) return defaultValue ? 1 : 0;
+    if (value == true || value == 1) return 1;
+    return 0;
+  }
+
+  Future<Map<String, dynamic>?> getProductById(int productId) async {
     final db = await database;
     final results = await db.query(
       'products',
-      where: 'barcode = ? AND is_active = 1',
-      whereArgs: [barcode],
+      where: 'id = ? AND is_active = 1',
+      whereArgs: [productId],
       limit: 1,
     );
     return results.isNotEmpty ? results.first : null;
   }
 
   // Stock methods
-  Future<void> updateStock(int productId, int storeId, double quantity) async {
+  Future<void> updateStock(
+    int productId,
+    int storeId, {
+    required double quantity,
+    double? weightQuantityG,
+    bool? trackPrepacked,
+    bool? trackWeight,
+  }) async {
     final db = await database;
+    final existing = await getStock(productId, storeId);
     await db.insert(
       'stock',
       {
         'product_id': productId,
         'store_id': storeId,
         'quantity': quantity,
+        'weight_quantity_g': weightQuantityG ?? (existing?['weight_quantity_g'] as num?)?.toDouble() ?? 0.0,
+        'track_prepacked': trackPrepacked != null
+            ? (trackPrepacked ? 1 : 0)
+            : (existing?['track_prepacked'] as int?) ?? 1,
+        'track_weight': trackWeight != null
+            ? (trackWeight ? 1 : 0)
+            : (existing?['track_weight'] as int?) ?? 0,
         'last_updated': DateTime.now().millisecondsSinceEpoch,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
@@ -558,6 +759,9 @@ class DatabaseService {
               'product_id': row['product_id'],
               'store_id': row['store_id'],
               'quantity': (row['quantity'] as num?)?.toDouble() ?? 0.0,
+              'weight_quantity_g': (row['weight_quantity_g'] as num?)?.toDouble() ?? 0.0,
+              'track_prepacked': (row['track_prepacked'] as int?) ?? 1,
+              'track_weight': (row['track_weight'] as int?) ?? 0,
             })
         .toList();
   }
@@ -636,6 +840,11 @@ class DatabaseService {
           'id': productId,
           'name': productName,
           if (nameChinese != null) 'name_chinese': nameChinese,
+          'unit_type': productRow['unit_type'] ?? item['unit_type'] ?? 'quantity',
+          if (productRow['barcode'] != null) 'barcode': productRow['barcode'],
+          if (productRow['weight_barcode_prefix'] != null)
+            'weight_barcode_prefix': productRow['weight_barcode_prefix'],
+          if (productRow['price_weight_g'] != null) 'price_weight_g': productRow['price_weight_g'],
         },
       });
     }
@@ -713,6 +922,8 @@ class DatabaseService {
         'stocktake_id': id,
         'product_id': item['product_id'],
         'quantity': (item['quantity'] as num).toDouble(),
+        if (item['weight_quantity_g'] != null)
+          'weight_quantity_g': (item['weight_quantity_g'] as num).toDouble(),
         if (item['reason'] != null) 'reason': item['reason'] as String?,
       });
     }

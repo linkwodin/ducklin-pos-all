@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,10 +117,11 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		unitPrice := priceAfterSectorDiscount * (1 - productDiscountPercent/100.0)
 		totalDiscountPercent := sectorDiscountRate + productDiscountPercent
 
-		lineDiscount := basePrice * (totalDiscountPercent / 100.0) * item.Quantity
-		lineTotal := (unitPrice * item.Quantity)
+		lineFactor := orderLineFactor(product.UnitType, product.PriceWeightG, item.Quantity)
+		lineDiscount := basePrice * (totalDiscountPercent / 100.0) * lineFactor
+		lineTotal := unitPrice * lineFactor
 
-		subtotal += basePrice * item.Quantity
+		subtotal += basePrice * lineFactor
 		discountAmount += lineDiscount
 
 		orderItems = append(orderItems, models.OrderItem{
@@ -546,6 +548,26 @@ func parseInt(s string) int {
 	return result
 }
 
+func parseCSVInts(s string) []int {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		v, err := strconv.Atoi(p)
+		if err != nil {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
 	var stats []DailyRevenueStat
 
@@ -578,6 +600,7 @@ func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
 	}
 
 	// Get store filter if provided
+	storeIDs := parseCSVInts(c.Query("store_ids"))
 	storeID := c.Query("store_id")
 
 	// Build query
@@ -586,7 +609,9 @@ func (h *OrderHandler) GetDailyRevenueStats(c *gin.Context) {
 		Where("created_at >= ? AND created_at < ? AND status IN (?, ?, ?)", startDate, endDate.AddDate(0, 0, 1), "paid", "completed", "picked_up").
 		Group("DATE(created_at)")
 
-	if storeID != "" {
+	if len(storeIDs) > 0 {
+		query = query.Where("store_id IN ?", storeIDs)
+	} else if storeID != "" {
 		query = query.Where("store_id = ?", storeID)
 	}
 
@@ -644,6 +669,7 @@ func (h *OrderHandler) GetDailyProductSalesStats(c *gin.Context) {
 	}
 
 	// Get store filter if provided
+	storeIDs := parseCSVInts(c.Query("store_ids"))
 	storeID := c.Query("store_id")
 
 	// Build query to join orders and order_items
@@ -653,7 +679,9 @@ func (h *OrderHandler) GetDailyProductSalesStats(c *gin.Context) {
 		Where("orders.created_at >= ? AND orders.created_at < ? AND orders.status IN (?, ?, ?)", startDate, endDate.AddDate(0, 0, 1), "paid", "completed", "picked_up").
 		Group("DATE(orders.created_at), order_items.product_id")
 
-	if storeID != "" {
+	if len(storeIDs) > 0 {
+		query = query.Where("orders.store_id IN ?", storeIDs)
+	} else if storeID != "" {
 		query = query.Where("orders.store_id = ?", storeID)
 	}
 

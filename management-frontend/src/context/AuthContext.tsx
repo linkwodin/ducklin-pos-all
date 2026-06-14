@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authAPI } from '../services/api';
 import type { User, LoginResponse } from '../types';
+import { isTokenExpired, tokenExpiresWithin } from '../utils/jwt';
+
+const REFRESH_WITHIN_MS = 30 * 60 * 1000;
+const REFRESH_CHECK_MS = 10 * 60 * 1000;
 
 interface AuthContextType {
   user: User | null;
@@ -19,15 +23,57 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
+    const restoreSession = async () => {
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
 
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+      if (storedToken) {
+        if (isTokenExpired(storedToken) || tokenExpiresWithin(storedToken, REFRESH_WITHIN_MS)) {
+          const refreshed = await authAPI.refresh();
+          if (refreshed) {
+            setToken(refreshed);
+            const userJson = localStorage.getItem('user');
+            if (userJson) setUser(JSON.parse(userJson));
+            setLoading(false);
+            return;
+          }
+          if (isTokenExpired(storedToken)) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            setLoading(false);
+            return;
+          }
+        }
+        setToken(storedToken);
+        if (storedUser) setUser(JSON.parse(storedUser));
+      }
+      setLoading(false);
+    };
+
+    void restoreSession();
   }, []);
+
+  useEffect(() => {
+    const onTokenRefreshed = (event: Event) => {
+      const detail = (event as CustomEvent<{ token: string; user?: User }>).detail;
+      if (!detail?.token) return;
+      setToken(detail.token);
+      if (detail.user) setUser(detail.user);
+    };
+    window.addEventListener('auth:token-refreshed', onTokenRefreshed);
+    return () => window.removeEventListener('auth:token-refreshed', onTokenRefreshed);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const timer = window.setInterval(() => {
+      const current = localStorage.getItem('token');
+      if (current && tokenExpiresWithin(current, REFRESH_WITHIN_MS)) {
+        void authAPI.refresh();
+      }
+    }, REFRESH_CHECK_MS);
+    return () => window.clearInterval(timer);
+  }, [token]);
 
   const login = async (username: string, password: string) => {
     const response: LoginResponse = await authAPI.login(username, password);

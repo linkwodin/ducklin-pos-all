@@ -280,7 +280,7 @@ class _POSScreenState extends State<POSScreen> {
         final shipments = await ApiService.instance.listShipments(storeId: storeId);
         final count = shipments.where((s) {
           final status = (s is Map && s['status'] != null) ? s['status'].toString() : '';
-          return status != 'completed';
+          return status == 'assigned' || status == 'packing';
         }).length;
         if (mounted) {
           setState(() {

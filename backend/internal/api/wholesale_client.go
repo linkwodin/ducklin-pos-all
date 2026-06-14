@@ -57,7 +57,7 @@ func (h *WholesaleClientHandler) Get(c *gin.Context) {
 }
 
 type CreateWholesaleClientRequest struct {
-	Name         string `json:"name" binding:"required"`
+	Name         string `json:"name"`
 	ContactName  string `json:"contact_name"`
 	Email        string `json:"email"`
 	Phone        string `json:"phone"`
@@ -79,6 +79,10 @@ func (h *WholesaleClientHandler) Create(c *gin.Context) {
 	var req CreateWholesaleClientRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name is required"})
 		return
 	}
 	client := models.WholesaleClient{
@@ -122,18 +126,43 @@ func (h *WholesaleClientHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	client.Name = req.Name
-	client.ContactName = req.ContactName
-	client.Email = req.Email
-	client.Phone = req.Phone
-	client.AddressLine1 = req.AddressLine1
-	client.AddressLine2 = req.AddressLine2
-	client.Postcode = req.Postcode
-	client.VATNumber = req.VATNumber
-	client.CompanyNumber = req.CompanyNumber
-	client.Terms = req.Terms
-	client.AccountCode = req.AccountCode
-	client.SectorID = req.SectorID
+	// For updates, only overwrite fields that are non-empty/non-nil so partial updates are allowed.
+	if strings.TrimSpace(req.Name) != "" {
+		client.Name = req.Name
+	}
+	if req.ContactName != "" {
+		client.ContactName = req.ContactName
+	}
+	if req.Email != "" {
+		client.Email = req.Email
+	}
+	if req.Phone != "" {
+		client.Phone = req.Phone
+	}
+	if req.AddressLine1 != "" {
+		client.AddressLine1 = req.AddressLine1
+	}
+	if req.AddressLine2 != "" {
+		client.AddressLine2 = req.AddressLine2
+	}
+	if req.Postcode != "" {
+		client.Postcode = req.Postcode
+	}
+	if req.VATNumber != "" {
+		client.VATNumber = req.VATNumber
+	}
+	if req.CompanyNumber != "" {
+		client.CompanyNumber = req.CompanyNumber
+	}
+	if req.Terms != "" {
+		client.Terms = req.Terms
+	}
+	if req.AccountCode != "" {
+		client.AccountCode = req.AccountCode
+	}
+	if req.SectorID != nil {
+		client.SectorID = req.SectorID
+	}
 	client.Address = buildAddress(client.AddressLine1, client.AddressLine2, client.Postcode)
 	if req.Address != "" && client.Address == "" {
 		client.Address = req.Address
@@ -209,6 +238,17 @@ func (h *WholesaleClientHandler) CreateStore(c *gin.Context) {
 	c.JSON(http.StatusCreated, store)
 }
 
+type UpdateStoreRequest struct {
+	Name         *string `json:"name"`
+	AddressLine1 *string `json:"address_line1"`
+	AddressLine2 *string `json:"address_line2"`
+	City         *string `json:"city"`
+	Postcode     *string `json:"postcode"`
+	ContactName  *string `json:"contact_name"`
+	Email        *string `json:"email"`
+	Phone        *string `json:"phone"`
+}
+
 func (h *WholesaleClientHandler) UpdateStore(c *gin.Context) {
 	if !requireManagementOrSupervisor(c) {
 		return
@@ -218,19 +258,35 @@ func (h *WholesaleClientHandler) UpdateStore(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Store not found"})
 		return
 	}
-	var req ClientStoreRequest
+	var req UpdateStoreRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	store.Name = req.Name
-	store.AddressLine1 = req.AddressLine1
-	store.AddressLine2 = req.AddressLine2
-	store.City = req.City
-	store.Postcode = req.Postcode
-	store.ContactName = req.ContactName
-	store.Email = req.Email
-	store.Phone = req.Phone
+	if req.Name != nil {
+		store.Name = *req.Name
+	}
+	if req.AddressLine1 != nil {
+		store.AddressLine1 = *req.AddressLine1
+	}
+	if req.AddressLine2 != nil {
+		store.AddressLine2 = *req.AddressLine2
+	}
+	if req.City != nil {
+		store.City = *req.City
+	}
+	if req.Postcode != nil {
+		store.Postcode = *req.Postcode
+	}
+	if req.ContactName != nil {
+		store.ContactName = *req.ContactName
+	}
+	if req.Email != nil {
+		store.Email = *req.Email
+	}
+	if req.Phone != nil {
+		store.Phone = *req.Phone
+	}
 	if err := h.db.Save(&store).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

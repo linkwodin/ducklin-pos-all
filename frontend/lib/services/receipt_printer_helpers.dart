@@ -893,5 +893,87 @@ Add-Type -AssemblyName System.Drawing
     
     return productLine;
   }
+
+  /// Unit type for a receipt line (product on item, else item-level unit_type).
+  static String resolveReceiptUnitType(
+    Map<String, dynamic> item, [
+    Map<String, dynamic>? product,
+  ]) {
+    final prod = product ??
+        (item['product'] is Map<String, dynamic>
+            ? item['product'] as Map<String, dynamic>
+            : null);
+    return (prod?['unit_type'] ?? item['unit_type'] ?? 'quantity').toString().toLowerCase();
+  }
+
+  /// Quantity label for receipts. Weight uses compact kg/g aligned with barcode centi-kg rounding.
+  static String formatReceiptQuantity(
+    Map<String, dynamic> item, [
+    Map<String, dynamic>? product,
+  ]) {
+    final unitType = resolveReceiptUnitType(item, product);
+    final qty = (item['quantity'] as num?)?.toDouble() ?? 0.0;
+    if (unitType == 'weight') {
+      return formatWeightReceiptQuantity(qty);
+    }
+    return qty == qty.roundToDouble()
+        ? '${qty.toStringAsFixed(0)} '
+        : '${qty.toStringAsFixed(2)} ';
+  }
+
+  /// Formats sold weight for receipts (exact grams/kg entered at POS, no barcode rounding).
+  static String formatWeightReceiptQuantity(double grams) {
+    if (grams >= 1000) {
+      var s = (grams / 1000.0).toStringAsFixed(3);
+      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+      return '${s}kg';
+    }
+    if (grams == grams.roundToDouble()) {
+      return '${grams.round()}g';
+    }
+    final oneDec = (grams * 10).roundToDouble() / 10;
+    if ((grams - oneDec).abs() < 0.001) {
+      return '${oneDec.toStringAsFixed(1)}g';
+    }
+    return '${grams.toStringAsFixed(2)}g';
+  }
+
+  /// Merge local product fields (barcode prefix, unit_type, etc.) into order items before printing.
+  static Future<Map<String, dynamic>> enrichOrderForReceipt(
+    Map<String, dynamic> order,
+  ) async {
+    final items = order['items'] as List<dynamic>?;
+    if (items == null || items.isEmpty) return order;
+
+    final enrichedItems = <Map<String, dynamic>>[];
+    for (final raw in items) {
+      final item = raw is Map<String, dynamic>
+          ? Map<String, dynamic>.from(raw)
+          : Map<String, dynamic>.from(raw as Map);
+      final productId = item['product_id'];
+      var product = item['product'] is Map
+          ? Map<String, dynamic>.from(item['product'] as Map)
+          : <String, dynamic>{};
+
+      if (productId != null) {
+        final id = productId is int ? productId : (productId as num).toInt();
+        final local = await DatabaseService.instance.getProductById(id);
+        if (local != null) {
+          for (final entry in local.entries) {
+            final v = product[entry.key];
+            if (v == null || (v is String && v.trim().isEmpty)) {
+              product[entry.key] = entry.value;
+            }
+          }
+        }
+      }
+
+      item['product'] = product;
+      item['unit_type'] ??= product['unit_type'];
+      enrichedItems.add(item);
+    }
+
+    return {...order, 'items': enrichedItems};
+  }
 }
 

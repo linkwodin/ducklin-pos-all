@@ -189,34 +189,43 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	var req struct {
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Email     string `json:"email"`
-		Role      string `json:"role"`
-		IsActive  *bool  `json:"is_active"`
+		FirstName *string `json:"first_name"`
+		LastName  *string `json:"last_name"`
+		Email     *string `json:"email"`
+		Role      *string `json:"role"`
+		IsActive  *bool   `json:"is_active"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if req.FirstName != "" {
-		user.FirstName = req.FirstName
+	updateData := map[string]interface{}{}
+
+	if req.FirstName != nil {
+		updateData["first_name"] = *req.FirstName
 	}
-	if req.LastName != "" {
-		user.LastName = req.LastName
+	if req.LastName != nil {
+		updateData["last_name"] = *req.LastName
 	}
-	if req.Email != "" {
-		user.Email = req.Email
+	if req.Email != nil {
+		updateData["email"] = *req.Email
 	}
-	if req.Role != "" {
-		user.Role = req.Role
+	if req.Role != nil {
+		updateData["role"] = *req.Role
 	}
 	if req.IsActive != nil {
-		user.IsActive = *req.IsActive
+		updateData["is_active"] = *req.IsActive
 	}
 
-	if err := h.db.Save(&user).Error; err != nil {
+	if len(updateData) > 0 {
+		if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(updateData).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	if err := h.db.First(&user, user.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

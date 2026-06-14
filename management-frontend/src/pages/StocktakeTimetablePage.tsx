@@ -23,6 +23,7 @@ import {
   Button,
 } from '@mui/material';
 import PrintIcon from '@mui/icons-material/Print';
+import { useTranslation } from 'react-i18next';
 import { stocktakeAPI, userActivityAPI, usersAPI, storesAPI } from '../services/api';
 import type { StocktakeDayStartRecord, User, Store } from '../types';
 
@@ -49,6 +50,7 @@ function formatTime(iso: string): string {
 }
 
 export default function StocktakeTimetablePage() {
+  const { t } = useTranslation('stocktake');
   const [records, setRecords] = useState<StocktakeDayStartRecord[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,15 +200,15 @@ export default function StocktakeTimetablePage() {
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h5" sx={{ mb: 2 }}>
-        Stocktake
+        {t('title')}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Day-start stocktake records (first login and result per user per store).
+        {t('subtitle')}
       </Typography>
 
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
         <TextField
-          label="From"
+          label={t('from')}
           type="date"
           value={from}
           onChange={(e) => setFrom(e.target.value)}
@@ -214,7 +216,7 @@ export default function StocktakeTimetablePage() {
           size="small"
         />
         <TextField
-          label="To"
+          label={t('to')}
           type="date"
           value={to}
           onChange={(e) => setTo(e.target.value)}
@@ -222,13 +224,13 @@ export default function StocktakeTimetablePage() {
           size="small"
         />
         <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>User</InputLabel>
+          <InputLabel>{t('user')}</InputLabel>
           <Select
             value={userId}
-            label="User"
+            label={t('user')}
             onChange={(e) => setUserId(e.target.value === '' ? '' : Number(e.target.value))}
           >
-            <MenuItem value="">All users</MenuItem>
+            <MenuItem value="">{t('allUsers')}</MenuItem>
             {users.map((u) => (
               <MenuItem key={u.id} value={u.id}>
                 {u.first_name} {u.last_name} ({u.username})
@@ -237,16 +239,16 @@ export default function StocktakeTimetablePage() {
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel>Stores</InputLabel>
+          <InputLabel>{t('stores')}</InputLabel>
           <Select
             multiple
             value={storeIds}
-            label="Stores"
+            label={t('stores')}
             onChange={(e) => setStoreIds(Array.isArray(e.target.value) ? e.target.value : [])}
-            input={<OutlinedInput label="Stores" />}
+            input={<OutlinedInput label={t('stores')} />}
             renderValue={(selected) =>
               selected.length === 0
-                ? 'All stores'
+                ? t('allStores')
                 : selected
                     .map((id) => stores.find((s) => s.id === id)?.name ?? id)
                     .join(', ')
@@ -266,7 +268,7 @@ export default function StocktakeTimetablePage() {
           onClick={handlePrint}
           disabled={loading || printing}
         >
-          {printing ? 'Preparing…' : 'Print date start / date end stock record'}
+          {printing ? t('preparing') : t('printReport')}
         </Button>
       </Box>
 
@@ -285,18 +287,18 @@ export default function StocktakeTimetablePage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Store</TableCell>
-                <TableCell>User</TableCell>
-                <TableCell>First login</TableCell>
-                <TableCell>Result</TableCell>
+                <TableCell>{t('date')}</TableCell>
+                <TableCell>{t('store')}</TableCell>
+                <TableCell>{t('user')}</TableCell>
+                <TableCell>{t('firstLogin')}</TableCell>
+                <TableCell>{t('result')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {records.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
-                    No records in this range.
+                    {t('noRecordsInRange')}
                   </TableCell>
                 </TableRow>
               ) : (

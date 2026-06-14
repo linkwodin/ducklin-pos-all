@@ -296,7 +296,10 @@ export default function LoginPage() {
       {/* Environment badge — liquid glass style */}
       {envLabel && (
         <Box sx={{
-          position: 'absolute', top: 16, left: 16, zIndex: 3,
+          position: 'absolute',
+          top: 'max(16px, env(safe-area-inset-top))',
+          left: 'max(16px, env(safe-area-inset-left))',
+          zIndex: 3,
           px: 1.5, py: 0.5, borderRadius: '10px',
           fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em',
           color: '#fff',
@@ -312,7 +315,13 @@ export default function LoginPage() {
       )}
 
       {/* Language selector */}
-      <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 3 }}>
+      <Box sx={{
+        position: 'absolute',
+        top: 'max(16px, env(safe-area-inset-top))',
+        right: 'max(16px, env(safe-area-inset-right))',
+        zIndex: 3,
+      }}
+      >
         <LanguageSelector />
       </Box>
 

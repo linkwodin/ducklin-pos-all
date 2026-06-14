@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
+import '../utils/product_barcode.dart';
 
 class ProductProvider with ChangeNotifier {
   List<Map<String, dynamic>> _products = [];
@@ -74,7 +75,13 @@ class ProductProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
-    return await DatabaseService.instance.getProductByBarcode(barcode);
+    return resolveProductScan(barcode);
+  }
+
+  Future<Map<String, dynamic>?> resolveProductScan(String barcode) async {
+    final fromMemory = resolveProductScanFromList(barcode, _products);
+    if (fromMemory != null) return fromMemory;
+    return await DatabaseService.instance.resolveProductScan(barcode);
   }
 
   List<Map<String, dynamic>> getProductsByCategory(String? category) {
@@ -89,10 +96,12 @@ class ProductProvider with ChangeNotifier {
       final name = (p['name'] ?? '').toString().toLowerCase();
       final nameChinese = (p['name_chinese'] ?? '').toString().toLowerCase();
       final barcode = (p['barcode'] ?? '').toString().toLowerCase();
+      final weightBarcode = (p['weight_barcode'] ?? '').toString().toLowerCase();
       final sku = (p['sku'] ?? '').toString().toLowerCase();
       return name.contains(lowerQuery) ||
           nameChinese.contains(lowerQuery) ||
           barcode.contains(lowerQuery) ||
+          weightBarcode.contains(lowerQuery) ||
           sku.contains(lowerQuery);
     }).toList();
   }

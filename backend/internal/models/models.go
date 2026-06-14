@@ -28,12 +28,13 @@ type User struct {
 
 // Store represents a physical store location
 type Store struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"not null" json:"name"`
-	Address   string    `json:"address"`
-	IsActive  bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	Name            string    `gorm:"not null" json:"name"`
+	Address         string    `json:"address"`
+	IsWarehouseOnly bool      `gorm:"default:false" json:"is_warehouse_only"`
+	IsActive        bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 
 	// Relationships
 	Users      []User      `gorm:"many2many:user_stores;" json:"users,omitempty"`
@@ -66,23 +67,63 @@ type Sector struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Product represents a product/item
-type Product struct {
+// ProductLine is the shared catalog identity (name, category, image).
+// Sellable SKUs (qty box sizes, weight variants) are Product rows linked via ProductLineID.
+type ProductLine struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
 	NameChinese string    `gorm:"type:varchar(255)" json:"name_chinese"`
-	Barcode     string    `gorm:"type:varchar(100);uniqueIndex" json:"barcode"`
-	SKU         string    `gorm:"type:varchar(100);uniqueIndex" json:"sku"`
 	Category    string    `gorm:"type:varchar(255)" json:"category"`
 	ImageURL    string    `gorm:"type:varchar(500)" json:"image_url"`
-	UnitType    string    `gorm:"type:enum('quantity','weight');default:'quantity'" json:"unit_type"`
 	IsActive    bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
+	Variants []Product `gorm:"foreignKey:ProductLineID" json:"variants,omitempty"`
+}
+
+// Product represents a sellable variant (qty box or weight SKU) under a ProductLine.
+type Product struct {
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	ProductLineID uint `gorm:"index" json:"product_line_id"`
+	Name        string `gorm:"type:varchar(255);not null" json:"name"`
+	NameChinese string `gorm:"type:varchar(255)" json:"name_chinese"`
+	Barcode     string `gorm:"type:varchar(100);uniqueIndex" json:"barcode"`
+	SKU         string `gorm:"type:varchar(100);uniqueIndex" json:"sku"`
+	Category    string `gorm:"type:varchar(255)" json:"category"`
+	ImageURL    string `gorm:"type:varchar(500)" json:"image_url"`
+	// VariantLabel: e.g. "3 pcs box", "6 pcs box", "Loose weight".
+	VariantLabel string `gorm:"type:varchar(255)" json:"variant_label,omitempty"`
+	// UnitsPerPack: pieces per pack for quantity variants (e.g. 3, 6).
+	UnitsPerPack float64 `gorm:"type:decimal(10,3);default:0" json:"units_per_pack,omitempty"`
+	UnitType    string `gorm:"type:enum('quantity','weight');default:'quantity'" json:"unit_type"`
+	// SellByQty: product can be sold and stocked by unit count (uses Barcode).
+	SellByQty bool `gorm:"default:true" json:"sell_by_qty"`
+	// SellByWeight: product can be sold and stocked by weight (uses WeightBarcode).
+	SellByWeight bool `gorm:"default:false" json:"sell_by_weight"`
+	// WeightBarcode: barcode scanned at POS/stocktake for weight sales.
+	WeightBarcode string `gorm:"type:varchar(100);uniqueIndex" json:"weight_barcode,omitempty"`
+	// WeightBarcodePrefix: up to 8 digits; receipt barcodes = prefix + weight (4 digits, 0.01 kg) + check digit (0).
+	WeightBarcodePrefix string `gorm:"type:varchar(8)" json:"weight_barcode_prefix,omitempty"`
+	// PriceWeightG: retail price applies to this weight in grams (weight products only). 0 = default 1000 g (1 kg).
+	PriceWeightG float64 `gorm:"type:decimal(10,3);default:0" json:"price_weight_g,omitempty"`
+	// CanSellByWeight: product supports weight-based sales and dual inventory (prepacked + loose weight).
+	CanSellByWeight bool `gorm:"default:false" json:"can_sell_by_weight"`
+	// PrepackWeightG: grams per prepacked unit (for pack/unpack between prepacked and weight inventory).
+	PrepackWeightG float64 `gorm:"type:decimal(10,3);default:0" json:"prepack_weight_g,omitempty"`
+	// For wholesale orders: how many units (quantity) typically go into one box.
+	WholesaleUnitsPerBox float64   `gorm:"type:decimal(10,3);default:0" json:"wholesale_units_per_box,omitempty"`
+	IsActive             bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+
 	// Relationships
+	ProductLine *ProductLine            `gorm:"foreignKey:ProductLineID" json:"product_line,omitempty"`
 	CurrentCost *ProductCost            `gorm:"-" json:"current_cost,omitempty"`
 	Discounts   []ProductSectorDiscount `json:"discounts,omitempty"`
+	// Aggregated across all store locations (not persisted).
+	TotalStockQuantity *float64 `gorm:"-" json:"total_stock_quantity,omitempty"`
+	TotalStockWeightG  *float64 `gorm:"-" json:"total_stock_weight_g,omitempty"`
 }
 
 // ProductCost represents the cost configuration for a product
@@ -137,6 +178,11 @@ type Stock struct {
 	ProductID         uint      `gorm:"not null;index" json:"product_id"`
 	StoreID           uint      `gorm:"not null;index" json:"store_id"`
 	Quantity          float64   `gorm:"type:decimal(10,3);not null;default:0" json:"quantity"`
+	WeightQuantityG   float64   `gorm:"type:decimal(10,3);not null;default:0" json:"weight_quantity_g"`
+	TrackPrepacked    bool      `gorm:"not null;default:true" json:"track_prepacked"`
+	TrackWeight       bool      `gorm:"not null;default:false" json:"track_weight"`
+	// WholesaleShipFrom: wholesale orders for this product always ship from this store.
+	WholesaleShipFrom bool      `gorm:"not null;default:false" json:"wholesale_ship_from"`
 	LowStockThreshold float64   `gorm:"type:decimal(10,3);default:0" json:"low_stock_threshold"`
 	LastUpdated       time.Time `gorm:"type:datetime" json:"last_updated"`
 
@@ -263,13 +309,13 @@ type AuditLog struct {
 // StocktakeInventorySnapshot records inventory quantity per product per store after a stocktake.
 // One row per (store_id, product_id, snapshot_date, snapshot_type). Used for day-start/day-end stock report.
 type StocktakeInventorySnapshot struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	StoreID       uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"store_id"`
-	ProductID     uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"product_id"`
-	Quantity      float64   `gorm:"type:decimal(10,3);not null" json:"quantity"`
-	SnapshotDate  string    `gorm:"type:date;not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_date"` // yyyy-MM-dd
-	SnapshotType  string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_type"` // day_start, day_end
-	CreatedAt     time.Time `gorm:"type:datetime;not null" json:"created_at"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	StoreID      uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"store_id"`
+	ProductID    uint      `gorm:"not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"product_id"`
+	Quantity     float64   `gorm:"type:decimal(10,3);not null" json:"quantity"`
+	SnapshotDate string    `gorm:"type:date;not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_date"`        // yyyy-MM-dd
+	SnapshotType string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_stocktake_snapshot_store_product_date_type" json:"snapshot_type"` // day_start, day_end
+	CreatedAt    time.Time `gorm:"type:datetime;not null" json:"created_at"`
 
 	Store   Store   `gorm:"foreignKey:StoreID" json:"store,omitempty"`
 	Product Product `gorm:"foreignKey:ProductID" json:"product,omitempty"`
@@ -280,7 +326,7 @@ type StocktakeInventorySnapshot struct {
 type StocktakeDayStartRecord struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
 	UserID       uint       `gorm:"not null;uniqueIndex:idx_stocktake_day_start_user_date_store" json:"user_id"`
-	StoreID      *uint      `gorm:"uniqueIndex:idx_stocktake_day_start_user_date_store" json:"store_id,omitempty"` // store where user did first login / stocktake
+	StoreID      *uint      `gorm:"uniqueIndex:idx_stocktake_day_start_user_date_store" json:"store_id,omitempty"`      // store where user did first login / stocktake
 	Date         string     `gorm:"type:date;not null;uniqueIndex:idx_stocktake_day_start_user_date_store" json:"date"` // yyyy-MM-dd
 	FirstLoginAt time.Time  `gorm:"type:datetime;not null" json:"first_login_at"`
 	Status       string     `gorm:"type:varchar(20);not null;default:'pending'" json:"status"` // pending, done, skipped
@@ -290,7 +336,7 @@ type StocktakeDayStartRecord struct {
 	UpdatedAt    time.Time  `gorm:"type:datetime" json:"updated_at"`
 
 	// Relationships
-	User  User  `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User  User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Store *Store `gorm:"foreignKey:StoreID" json:"store,omitempty"`
 }
 
@@ -305,13 +351,13 @@ const (
 )
 
 type UserActivityEvent struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	UserID      uint      `gorm:"not null;index" json:"user_id"`
-	StoreID     *uint     `gorm:"index" json:"store_id,omitempty"`
-	EventType   string    `gorm:"type:varchar(50);not null;index" json:"event_type"` // first_login, logout, stocktake_day_start_done, stocktake_day_start_skipped
-	OccurredAt  time.Time `gorm:"type:datetime;not null" json:"occurred_at"`
-	SkipReason  string    `gorm:"type:text" json:"skip_reason,omitempty"` // for stocktake_day_start_skipped
-	CreatedAt   time.Time `gorm:"type:datetime" json:"created_at"`
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"not null;index" json:"user_id"`
+	StoreID    *uint     `gorm:"index" json:"store_id,omitempty"`
+	EventType  string    `gorm:"type:varchar(50);not null;index" json:"event_type"` // first_login, logout, stocktake_day_start_done, stocktake_day_start_skipped
+	OccurredAt time.Time `gorm:"type:datetime;not null" json:"occurred_at"`
+	SkipReason string    `gorm:"type:text" json:"skip_reason,omitempty"` // for stocktake_day_start_skipped
+	CreatedAt  time.Time `gorm:"type:datetime" json:"created_at"`
 
 	User  User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Store *Store `gorm:"foreignKey:StoreID" json:"store,omitempty"`
@@ -319,25 +365,25 @@ type UserActivityEvent struct {
 
 // WholesaleClient is a wholesale customer; required when creating a wholesale order.
 type WholesaleClient struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	Name         string    `gorm:"type:varchar(200);not null;index" json:"name"`
-	ContactName  string    `gorm:"type:varchar(200)" json:"contact_name,omitempty"`
-	Email        string    `gorm:"type:varchar(255)" json:"email,omitempty"`
-	Phone        string    `gorm:"type:varchar(100)" json:"phone,omitempty"`
-	Address      string    `gorm:"type:text" json:"address,omitempty"`
-	AddressLine1 string    `gorm:"type:varchar(255)" json:"address_line1,omitempty"`
-	AddressLine2 string    `gorm:"type:varchar(255)" json:"address_line2,omitempty"`
-	Postcode     string    `gorm:"type:varchar(50)" json:"postcode,omitempty"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	Name          string    `gorm:"type:varchar(200);not null;index" json:"name"`
+	ContactName   string    `gorm:"type:varchar(200)" json:"contact_name,omitempty"`
+	Email         string    `gorm:"type:varchar(255)" json:"email,omitempty"`
+	Phone         string    `gorm:"type:varchar(100)" json:"phone,omitempty"`
+	Address       string    `gorm:"type:text" json:"address,omitempty"`
+	AddressLine1  string    `gorm:"type:varchar(255)" json:"address_line1,omitempty"`
+	AddressLine2  string    `gorm:"type:varchar(255)" json:"address_line2,omitempty"`
+	Postcode      string    `gorm:"type:varchar(50)" json:"postcode,omitempty"`
 	VATNumber     string    `gorm:"type:varchar(50)" json:"vat_number,omitempty"`
 	CompanyNumber string    `gorm:"type:varchar(50)" json:"company_number,omitempty"`
 	Terms         string    `gorm:"type:varchar(500)" json:"terms,omitempty"` // Payment/order terms; shown in PDF headers
 	AccountCode   string    `gorm:"type:varchar(50)" json:"account_code,omitempty"`
-	SectorID     *uint     `gorm:"index" json:"sector_id,omitempty"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	SectorID      *uint     `gorm:"index" json:"sector_id,omitempty"`
+	IsActive      bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
-	Sector *Sector               `gorm:"foreignKey:SectorID" json:"sector,omitempty"`
+	Sector *Sector                `gorm:"foreignKey:SectorID" json:"sector,omitempty"`
 	Stores []WholesaleClientStore `gorm:"foreignKey:WholesaleClientID" json:"stores,omitempty"`
 }
 
@@ -369,43 +415,56 @@ const (
 	WholesaleOrderStatusAssignShipment = "assign_shipment" // after endorse; assign stores then complete → approved
 	WholesaleOrderStatusApproved       = "approved"
 	WholesaleOrderStatusRejected       = "rejected"
+	WholesaleOrderStatusDeleted        = "deleted" // soft-delete; excluded from default list unless filtered
 )
 
 type WholesaleOrder struct {
-	ID                uint       `gorm:"primaryKey" json:"id"`
-	OrderNumber       string     `gorm:"type:varchar(100);uniqueIndex;not null" json:"order_number"`
-	WholesaleClientID       uint       `gorm:"not null;index" json:"wholesale_client_id"`
-	WholesaleClientStoreID  *uint      `gorm:"index" json:"wholesale_client_store_id,omitempty"` // shipping/delivery address
-	StoreID                 uint       `gorm:"not null;index" json:"store_id"`
-	UserID            uint       `gorm:"not null;index" json:"user_id"` // creator
-	SectorID          *uint      `gorm:"index" json:"sector_id,omitempty"`
-	Status            string     `gorm:"type:varchar(20);not null;default:'pending_approval';index" json:"status"`
-	Subtotal          float64    `gorm:"type:decimal(10,2);not null;default:0" json:"subtotal"`
-	DiscountAmount    float64    `gorm:"type:decimal(10,2);not null;default:0" json:"discount_amount"`
-	TotalNet          float64    `gorm:"type:decimal(10,2);not null;default:0" json:"total_net"`
-	VATTotal          float64    `gorm:"type:decimal(10,2);not null;default:0" json:"vat_total"`
-	AmountDue         float64    `gorm:"type:decimal(10,2);not null;default:0" json:"amount_due"`
-	ShippingFee       float64    `gorm:"type:decimal(10,2);default:0" json:"shipping_fee,omitempty"` // order-level shipping fee (invoice total)
-	PONumber          string     `gorm:"type:varchar(100)" json:"po_number"`
-	OrderChannel      string     `gorm:"type:varchar(80)" json:"order_channel,omitempty"` // "po" = client PO; "whatsapp", "email" or free text
-	RefNo             string     `gorm:"type:varchar(100);uniqueIndex" json:"ref_no"`     // OC Number: D1, D2, D2.1...
-	PODate            *time.Time `gorm:"type:date" json:"po_date,omitempty"`
-	PaymentTerms      string     `gorm:"type:varchar(500)" json:"payment_terms,omitempty"` // shown on OC, invoice, delivery note; defaults from client
-	Notes             string     `gorm:"type:text" json:"notes"`
-	RejectionReason   string     `gorm:"type:text" json:"rejection_reason,omitempty"`
-	CreatedAt         time.Time  `gorm:"type:datetime;not null" json:"created_at"`
-	ReviewedAt        *time.Time `gorm:"type:datetime" json:"reviewed_at,omitempty"`
-	ReviewedBy        *uint      `gorm:"index" json:"reviewed_by,omitempty"`
+	ID                     uint       `gorm:"primaryKey" json:"id"`
+	OrderNumber            string     `gorm:"type:varchar(100);uniqueIndex;not null" json:"order_number"`
+	WholesaleClientID      uint       `gorm:"not null;index" json:"wholesale_client_id"`
+	WholesaleClientStoreID *uint      `gorm:"index" json:"wholesale_client_store_id,omitempty"` // shipping/delivery address
+	StoreID                uint       `gorm:"not null;index" json:"store_id"`
+	UserID                 uint       `gorm:"not null;index" json:"user_id"` // creator
+	SectorID               *uint      `gorm:"index" json:"sector_id,omitempty"`
+	Status                 string     `gorm:"type:varchar(20);not null;default:'pending_approval';index" json:"status"`
+	Subtotal               float64    `gorm:"type:decimal(10,2);not null;default:0" json:"subtotal"`
+	DiscountAmount         float64    `gorm:"type:decimal(10,2);not null;default:0" json:"discount_amount"`
+	TotalNet               float64    `gorm:"type:decimal(10,2);not null;default:0" json:"total_net"`
+	VATTotal               float64    `gorm:"type:decimal(10,2);not null;default:0" json:"vat_total"`
+	AmountDue              float64    `gorm:"type:decimal(10,2);not null;default:0" json:"amount_due"`
+	ShippingFee            float64    `gorm:"type:decimal(10,2);default:0" json:"shipping_fee,omitempty"` // order-level shipping fee (invoice total)
+	PONumber               string     `gorm:"type:varchar(100)" json:"po_number"`
+	OrderChannel           string     `gorm:"type:varchar(80)" json:"order_channel,omitempty"` // "po" = client PO; "whatsapp", "email" or free text
+	RefNo                  string     `gorm:"type:varchar(100);uniqueIndex" json:"ref_no"`     // OC Number: D1, D2, D2.1...
+	PODate                 *time.Time `gorm:"type:date" json:"po_date,omitempty"`
+	OrderDate              *time.Time `gorm:"type:date" json:"order_date,omitempty"`            // used on OC "Date:"
+	InvoiceDate            *time.Time `gorm:"type:date" json:"invoice_date,omitempty"`          // used on invoice "Date:"; editable, default to current date when empty
+	InvoiceSentAt          *time.Time `gorm:"type:date" json:"invoice_sent_at,omitempty"`       // optional: when invoice was sent to client (operational)
+	PaymentTerms           string     `gorm:"type:varchar(500)" json:"payment_terms,omitempty"` // shown on OC, invoice, delivery note; defaults from client
+	Notes                  string     `gorm:"type:text" json:"notes"`
+	RejectionReason        string     `gorm:"type:text" json:"rejection_reason,omitempty"`
+	CreatedAt              time.Time  `gorm:"type:datetime;not null" json:"created_at"`
+	ReviewedAt             *time.Time `gorm:"type:datetime" json:"reviewed_at,omitempty"`
+	ReviewedBy             *uint      `gorm:"index" json:"reviewed_by,omitempty"`
+	PaymentConfirmedAt     *time.Time `gorm:"type:datetime" json:"payment_confirmed_at,omitempty"` // when money received confirmed
+	PaymentProofURL        string     `gorm:"type:text" json:"payment_proof_url,omitempty"`        // uploaded image/PDF (or bank API later)
 
-	WholesaleClient      WholesaleClient       `gorm:"foreignKey:WholesaleClientID" json:"wholesale_client,omitempty"`
-	WholesaleClientStore *WholesaleClientStore `gorm:"foreignKey:WholesaleClientStoreID" json:"wholesale_client_store,omitempty"`
-	Store                Store                `gorm:"foreignKey:StoreID" json:"store,omitempty"`
-	User            User                    `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Sector          *Sector                 `gorm:"foreignKey:SectorID" json:"sector,omitempty"`
-	Reviewer        *User                   `gorm:"foreignKey:ReviewedBy" json:"reviewer,omitempty"`
-	Items           []WholesaleOrderItem     `json:"items,omitempty"`
-	Documents       []WholesaleOrderDocument `json:"documents,omitempty"`
-	Shipments       []Shipment               `json:"shipments,omitempty"`
+	WholesaleClient      WholesaleClient          `gorm:"foreignKey:WholesaleClientID" json:"wholesale_client,omitempty"`
+	WholesaleClientStore *WholesaleClientStore    `gorm:"foreignKey:WholesaleClientStoreID" json:"wholesale_client_store,omitempty"`
+	Store                Store                    `gorm:"foreignKey:StoreID" json:"store,omitempty"`
+	User                 User                     `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Sector               *Sector                  `gorm:"foreignKey:SectorID" json:"sector,omitempty"`
+	Reviewer             *User                    `gorm:"foreignKey:ReviewedBy" json:"reviewer,omitempty"`
+	Items                []WholesaleOrderItem     `json:"items,omitempty"`
+	Documents            []WholesaleOrderDocument `json:"documents,omitempty"`
+	Shipments            []Shipment               `json:"shipments,omitempty"`
+
+	// IsCompleted is computed server-side for list views; true when all shipments done and payment confirmed
+	IsCompleted bool `json:"is_completed,omitempty" gorm:"-"`
+
+	// Workflow fields are computed server-side for list/detail status alignment (not persisted).
+	WorkflowInvoiceEmailDone  bool     `json:"workflow_invoice_email_done,omitempty" gorm:"-"`
+	WorkflowPaymentProofTotal *float64 `json:"workflow_payment_proof_total,omitempty" gorm:"-"`
 }
 
 type WholesaleOrderItem struct {
@@ -413,22 +472,25 @@ type WholesaleOrderItem struct {
 	WholesaleOrderID   uint    `gorm:"not null;index" json:"wholesale_order_id"`
 	ProductID          uint    `gorm:"not null" json:"product_id"`
 	Quantity           float64 `gorm:"type:decimal(10,3);not null" json:"quantity"`
-	UnitPrice          float64 `gorm:"type:decimal(10,2);not null" json:"unit_price"`           // fixed from product cost
+	UnitPrice          float64 `gorm:"type:decimal(10,2);not null" json:"unit_price"` // fixed from product cost
+	LineDiscountType   string  `gorm:"type:varchar(32);not null;default:'order_entry'" json:"line_discount_type"`
+	LineDiscountUnit   float64 `gorm:"type:decimal(10,2);not null;default:0" json:"line_discount_unit"`
 	LineDiscountAmount float64 `gorm:"type:decimal(10,2);not null;default:0" json:"line_discount_amount"`
-	LineTotal          float64 `gorm:"type:decimal(10,2);not null" json:"line_total"`          // UnitPrice*Quantity - LineDiscountAmount
-	AssignedStoreID    *uint   `gorm:"index" json:"assigned_store_id,omitempty"` // nil = no store assigned (any store can pack)
+	LineTotal          float64 `gorm:"type:decimal(10,2);not null" json:"line_total"` // UnitPrice*Quantity - LineDiscountAmount
+	AssignedStoreID    *uint   `gorm:"index" json:"assigned_store_id,omitempty"`      // nil = no store assigned (any store can pack)
 
-	WholesaleOrder  WholesaleOrder `gorm:"foreignKey:WholesaleOrderID" json:"-"`
+	WholesaleOrder WholesaleOrder `gorm:"foreignKey:WholesaleOrderID" json:"-"`
 	Product        Product        `gorm:"foreignKey:ProductID" json:"product,omitempty"`
 	AssignedStore  *Store         `gorm:"foreignKey:AssignedStoreID" json:"assigned_store,omitempty"`
 }
 
-// WholesaleOrderDocument stores generated PDFs (order confirmation, delivery notes, invoices) for a wholesale order.
+// WholesaleOrderDocument stores generated PDFs (order confirmation, delivery notes, invoices) and user-uploaded PO attachments.
 type WholesaleOrderDocument struct {
 	ID               uint      `gorm:"primaryKey" json:"id"`
 	WholesaleOrderID uint      `gorm:"not null;index" json:"wholesale_order_id"`
-	Type             string    `gorm:"type:varchar(50);not null;index" json:"type"` // order_confirmation, delivery_note, invoice
+	Type             string    `gorm:"type:varchar(50);not null;index" json:"type"` // order_confirmation, delivery_note, invoice, po_attachment
 	FileURL          string    `gorm:"type:text;not null" json:"file_url"`
+	OriginalFilename string    `gorm:"type:varchar(255)" json:"original_filename,omitempty"` // display name for po_attachment (user's file name)
 	CreatedAt        time.Time `gorm:"type:datetime;not null" json:"created_at"`
 
 	WholesaleOrder WholesaleOrder `gorm:"foreignKey:WholesaleOrderID" json:"-"`
@@ -436,21 +498,39 @@ type WholesaleOrderDocument struct {
 
 // Shipment groups assigned order lines for one store; created when assigning lines to a store.
 const (
-	ShipmentStatusPacking  = "packing"
+	ShipmentStatusAssigned  = "assigned"
+	ShipmentStatusPacked    = "packed"
+	ShipmentStatusShipped   = "shipped"
 	ShipmentStatusCompleted = "completed"
+	// ShipmentStatusPacking is legacy; treat as assigned when reading.
+	ShipmentStatusPacking = "packing"
 )
 
+func ShipmentStatusIsCompleted(status string) bool {
+	return status == ShipmentStatusCompleted
+}
+
+func ShipmentStatusAllowsPacking(status string) bool {
+	return status == ShipmentStatusAssigned || status == ShipmentStatusPacking
+}
+
+func ShipmentStatusAllowsDeliveryProofUpload(status string) bool {
+	return status == ShipmentStatusPacked || status == ShipmentStatusShipped
+}
+
 type Shipment struct {
-	ID                   uint      `gorm:"primaryKey" json:"id"`
-	WholesaleOrderID     uint      `gorm:"not null;index" json:"wholesale_order_id"`
-	StoreID              uint      `gorm:"not null;index" json:"store_id"`
-	Courier              string    `gorm:"type:varchar(100)" json:"courier,omitempty"`
-	TrackingNumber       string    `gorm:"type:varchar(200)" json:"tracking_number,omitempty"`
-	ShipmentFee          float64   `gorm:"type:decimal(10,2);default:0" json:"shipment_fee,omitempty"`
-	DeliveryNotePDFURL   string    `gorm:"type:text" json:"delivery_note_pdf_url,omitempty"`
-	Status               string    `gorm:"type:varchar(20);not null;default:'packing';index" json:"status"`
-	CreatedAt            time.Time `gorm:"type:datetime;not null" json:"created_at"`
-	UpdatedAt            time.Time `gorm:"type:datetime;not null" json:"updated_at"`
+	ID                       uint       `gorm:"primaryKey" json:"id"`
+	WholesaleOrderID         uint       `gorm:"not null;index" json:"wholesale_order_id"`
+	StoreID                  uint       `gorm:"not null;index" json:"store_id"`
+	Courier                  string     `gorm:"type:varchar(100)" json:"courier,omitempty"`
+	TrackingNumber           string     `gorm:"type:varchar(200)" json:"tracking_number,omitempty"`
+	ShipmentFee              float64    `gorm:"type:decimal(10,2);default:0" json:"shipment_fee,omitempty"`
+	DeliveryNotePDFURL       string     `gorm:"type:text" json:"delivery_note_pdf_url,omitempty"`
+	SignedDeliveryNotePDFURL string     `gorm:"type:text" json:"signed_delivery_note_pdf_url,omitempty"` // uploaded when completing without courier tracking
+	DeliveryDate             *time.Time `gorm:"type:date" json:"delivery_date,omitempty"`                // set when completing shipment (used on delivery note PDF)
+	Status                   string     `gorm:"type:varchar(20);not null;default:'assigned';index" json:"status"`
+	CreatedAt                time.Time  `gorm:"type:datetime;not null" json:"created_at"`
+	UpdatedAt                time.Time  `gorm:"type:datetime;not null" json:"updated_at"`
 
 	WholesaleOrder WholesaleOrder `gorm:"foreignKey:WholesaleOrderID" json:"wholesale_order,omitempty"`
 	Store          Store          `gorm:"foreignKey:StoreID" json:"store,omitempty"`
@@ -460,8 +540,9 @@ type Shipment struct {
 // ShipmentItem links a shipment to one wholesale order item (for packing and delivery note).
 type ShipmentItem struct {
 	ID                   uint      `gorm:"primaryKey" json:"id"`
-	ShipmentID           uint      `gorm:"not null;index" json:"shipment_id"`
+	ShipmentID           uint      `gorm:"not null;uniqueIndex:idx_shipment_wo_item" json:"shipment_id"`
 	WholesaleOrderItemID uint      `gorm:"not null;uniqueIndex:idx_shipment_wo_item" json:"wholesale_order_item_id"`
+	Quantity             float64   `gorm:"type:decimal(10,3);default:0" json:"quantity,omitempty"`   // units in this shipment; 0 = legacy full line qty
 	CaseQty              float64   `gorm:"type:decimal(10,2);default:0" json:"case_qty,omitempty"` // number of cases/boxes (0 = show '-' on delivery note)
 	CreatedAt            time.Time `gorm:"type:datetime;not null" json:"created_at"`
 
@@ -471,19 +552,25 @@ type ShipmentItem struct {
 
 // CompanySettings stores configurable company address, contact and bank details for PDFs (singleton, ID=1).
 type CompanySettings struct {
-	ID                uint      `gorm:"primaryKey" json:"id"`
-	CompanyName       string    `gorm:"type:varchar(255)" json:"company_name"`
-	AddressLine1      string    `gorm:"type:varchar(255)" json:"address_line1"`
-	AddressLine2      string    `gorm:"type:varchar(255)" json:"address_line2"`
-	City              string    `gorm:"type:varchar(100)" json:"city"`
-	Postcode          string    `gorm:"type:varchar(20)" json:"postcode"`
-	Telephone         string    `gorm:"type:varchar(50)" json:"telephone"`
-	Email             string    `gorm:"type:varchar(255)" json:"email"`
-	BankAccountName   string    `gorm:"type:varchar(255)" json:"bank_account_name"`
-	BankAccountNumber string    `gorm:"type:varchar(50)" json:"bank_account_number"`
-	BankSortCode      string    `gorm:"type:varchar(20)" json:"bank_sort_code"`
-	BankAddress       string    `gorm:"type:varchar(255)" json:"bank_address"`
-	BankIBAN          string    `gorm:"type:varchar(50)" json:"bank_iban"`
-	PaymentInfo       string    `gorm:"type:text" json:"payment_info"` // Free-form payment details (max 5 lines), shown on invoice
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                    uint      `gorm:"primaryKey" json:"id"`
+	CompanyName           string    `gorm:"type:varchar(255)" json:"company_name"`
+	AddressLine1          string    `gorm:"type:varchar(255)" json:"address_line1"`
+	AddressLine2          string    `gorm:"type:varchar(255)" json:"address_line2"`
+	City                  string    `gorm:"type:varchar(100)" json:"city"`
+	Postcode              string    `gorm:"type:varchar(20)" json:"postcode"`
+	Telephone             string    `gorm:"type:varchar(50)" json:"telephone"`
+	Email                 string    `gorm:"type:varchar(255)" json:"email"`
+	BankAccountName       string    `gorm:"type:varchar(255)" json:"bank_account_name"`
+	BankAccountNumber     string    `gorm:"type:varchar(50)" json:"bank_account_number"`
+	BankSortCode          string    `gorm:"type:varchar(20)" json:"bank_sort_code"`
+	BankAddress           string    `gorm:"type:varchar(255)" json:"bank_address"`
+	BankIBAN              string    `gorm:"type:varchar(50)" json:"bank_iban"`
+	PaymentInfo           string    `gorm:"type:text" json:"payment_info"`             // Free-form payment details (max 5 lines), shown on invoice
+	PaymentTransferToInfo string    `gorm:"type:text" json:"payment_transfer_to_info"` // Transfer destination options (first line skipped), used for payment confirmation
+	ShipmentCouriers      string    `gorm:"type:text" json:"shipment_couriers"`        // One courier per line; start-shipment autocomplete in management UI
+	// Placeholders: {ref}, {status}, {order_number}, {client_name}. Empty = built-in default.
+	WholesaleOrderEmailSubjectTemplate string `gorm:"type:varchar(500)" json:"wholesale_order_email_subject_template"`
+	// Default Cc when sending wholesale order emails from management UI. Empty = company email.
+	WholesaleOrderEmailDefaultCC string `gorm:"type:text" json:"wholesale_order_email_default_cc"` // One email per line; empty = no default Cc on wholesale order emails
+	UpdatedAt                    time.Time `json:"updated_at"`
 }

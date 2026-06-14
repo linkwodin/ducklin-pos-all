@@ -108,7 +108,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ...orderProvider.cartItems.map((item) {
                     final product = item['product'] as Map<String, dynamic>;
                     final quantity = (item['quantity'] as num).toDouble();
-                    final unitType = product['unit_type'] ?? 'quantity';
+                    final unitType = item['unit_type'] ?? product['unit_type'] ?? 'quantity';
                     final imageUrl = (product['image_url'] ?? '').toString().trim();
                     return ListTile(
                       leading: imageUrl.isNotEmpty
@@ -456,7 +456,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                       ...items.map((item) {
                         final product = item['product'] as Map<String, dynamic>?;
                         final quantity = (item['quantity'] as num).toDouble();
-                        final unitType = product?['unit_type'] ?? 'quantity';
+                        final unitType = item['unit_type'] ?? product?['unit_type'] ?? 'quantity';
                         final productName = _getProductName(product ?? {}, context);
                         return ListTile(
                           title: Text(productName),

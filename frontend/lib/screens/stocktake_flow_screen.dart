@@ -10,6 +10,8 @@ import '../services/api_service.dart';
 import '../services/database_service.dart';
 import '../services/offline_sync_service.dart';
 import '../services/stocktake_prompt_service.dart';
+import '../utils/product_inventory.dart';
+import '../utils/product_barcode.dart';
 import 'weight_input_dialog.dart';
 
 /// Full-screen stocktake flow (day start or day end). Opened from inventory FAB or from notification/day-start prompt.
@@ -24,7 +26,8 @@ class StocktakeFlowScreen extends StatefulWidget {
 
 class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
   int? _selectedStoreId;
-  final List<Map<String, dynamic>> _stocktakeCounted = [];
+  /// productId -> counted values and scan flags
+  final Map<int, Map<String, dynamic>> _stocktakeByProduct = {};
   final TextEditingController _barcodeController = TextEditingController();
   final FocusNode _barcodeFocus = FocusNode();
   bool _submitting = false;
@@ -48,14 +51,37 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
   Future<void> _loadStoreId() async {
     final deviceInfo = await DatabaseService.instance.getDeviceInfo();
     final storeId = deviceInfo?['store_id'] as int? ?? 1;
-    if (mounted) setState(() => _selectedStoreId = storeId);
+    if (mounted) {
+      setState(() => _selectedStoreId = storeId);
+      if (mounted) {
+        await Provider.of<StockProvider>(context, listen: false).syncStock(storeId);
+      }
+    }
+  }
+
+  Map<String, dynamic>? _stockRow(int productId) {
+    if (_selectedStoreId == null) return null;
+    return Provider.of<StockProvider>(context, listen: false)
+        .getStockRow(productId, _selectedStoreId!);
+  }
+
+  Map<String, dynamic> _ensureEntry(Map<String, dynamic> product, String productName) {
+    final productId = product['id'] as int;
+    return _stocktakeByProduct.putIfAbsent(productId, () => {
+          'product': product,
+          'productName': productName,
+          'countedPrepacked': 0.0,
+          'countedWeightG': 0.0,
+          'scannedPrepacked': false,
+          'scannedWeightG': false,
+        });
   }
 
   Future<void> _onBarcodeSubmitted(String barcode) async {
     final code = barcode.trim();
     if (code.isEmpty || _selectedStoreId == null) return;
 
-    final product = await DatabaseService.instance.getProductByBarcode(code);
+    final product = await DatabaseService.instance.resolveProductScan(code);
     if (product == null || !mounted) {
       if (mounted) {
         context.showNotification('Product not found for barcode: $code', isError: true);
@@ -66,94 +92,211 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
 
     final productId = product['id'] as int;
     final productName = _getProductName(product, context);
-    final unitType = (product['unit_type'] ?? 'quantity').toString().toLowerCase();
-    final isWeight = unitType == 'weight';
+    final stock = _stockRow(productId);
+    final scanWeight = scanIsWeightMode(product);
+    final trackPrepacked = stockTracksPrepacked(stock, product) && scanIsQtyMode(product);
+    final trackWeight = stockTracksWeight(stock, product) && scanWeight;
 
-    if (isWeight) {
+    if (!trackPrepacked && !trackWeight) {
+      context.showNotification('This barcode is not tracked for stocktake at this store.', isError: true);
+      _barcodeController.clear();
+      return;
+    }
+
+    final entry = _ensureEntry(product, productName);
+
+    if (scanWeight) {
+      final initialWeight = parsedWeightGramsFromScan(product);
       final weight = await showDialog<double>(
         context: context,
-        builder: (ctx) => const WeightInputDialog(),
+        builder: (ctx) => WeightInputDialog(
+          product: product,
+          initialWeightG: initialWeight,
+        ),
       );
       if (weight == null || weight <= 0 || !mounted) {
         _barcodeController.clear();
         return;
       }
-      final idx = _stocktakeCounted.indexWhere((e) => (e['product'] as Map)['id'] == productId);
-      if (idx >= 0) {
-        final cur = (_stocktakeCounted[idx]['countedQty'] as num).toDouble();
-        _stocktakeCounted[idx]['countedQty'] = cur + weight;
-      } else {
-        _stocktakeCounted.add({'product': product, 'productName': productName, 'countedQty': weight});
-      }
+      entry['countedWeightG'] = (entry['countedWeightG'] as num).toDouble() + weight;
+      entry['scannedWeightG'] = true;
     } else {
-      final idx = _stocktakeCounted.indexWhere((e) => (e['product'] as Map)['id'] == productId);
-      if (idx >= 0) {
-        final cur = (_stocktakeCounted[idx]['countedQty'] as num).toDouble();
-        _stocktakeCounted[idx]['countedQty'] = cur + 1;
-      } else {
-        _stocktakeCounted.add({'product': product, 'productName': productName, 'countedQty': 1.0});
-      }
+      entry['countedPrepacked'] = (entry['countedPrepacked'] as num).toDouble() + 1;
+      entry['scannedPrepacked'] = true;
     }
+
     _barcodeController.clear();
     if (mounted) setState(() {});
     if (mounted) _barcodeFocus.requestFocus();
   }
 
   void _removeItem(int productId) {
-    setState(() {
-      _stocktakeCounted.removeWhere((e) => (e['product'] as Map)['id'] == productId);
-    });
+    setState(() => _stocktakeByProduct.remove(productId));
   }
 
-  Future<void> _completeStocktake() async {
-    if (_stocktakeCounted.isEmpty || _selectedStoreId == null) return;
-    final stockProvider = Provider.of<StockProvider>(context, listen: false);
-    final l10n = AppLocalizations.of(context)!;
-    final baseReason = widget.type == 'day_start' ? 'stocktake_day_start' : 'stocktake_day_end';
-
+  List<Map<String, dynamic>> _buildDiscrepancies(StockProvider stockProvider) {
     final discrepancies = <Map<String, dynamic>>[];
-    final scannedProductIds = <int>{};
-    for (final entry in _stocktakeCounted) {
+    final storeId = _selectedStoreId!;
+
+    for (final entry in _stocktakeByProduct.values) {
       final product = entry['product'] as Map<String, dynamic>;
       final productId = product['id'] as int;
-      scannedProductIds.add(productId);
-      final countedQty = (entry['countedQty'] as num).toDouble();
-      final stockKey = '${productId}_$_selectedStoreId';
-      final systemQty = stockProvider.stock.containsKey(stockKey)
-          ? (stockProvider.stock[stockKey]!['quantity'] as num).toDouble()
-          : 0.0;
-      if ((countedQty - systemQty).abs() > 0.0001) {
-        discrepancies.add({
-          'productName': entry['productName'] as String,
-          'systemQty': systemQty,
-          'countedQty': countedQty,
-          'product': product,
-        });
+      final stock = stockProvider.getStockRow(productId, storeId);
+      final trackPrepacked = stockTracksPrepacked(stock, product);
+      final trackWeight = stockTracksWeight(stock, product);
+      final sysPre = systemPrepackedQuantity(stock, product);
+      final sysWt = systemWeightQuantityG(stock, product);
+      final cntPre = (entry['countedPrepacked'] as num).toDouble();
+      final cntWt = (entry['countedWeightG'] as num).toDouble();
+      final preDiff = trackPrepacked && (cntPre - sysPre).abs() > 0.0001;
+      final wtDiff = trackWeight && (cntWt - sysWt).abs() > 0.0001;
+      if (preDiff || wtDiff) {
+        discrepancies.add(_discrepancyEntry(
+          product: product,
+          productName: entry['productName'] as String,
+          trackPrepacked: trackPrepacked,
+          trackWeight: trackWeight,
+          systemPrepacked: sysPre,
+          countedPrepacked: cntPre,
+          systemWeightG: sysWt,
+          countedWeightG: cntWt,
+        ));
       }
     }
 
     final productProvider = Provider.of<ProductProvider>(context, listen: false);
-    for (final entry in stockProvider.stock.entries) {
-      final key = entry.key;
+    for (final row in stockProvider.stock.entries) {
+      final key = row.key;
       final parts = key.split('_');
+      if (parts.length < 2) continue;
+      final storeIdFromKey = int.tryParse(parts.sublist(1).join('_'));
+      if (storeIdFromKey != storeId) continue;
+      final productId = int.tryParse(parts[0]);
+      if (productId == null || _stocktakeByProduct.containsKey(productId)) continue;
+
+      final stock = row.value;
+      final productList = productProvider.products.where((p) => p['id'] == productId).toList();
+      final product = productList.isNotEmpty
+          ? productList.first as Map<String, dynamic>
+          : {'id': productId, 'unit_type': 'quantity'};
+      final trackPrepacked = stockTracksPrepacked(stock, product);
+      final trackWeight = stockTracksWeight(stock, product);
+      final sysPre = systemPrepackedQuantity(stock, product);
+      final sysWt = systemWeightQuantityG(stock, product);
+      if ((trackPrepacked && sysPre.abs() > 0.0001) || (trackWeight && sysWt.abs() > 0.0001)) {
+        final productName = productList.isNotEmpty
+            ? _getProductName(product, context)
+            : 'Product $productId';
+        discrepancies.add(_discrepancyEntry(
+          product: product,
+          productName: productName,
+          trackPrepacked: trackPrepacked,
+          trackWeight: trackWeight,
+          systemPrepacked: sysPre,
+          countedPrepacked: 0,
+          systemWeightG: sysWt,
+          countedWeightG: 0,
+        ));
+      }
+    }
+
+    return discrepancies;
+  }
+
+  Map<String, dynamic> _discrepancyEntry({
+    required Map<String, dynamic> product,
+    required String productName,
+    required bool trackPrepacked,
+    required bool trackWeight,
+    required double systemPrepacked,
+    required double countedPrepacked,
+    required double systemWeightG,
+    required double countedWeightG,
+  }) {
+    return {
+      'productName': productName,
+      'product': product,
+      'trackPrepacked': trackPrepacked,
+      'trackWeight': trackWeight,
+      'systemPrepacked': systemPrepacked,
+      'countedPrepacked': countedPrepacked,
+      'systemWeightG': systemWeightG,
+      'countedWeightG': countedWeightG,
+    };
+  }
+
+  /// Final quantity/weight per product to send to the API.
+  List<Map<String, dynamic>> _buildStockUpdates(StockProvider stockProvider) {
+    final updates = <Map<String, dynamic>>[];
+    final seen = <int>{};
+
+    void addUpdate(int productId, Map<String, dynamic> product, double quantity, double weightG) {
+      if (seen.contains(productId)) return;
+      seen.add(productId);
+      updates.add({
+        'product_id': productId,
+        'product': product,
+        'quantity': quantity,
+        'weight_quantity_g': weightG,
+      });
+    }
+
+    for (final entry in _stocktakeByProduct.values) {
+      final product = entry['product'] as Map<String, dynamic>;
+      final productId = product['id'] as int;
+      final stock = stockProvider.getStockRow(productId, _selectedStoreId!);
+      final trackPrepacked = stockTracksPrepacked(stock, product);
+      final trackWeight = stockTracksWeight(stock, product);
+      final sysPre = systemPrepackedQuantity(stock, product);
+      final sysWt = systemWeightQuantityG(stock, product);
+      final cntPre = (entry['countedPrepacked'] as num).toDouble();
+      final cntWt = (entry['countedWeightG'] as num).toDouble();
+      addUpdate(
+        productId,
+        product,
+        trackPrepacked ? cntPre : sysPre,
+        trackWeight ? cntWt : sysWt,
+      );
+    }
+
+    for (final row in stockProvider.stock.entries) {
+      final parts = row.key.split('_');
       if (parts.length < 2) continue;
       final storeIdFromKey = int.tryParse(parts.sublist(1).join('_'));
       if (storeIdFromKey != _selectedStoreId) continue;
       final productId = int.tryParse(parts[0]);
-      if (productId == null || scannedProductIds.contains(productId)) continue;
-      final systemQty = (entry.value['quantity'] as num).toDouble();
-      if (systemQty.abs() < 0.0001) continue;
+      if (productId == null || seen.contains(productId)) continue;
+
+      final stock = row.value;
+      final productProvider = Provider.of<ProductProvider>(context, listen: false);
       final productList = productProvider.products.where((p) => p['id'] == productId).toList();
-      final product = productList.isNotEmpty ? productList.first as Map<String, dynamic> : null;
-      final productName = product != null ? _getProductName(product, context) : 'Product $productId';
-      final productMap = product ?? {'id': productId, 'unit_type': 'quantity'};
-      discrepancies.add({
-        'productName': productName,
-        'systemQty': systemQty,
-        'countedQty': 0.0,
-        'product': productMap,
-      });
+      final product = productList.isNotEmpty
+          ? productList.first as Map<String, dynamic>
+          : {'id': productId, 'unit_type': 'quantity'};
+      final trackPrepacked = stockTracksPrepacked(stock, product);
+      final trackWeight = stockTracksWeight(stock, product);
+      final sysPre = systemPrepackedQuantity(stock, product);
+      final sysWt = systemWeightQuantityG(stock, product);
+      if ((trackPrepacked && sysPre.abs() > 0.0001) || (trackWeight && sysWt.abs() > 0.0001)) {
+        addUpdate(
+          productId,
+          product,
+          trackPrepacked ? 0.0 : sysPre,
+          trackWeight ? 0.0 : sysWt,
+        );
+      }
     }
+
+    return updates;
+  }
+
+  Future<void> _completeStocktake() async {
+    if (_stocktakeByProduct.isEmpty || _selectedStoreId == null) return;
+    final stockProvider = Provider.of<StockProvider>(context, listen: false);
+    final l10n = AppLocalizations.of(context)!;
+    final baseReason = widget.type == 'day_start' ? 'stocktake_day_start' : 'stocktake_day_end';
+
+    final discrepancies = _buildDiscrepancies(stockProvider);
 
     String? adjustmentReason;
     Map<int, String> adjustmentRemarks = {};
@@ -173,27 +316,22 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
 
     setState(() => _submitting = true);
     final baseReasonStr = adjustmentReason ?? baseReason;
+    final updates = _buildStockUpdates(stockProvider);
+
     try {
       final isOnline = await ApiService.instance.healthCheck();
       if (!isOnline) {
         final items = <Map<String, dynamic>>[];
-        for (final e in _stocktakeCounted) {
-          final product = e['product'] as Map<String, dynamic>;
-          final productId = product['id'] as int;
+        for (final u in updates) {
+          final productId = u['product_id'] as int;
           final remark = adjustmentRemarks[productId]?.trim();
           final reason = remark != null && remark.isNotEmpty ? '$baseReasonStr | $remark' : baseReasonStr;
           items.add({
             'product_id': productId,
-            'quantity': (e['countedQty'] as num).toDouble(),
+            'quantity': u['quantity'] as double,
+            'weight_quantity_g': u['weight_quantity_g'] as double,
             'reason': reason,
           });
-        }
-        for (final d in discrepancies) {
-          if ((d['countedQty'] as num).toDouble() != 0) continue;
-          final productId = (d['product'] as Map)['id'] as int;
-          final remark = adjustmentRemarks[productId]?.trim();
-          final reason = remark != null && remark.isNotEmpty ? '$baseReasonStr | $remark' : baseReasonStr;
-          items.add({'product_id': productId, 'quantity': 0.0, 'reason': reason});
         }
         await DatabaseService.instance.savePendingStocktake(
           storeId: _selectedStoreId!,
@@ -201,16 +339,13 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
           reason: baseReasonStr,
           items: items,
         );
-        for (final entry in _stocktakeCounted) {
-          final product = entry['product'] as Map<String, dynamic>;
-          final productId = product['id'] as int;
-          final qty = (entry['countedQty'] as num).toDouble();
-          await stockProvider.updateLocalStock(productId, _selectedStoreId!, qty);
-        }
-        for (final d in discrepancies) {
-          if ((d['countedQty'] as num).toDouble() != 0) continue;
-          final productId = (d['product'] as Map)['id'] as int;
-          await stockProvider.updateLocalStock(productId, _selectedStoreId!, 0);
+        for (final u in updates) {
+          await stockProvider.updateLocalStock(
+            u['product_id'] as int,
+            _selectedStoreId!,
+            quantity: u['quantity'] as double,
+            weightQuantityG: u['weight_quantity_g'] as double,
+          );
         }
         OfflineSyncService.start(() {});
         if (mounted) {
@@ -223,7 +358,7 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
             await StocktakePromptService.recordDayEndDone();
           }
           setState(() {
-            _stocktakeCounted.clear();
+            _stocktakeByProduct.clear();
             _submitting = false;
           });
           context.showNotification(l10n.stocktakeSavedOffline, isSuccess: true);
@@ -231,33 +366,20 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
         if (mounted) Navigator.of(context).pop();
         return;
       }
-      for (final entry in _stocktakeCounted) {
-        final product = entry['product'] as Map<String, dynamic>;
-        final productId = product['id'] as int;
-        final qty = (entry['countedQty'] as num).toDouble();
+
+      for (final u in updates) {
+        final productId = u['product_id'] as int;
         final remark = adjustmentRemarks[productId]?.trim();
         final reason = remark != null && remark.isNotEmpty ? '$baseReasonStr | $remark' : baseReasonStr;
         await ApiService.instance.updateStock(
           productId,
           _selectedStoreId!,
-          quantity: qty,
-          reason: reason,
-        );
-      }
-      for (final d in discrepancies) {
-        if ((d['countedQty'] as num).toDouble() != 0) continue;
-        final productId = (d['product'] as Map)['id'] as int;
-        final remark = adjustmentRemarks[productId]?.trim();
-        final reason = remark != null && remark.isNotEmpty ? '$baseReasonStr | $remark' : baseReasonStr;
-        await ApiService.instance.updateStock(
-          productId,
-          _selectedStoreId!,
-          quantity: 0,
+          quantity: u['quantity'] as double,
+          weightQuantityG: u['weight_quantity_g'] as double,
           reason: reason,
         );
       }
       await stockProvider.syncStock(_selectedStoreId!);
-      final count = _stocktakeCounted.length + discrepancies.where((d) => (d['countedQty'] as num).toDouble() == 0).length;
       if (mounted) {
         if (widget.type == 'day_start') {
           try {
@@ -268,10 +390,13 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
           await StocktakePromptService.recordDayEndDone();
         }
         setState(() {
-          _stocktakeCounted.clear();
+          _stocktakeByProduct.clear();
           _submitting = false;
         });
-        context.showNotification('Stocktake completed. $count items updated.', isSuccess: true);
+        context.showNotification(
+          'Stocktake completed. ${updates.length} items updated.',
+          isSuccess: true,
+        );
       }
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -292,10 +417,29 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
     return product['name']?.toString() ?? '';
   }
 
+  String _formatQtyLine(
+    Map<String, dynamic> product,
+    Map<String, dynamic>? stock,
+    Map<String, dynamic> entry,
+    AppLocalizations l10n,
+  ) {
+    final parts = <String>[];
+    if (stockTracksPrepacked(stock, product)) {
+      final q = (entry['countedPrepacked'] as num).toDouble();
+      parts.add('Pre: ${q == q.roundToDouble() ? q.toInt() : q.toStringAsFixed(2)}');
+    }
+    if (stockTracksWeight(stock, product)) {
+      final w = (entry['countedWeightG'] as num).toDouble();
+      parts.add('Wt: ${l10n.weightDisplay(w.toStringAsFixed(2))}');
+    }
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isDayStart = widget.type == 'day_start';
+    final counted = _stocktakeByProduct.values.toList();
 
     return PopScope(
       canPop: !isDayStart,
@@ -312,85 +456,90 @@ class _StocktakeFlowScreenState extends State<StocktakeFlowScreen> {
           title: Text(isDayStart ? 'Stocktake – Day start' : 'Stocktake – Day end'),
         ),
         body: _selectedStoreId == null
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      if (_stocktakeCounted.isNotEmpty)
-                        Text(
-                          '${_stocktakeCounted.length} counted',
-                          style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                        ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    controller: _barcodeController,
-                    focusNode: _barcodeFocus,
-                    decoration: const InputDecoration(
-                      hintText: 'Scan barcode...',
-                      prefixIcon: Icon(Icons.qr_code_scanner),
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: _onBarcodeSubmitted,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: _stocktakeCounted.isEmpty
-                      ? Center(
-                          child: Text(
-                            'Scan each stock item. By-weight products: enter weight (g) after scan.',
-                            style: TextStyle(color: Colors.grey[600]),
-                            textAlign: TextAlign.center,
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        if (counted.isNotEmpty)
+                          Text(
+                            '${counted.length} products counted',
+                            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                           ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          itemCount: _stocktakeCounted.length,
-                          itemBuilder: (ctx, i) {
-                            final e = _stocktakeCounted[i];
-                            final name = e['productName'] as String;
-                            final qty = (e['countedQty'] as num).toDouble();
-                            final product = e['product'] as Map<String, dynamic>;
-                            final productId = product['id'] as int;
-                            final isWeight = ((product['unit_type'] ?? 'quantity').toString().toLowerCase() == 'weight');
-                            final qtyText = isWeight ? l10n.weightDisplay(qty.toStringAsFixed(2)) : qty.toStringAsFixed(qty == qty.roundToDouble() ? 0 : 2);
-                            return ListTile(
-                              title: Text(name),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(qtyText, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => _removeItem(productId),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      icon: _submitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.check_circle),
-                      label: Text(_submitting ? 'Submitting...' : 'Complete stocktake'),
-                      onPressed: _submitting || _stocktakeCounted.isEmpty ? null : _completeStocktake,
-                      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: TextField(
+                      controller: _barcodeController,
+                      focusNode: _barcodeFocus,
+                      decoration: const InputDecoration(
+                        hintText: 'Scan barcode...',
+                        prefixIcon: Icon(Icons.qr_code_scanner),
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: _onBarcodeSubmitted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: counted.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Scan each stock item. Use the qty or weight barcode for dual-inventory products.',
+                              style: TextStyle(color: Colors.grey[600]),
+                              textAlign: TextAlign.center,
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            itemCount: counted.length,
+                            itemBuilder: (ctx, i) {
+                              final entry = counted[i];
+                              final name = entry['productName'] as String;
+                              final product = entry['product'] as Map<String, dynamic>;
+                              final productId = product['id'] as int;
+                              final stock = _stockRow(productId);
+                              final qtyText = _formatQtyLine(product, stock, entry, l10n);
+                              return ListTile(
+                                title: Text(name),
+                                subtitle: qtyText.isNotEmpty ? Text(qtyText) : null,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.close),
+                                      onPressed: () => _removeItem(productId),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        icon: _submitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.check_circle),
+                        label: Text(_submitting ? 'Submitting...' : 'Complete stocktake'),
+                        onPressed: _submitting || counted.isEmpty ? null : _completeStocktake,
+                        style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -445,6 +594,23 @@ class _StocktakeDiscrepancyDialogState extends State<StocktakeDiscrepancyDialog>
     Navigator.pop(context, {'reason': reason, 'remarks': remarks});
   }
 
+  String _formatDiscrepancyLine(Map<String, dynamic> d) {
+    final parts = <String>[];
+    if (d['trackPrepacked'] == true) {
+      final sys = (d['systemPrepacked'] as num).toDouble();
+      final cnt = (d['countedPrepacked'] as num).toDouble();
+      final sysStr = sys == sys.roundToDouble() ? sys.toInt().toString() : sys.toStringAsFixed(2);
+      final cntStr = cnt == cnt.roundToDouble() ? cnt.toInt().toString() : cnt.toStringAsFixed(2);
+      parts.add('Pre $sysStr → $cntStr');
+    }
+    if (d['trackWeight'] == true) {
+      final sys = (d['systemWeightG'] as num).toDouble();
+      final cnt = (d['countedWeightG'] as num).toDouble();
+      parts.add('Wt ${sys.toStringAsFixed(2)}g → ${cnt.toStringAsFixed(2)}g');
+    }
+    return parts.join('; ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = widget.l10n;
@@ -464,20 +630,13 @@ class _StocktakeDiscrepancyDialogState extends State<StocktakeDiscrepancyDialog>
             const SizedBox(height: 16),
             ...List.generate(discrepancies.length, (i) {
               final d = discrepancies[i];
-              final sys = (d['systemQty'] as num).toDouble();
-              final cnt = (d['countedQty'] as num).toDouble();
-              final product = d['product'] as Map<String, dynamic>;
-              final isW = (product['unit_type']?.toString().toLowerCase() == 'weight');
-              final suffix = isW ? 'g' : '';
-              final sysStr = isW ? sys.toStringAsFixed(2) : (sys == sys.roundToDouble() ? sys.toInt().toString() : sys.toStringAsFixed(2));
-              final cntStr = isW ? cnt.toStringAsFixed(2) : (cnt == cnt.roundToDouble() ? cnt.toInt().toString() : cnt.toStringAsFixed(2));
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${d['productName']}: $sysStr$suffix → $cntStr$suffix',
+                      '${d['productName']}: ${_formatDiscrepancyLine(d)}',
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 4),

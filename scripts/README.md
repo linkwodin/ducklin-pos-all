@@ -9,6 +9,7 @@ scripts/
 ├── deploy.sh                    # Main deployment script
 ├── setup-gcp.sh                 # Initial GCP setup
 ├── clone-uat-to-dev.sh          # Clone UAT DB (and optional uploads) to local dev
+├── clone-uat-db-to-local.sh     # DB-only clone wrapper (simpler usage)
 ├── deploy-firebase.sh           # Firebase deployment
 ├── init-firebase.sh             # Firebase initialization
 └── frontend/
@@ -42,6 +43,8 @@ All scripts should be run from the project root directory:
 # Clone UAT data to local dev (DB + optional uploads)
 ./scripts/clone-uat-to-dev.sh
 ./scripts/clone-uat-to-dev.sh --db-only   # database only
+./scripts/clone-uat-db-to-local.sh        # database only (easy command)
+./scripts/clone-uat-db-to-local.sh --schema ducklin_pos_local --replace
 ```
 
 ## Notes

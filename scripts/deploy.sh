@@ -124,7 +124,6 @@ deploy_frontend() {
             echo "VITE_API_URL=$API_URL" > "$ENV_FILE"
         else
             print_info "Updating $ENV_FILE file..."
-            # Update or add VITE_API_URL (macOS compatible sed)
             if grep -q "VITE_API_URL" "$ENV_FILE"; then
                 if [[ "$OSTYPE" == "darwin"* ]]; then
                     sed -i '' "s|VITE_API_URL=.*|VITE_API_URL=$API_URL|" "$ENV_FILE"

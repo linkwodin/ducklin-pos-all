@@ -29,12 +29,14 @@ import {
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { currencyRatesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { CurrencyRate } from '../types';
 import { format } from 'date-fns';
 
 export default function CurrencyRatesPage() {
+  const { t } = useTranslation('currencyRates');
   const [rates, setRates] = useState<CurrencyRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -136,7 +138,7 @@ export default function CurrencyRatesPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Currency Rates</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
             variant="outlined"
@@ -144,7 +146,7 @@ export default function CurrencyRatesPage() {
             onClick={handleSync}
             disabled={syncing}
           >
-            Sync from API
+            {t('syncFromAPI')}
           </Button>
           <Button
             variant="contained"
@@ -154,27 +156,25 @@ export default function CurrencyRatesPage() {
               setOpen(true);
             }}
           >
-            Add Currency Rate
+            {t('addCurrencyRate')}
           </Button>
         </Box>
       </Box>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Currency rates are relative to GBP (base currency). Pin main purchasing currencies (CNY, USD, HKD, JPY)
-        to show them at the top. Use the "Sync from API" button to automatically fetch the latest rates,
-        or manually add/edit rates as needed.
+        {t('info')}
       </Alert>
 
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell width={60}>Pin</TableCell>
-              <TableCell>Currency Code</TableCell>
-              <TableCell>Rate to GBP</TableCell>
-              <TableCell>Last Updated</TableCell>
-              <TableCell>Updated By</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell width={60}>{t('pin')}</TableCell>
+              <TableCell>{t('currencyCode')}</TableCell>
+              <TableCell>{t('rateToGBP')}</TableCell>
+              <TableCell>{t('lastUpdated')}</TableCell>
+              <TableCell>{t('updatedBy')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>

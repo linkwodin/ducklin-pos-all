@@ -1,0 +1,24 @@
+{
+  "name": "management-ai-playbook-functions",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "sync-playbook": "node scripts/sync-playbook.cjs",
+    "build": "npm run sync-playbook && tsc && node scripts/copy-assets.cjs",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "lint": "eslint --ext .ts src/"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.3.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.3"
+  }
+}

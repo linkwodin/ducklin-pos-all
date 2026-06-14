@@ -31,11 +31,20 @@ cd management-frontend
 npm install
 ```
 
-2. Configure API URL (optional):
-Create a `.env` file:
+2. Configure environment (optional):
+
+Create `management-frontend/.env.local` (not committed):
+
 ```
-VITE_API_URL=http://localhost:8080/api/v1
+# API (defaults to Vite proxy /api → see vite.config)
+# VITE_API_URL=/api/v1
+
+# Optional: internal AI playbook via Cloud Function (production builds).
+# Omit for local dev — playbook loads from repo docs/ automatically.
+# VITE_AI_PLAYBOOK_URL=https://<region>-<project>.cloudfunctions.net/aiPlaybook
 ```
+
+See `functions/README.md` to deploy `aiPlaybook`.
 
 3. Start development server:
 ```bash

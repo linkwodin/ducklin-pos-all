@@ -22,11 +22,13 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { sectorsAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { Sector } from '../types';
 
 export default function SectorsPage() {
+  const { t } = useTranslation('sectors');
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -50,7 +52,7 @@ export default function SectorsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to deactivate this sector?')) {
+    if (!window.confirm(t('confirmDeactivate'))) {
       return;
     }
     try {
@@ -84,7 +86,7 @@ export default function SectorsPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Sectors</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -93,7 +95,7 @@ export default function SectorsPage() {
             setOpen(true);
           }}
         >
-          Add Sector
+          {t('addSector')}
         </Button>
       </Box>
 
@@ -101,23 +103,23 @@ export default function SectorsPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('sectorName')}</TableCell>
+              <TableCell>{t('description')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={4} align="center">
-                  Loading...
+                  {t('loading')}
                 </TableCell>
               </TableRow>
             ) : sectors.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} align="center">
-                  No sectors found
+                  {t('noSectors')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -125,7 +127,7 @@ export default function SectorsPage() {
                 <TableRow key={sector.id}>
                   <TableCell>{sector.name}</TableCell>
                   <TableCell>{sector.description || '-'}</TableCell>
-                  <TableCell>{sector.is_active ? 'Active' : 'Inactive'}</TableCell>
+                  <TableCell>{sector.is_active ? t('active') : t('inactive')}</TableCell>
                   <TableCell>
                     <IconButton
                       size="small"
@@ -159,6 +161,7 @@ export default function SectorsPage() {
         }}
         onSave={handleSave}
         sector={editingSector}
+        t={t}
       />
     </Box>
   );
@@ -169,11 +172,13 @@ function SectorDialog({
   onClose,
   onSave,
   sector,
+  t,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (data: Partial<Sector>) => void;
   sector: Sector | null;
+  t: (key: string) => string;
 }) {
   const [formData, setFormData] = useState({
     name: '',
@@ -200,18 +205,18 @@ function SectorDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{sector ? 'Edit Sector' : 'Add Sector'}</DialogTitle>
+      <DialogTitle>{sector ? t('editSectorTitle') : t('addSectorTitle')}</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           <TextField
-            label="Name"
+            label={t('sectorName')}
             required
             fullWidth
             value={formData.name}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
           />
           <TextField
-            label="Description"
+            label={t('description')}
             fullWidth
             multiline
             rows={3}
@@ -223,9 +228,9 @@ function SectorDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('cancel')}</Button>
         <Button onClick={handleSubmit} variant="contained">
-          Save
+          {t('save')}
         </Button>
       </DialogActions>
     </Dialog>

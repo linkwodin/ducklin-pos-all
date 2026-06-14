@@ -389,18 +389,54 @@ class ApiService {
   /// List approved wholesale orders for packing (pos_user). Pass store_id to get orders that have
   /// at least one item assigned to this store or unassigned. Returns list of orders with items (including assigned_store).
   Future<List<dynamic>> listWholesaleOrdersForPacking(int storeId) async {
-    final response = await _dio.get(
-      '/wholesale-orders',
-      queryParameters: {'status': 'approved', 'store_id': storeId.toString()},
-    );
+    return listWholesaleOrders(status: 'approved', storeId: storeId);
+  }
+
+  /// List wholesale orders with optional filters (POS: own orders; supervisor/management: all).
+  Future<List<dynamic>> listWholesaleOrders({
+    int? storeId,
+    String? status,
+    String? client,
+    String? poNumber,
+    String? orderNumber,
+    String? refNo,
+    String? deliveryLocation,
+    String? orderDateFrom,
+    String? orderDateTo,
+  }) async {
+    final params = <String, dynamic>{};
+    if (storeId != null) params['store_id'] = storeId.toString();
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    if (client != null && client.isNotEmpty) params['client'] = client;
+    if (poNumber != null && poNumber.isNotEmpty) params['po_number'] = poNumber;
+    if (orderNumber != null && orderNumber.isNotEmpty) {
+      params['order_number'] = orderNumber;
+    }
+    if (refNo != null && refNo.isNotEmpty) params['ref_no'] = refNo;
+    if (deliveryLocation != null && deliveryLocation.isNotEmpty) {
+      params['delivery_location'] = deliveryLocation;
+    }
+    if (orderDateFrom != null && orderDateFrom.isNotEmpty) {
+      params['order_date_from'] = orderDateFrom;
+    }
+    if (orderDateTo != null && orderDateTo.isNotEmpty) {
+      params['order_date_to'] = orderDateTo;
+    }
+    final response = await _dio.get('/wholesale-orders', queryParameters: params);
     return response.data is List ? response.data as List<dynamic> : [];
   }
 
   /// List shipments for a store (for POS packing). Returns shipments with order, store, and items.
-  Future<List<dynamic>> listShipments({required int storeId}) async {
+  Future<List<dynamic>> listShipments({
+    required int storeId,
+    bool includeOldCompleted = false,
+  }) async {
     final response = await _dio.get(
       '/shipments',
-      queryParameters: {'store_id': storeId.toString()},
+      queryParameters: {
+        'store_id': storeId.toString(),
+        if (includeOldCompleted) 'include_old_completed': 'true',
+      },
     );
     return response.data is List ? response.data as List<dynamic> : [];
   }
@@ -428,9 +464,66 @@ class ApiService {
         : Map<String, dynamic>.from(response.data as Map);
   }
 
-  /// Complete packing: generate delivery note PDF and mark shipment completed.
+  /// Complete packing: generate delivery note PDF and mark shipment packed.
   Future<Map<String, dynamic>> completeShipmentPacking(int shipmentId) async {
     final response = await _dio.post('/shipments/$shipmentId/complete-packing');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Start shipment after packing scan (generates delivery note, marks packed).
+  Future<Map<String, dynamic>> startShipment(
+    int shipmentId, {
+    required List<Map<String, dynamic>> caseQty,
+    String? deliveryDate,
+    String? courier,
+    String? trackingNumber,
+  }) async {
+    final response = await _dio.post(
+      '/shipments/$shipmentId/start-shipment',
+      data: {
+        'case_qty': caseQty,
+        if (deliveryDate != null && deliveryDate.isNotEmpty) 'delivery_date': deliveryDate,
+        if (courier != null && courier.isNotEmpty) 'courier': courier,
+        if (trackingNumber != null && trackingNumber.isNotEmpty) 'tracking_number': trackingNumber,
+      },
+    );
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Update shipment status (e.g. packed → shipped).
+  Future<Map<String, dynamic>> updateShipmentStatus(int shipmentId, String status) async {
+    final response = await _dio.patch(
+      '/shipments/$shipmentId/status',
+      data: {'status': status},
+    );
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Company settings (courier list, etc.).
+  Future<Map<String, dynamic>> getCompanySettings() async {
+    final response = await _dio.get('/settings/company');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Get one wholesale order by ID.
+  Future<Map<String, dynamic>> getWholesaleOrder(int orderId) async {
+    final response = await _dio.get('/wholesale-orders/$orderId');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Complete wholesale order assignment (assign_shipment → approved).
+  Future<Map<String, dynamic>> completeWholesaleOrderAssignment(int orderId) async {
+    final response = await _dio.put('/wholesale-orders/$orderId/complete-assignment');
     return response.data is Map<String, dynamic>
         ? response.data as Map<String, dynamic>
         : Map<String, dynamic>.from(response.data as Map);
@@ -445,13 +538,18 @@ class ApiService {
   }
 
   /// Create wholesale order (pos_user/supervisor/admin). Requires approval by admin/manager.
-  /// Body: wholesale_client_id, store_id, sector_id (optional), notes (optional), items: [{ product_id, quantity }].
   /// Returns created order with order_number, status: pending_approval.
   Future<Map<String, dynamic>> createWholesaleOrder({
     required int wholesaleClientId,
     required int storeId,
     int? sectorId,
+    int? wholesaleClientStoreId,
     String? notes,
+    String? poNumber,
+    String? orderChannel,
+    String? poDate,
+    String? paymentTerms,
+    double? shippingFee,
     required List<Map<String, dynamic>> items,
     double? totalDiscount,
   }) async {
@@ -467,7 +565,19 @@ class ApiService {
           .toList(),
     };
     if (sectorId != null) data['sector_id'] = sectorId;
+    if (wholesaleClientStoreId != null) {
+      data['wholesale_client_store_id'] = wholesaleClientStoreId;
+    }
     if (notes != null && notes.isNotEmpty) data['notes'] = notes;
+    if (poNumber != null && poNumber.isNotEmpty) data['po_number'] = poNumber;
+    if (orderChannel != null && orderChannel.isNotEmpty) {
+      data['order_channel'] = orderChannel;
+    }
+    if (poDate != null && poDate.isNotEmpty) data['po_date'] = poDate;
+    if (paymentTerms != null && paymentTerms.isNotEmpty) {
+      data['payment_terms'] = paymentTerms;
+    }
+    if (shippingFee != null && shippingFee >= 0) data['shipping_fee'] = shippingFee;
     if (totalDiscount != null && totalDiscount > 0) {
       data['total_discount'] = totalDiscount;
     }
@@ -475,6 +585,29 @@ class ApiService {
     return response.data is Map<String, dynamic>
         ? response.data as Map<String, dynamic>
         : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Upload PO attachment images/PDFs after order creation (management parity).
+  Future<void> uploadWholesaleOrderPoAttachments(
+    int orderId,
+    List<String> filePaths,
+  ) async {
+    if (filePaths.isEmpty) return;
+    final formData = FormData();
+    for (final path in filePaths) {
+      final name = path.split(Platform.pathSeparator).last;
+      formData.files.add(
+        MapEntry(
+          'po_attachments',
+          await MultipartFile.fromFile(path, filename: name),
+        ),
+      );
+    }
+    await _dio.post(
+      '/wholesale-orders/$orderId/po-attachments',
+      data: formData,
+      options: Options(headers: {'Content-Type': 'multipart/form-data'}),
+    );
   }
 
   Future<List<dynamic>> getUsersForDevice(String deviceCode) async {
@@ -498,6 +631,24 @@ class ApiService {
   Future<List<dynamic>> getProductsForDevice(String deviceCode) async {
     final response = await _dio.get('/device/$deviceCode/products');
     return response.data;
+  }
+
+  /// Products with current_cost and sector discounts (optional PO-date pricing).
+  Future<List<dynamic>> listProducts({
+    String? category,
+    String? effectiveFrom,
+    String? effectiveTo,
+  }) async {
+    final params = <String, dynamic>{};
+    if (category != null && category.isNotEmpty) params['category'] = category;
+    if (effectiveFrom != null && effectiveFrom.isNotEmpty) {
+      params['effective_from'] = effectiveFrom;
+    }
+    if (effectiveTo != null && effectiveTo.isNotEmpty) {
+      params['effective_to'] = effectiveTo;
+    }
+    final response = await _dio.get('/products', queryParameters: params);
+    return response.data is List ? response.data as List : [];
   }
 
   /// Device info including last_stocktake_at for the device's store (from user_activity_events).
@@ -699,6 +850,7 @@ class ApiService {
     int productId,
     int storeId, {
     required double quantity,
+    double? weightQuantityG,
     double? lowStockThreshold,
     String? reason,
   }) async {
@@ -706,6 +858,7 @@ class ApiService {
       '/stock/$productId/$storeId',
       data: {
         'quantity': quantity,
+        if (weightQuantityG != null) 'weight_quantity_g': weightQuantityG,
         if (lowStockThreshold != null) 'low_stock_threshold': lowStockThreshold,
         if (reason != null) 'reason': reason,
       },

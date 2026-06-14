@@ -6,6 +6,9 @@ import '../providers/product_provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/language_provider.dart';
 import '../widgets/cached_product_image.dart';
+import '../utils/weight_pricing.dart';
+import '../utils/product_inventory.dart';
+import '../utils/product_barcode.dart';
 import 'barcode_scanner_screen.dart';
 import 'weight_input_dialog.dart';
 
@@ -97,6 +100,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     } else {
       products = productProvider.products;
     }
+    final listEntries = expandProductsForPosList(products);
 
     return GestureDetector(
       onTap: () {
@@ -182,7 +186,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
         Expanded(
           child: productProvider.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : products.isEmpty
+              : listEntries.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -216,13 +220,12 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                   : _searchQuery.isNotEmpty
                       ? ListView.builder(
                           padding: const EdgeInsets.all(8),
-                          itemCount: products.length,
+                          itemCount: listEntries.length,
                           itemBuilder: (context, index) {
-                            final product = products[index];
-                            final productId = product['id'] ?? index;
+                            final entry = listEntries[index];
                             return KeyedSubtree(
-                              key: ValueKey('product_$productId'),
-                              child: _buildProductListItem(product, orderProvider),
+                              key: ValueKey(entry.listKey(index)),
+                              child: _buildProductListItem(entry, orderProvider),
                             );
                           },
                         )
@@ -234,13 +237,12 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                             mainAxisSpacing: 8,
                             childAspectRatio: 1.2,
                           ),
-                          itemCount: products.length,
+                          itemCount: listEntries.length,
                           itemBuilder: (context, index) {
-                            final product = products[index];
-                            final productId = product['id'] ?? index;
+                            final entry = listEntries[index];
                             return KeyedSubtree(
-                              key: ValueKey('product_$productId'),
-                              child: _buildProductCard(product, orderProvider),
+                              key: ValueKey(entry.listKey(index)),
+                              child: _buildProductCard(entry, orderProvider),
                             );
                           },
                         ),
@@ -328,16 +330,24 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   }
 
   Widget _buildProductCard(
-    Map<String, dynamic> product,
+    PosProductListEntry entry,
     OrderProvider orderProvider,
   ) {
-    final unitType = product['unit_type'] ?? 'quantity';
-    final isWeight = unitType == 'weight';
+    final product = entry.product;
+    final sellAsWeight = entry.listSellAsWeight;
+    final showPickerHint = productNeedsSaleModePicker(product);
+    final priceText = sellAsWeight == true
+        ? '${_getProductPrice(product)}${weightSalePriceSuffix(product)}'
+        : _getProductPrice(product);
 
     return Card(
       elevation: 2,
       child: InkWell(
-        onTap: () => _addProductToCart(product, orderProvider, isWeight),
+        onTap: () => _addProductToCartFromTap(
+          product,
+          orderProvider,
+          sellAsWeight: sellAsWeight,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -360,7 +370,7 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      _getProductName(product, context),
+                      _getListDisplayName(product, sellAsWeight: sellAsWeight),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -370,13 +380,22 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _getProductPrice(product),
+                      priceText,
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: Colors.green,
                       ),
                     ),
+                    if (showPickerHint) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        AppLocalizations.of(context)!.tapToChooseQtyOrWeight,
+                        style: TextStyle(fontSize: 10, color: Colors.blue[700]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -388,11 +407,15 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
   }
 
   Widget _buildProductListItem(
-    Map<String, dynamic> product,
+    PosProductListEntry entry,
     OrderProvider orderProvider,
   ) {
-    final unitType = product['unit_type'] ?? 'quantity';
-    final isWeight = unitType == 'weight';
+    final product = entry.product;
+    final sellAsWeight = entry.listSellAsWeight;
+    final showPickerHint = productNeedsSaleModePicker(product);
+    final priceText = sellAsWeight == true
+        ? '${_getProductPrice(product)}${weightSalePriceSuffix(product)}'
+        : '${_getProductPrice(product)}${priceWeightSuffix(product)}';
 
     return ListTile(
       leading: _buildProductImagePlaceholder(
@@ -401,15 +424,34 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
         boxSize: 40,
       ),
       title: Text(
-        _getProductName(product, context),
+        _getListDisplayName(product, sellAsWeight: sellAsWeight),
         style: const TextStyle(fontSize: 14),
       ),
       subtitle: Text(
-        '${_getProductPrice(product)}${isWeight ? '/kg' : ''}',
-        style: const TextStyle(fontSize: 12),
+        showPickerHint
+            ? '${AppLocalizations.of(context)!.tapToChooseQtyOrWeight} · $priceText'
+            : priceText,
+        style: TextStyle(
+          fontSize: 12,
+          color: showPickerHint ? Colors.blue[700] : null,
+        ),
       ),
-      onTap: () => _addProductToCart(product, orderProvider, isWeight),
+      onTap: () => _addProductToCartFromTap(
+        product,
+        orderProvider,
+        sellAsWeight: sellAsWeight,
+      ),
     );
+  }
+
+  String _getListDisplayName(
+    Map<String, dynamic> product, {
+    bool? sellAsWeight,
+  }) {
+    final name = _getProductName(product, context);
+    if (sellAsWeight == false) return '$name · Qty';
+    if (sellAsWeight == true) return '$name · Wt';
+    return name;
   }
 
   /// Build product image from cache (downloads once per URL, no re-download when URL unchanged).
@@ -485,12 +527,78 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     return '£0.00';
   }
 
+  Future<bool?> _pickSaleMode(Map<String, dynamic> product) async {
+    final l10n = AppLocalizations.of(context)!;
+    setState(() => _suppressSearchAutofocus = true);
+    _searchFocusNode.unfocus();
+    try {
+      return await showDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        useRootNavigator: true,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.pickSaleModeTitle),
+          content: Text(l10n.pickSaleModeMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.sellByQuantity),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.sellByWeight),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _suppressSearchAutofocus = false);
+      }
+    }
+  }
+
+  Future<void> _addProductToCartFromTap(
+    Map<String, dynamic> product,
+    OrderProvider orderProvider, {
+    bool? sellAsWeight,
+  }) async {
+    if (!productSellByQty(product) && !productSellByWeight(product)) {
+      _showTopNotification('This product is not available for sale', isSuccess: false);
+      return;
+    }
+
+    bool asWeight;
+    if (sellAsWeight != null) {
+      asWeight = sellAsWeight;
+    } else if (productNeedsSaleModePicker(product)) {
+      final pick = await _pickSaleMode(product);
+      if (pick == null || !mounted) return;
+      asWeight = pick;
+    } else if (productSupportsDualInventory(product)) {
+      asWeight = false;
+    } else {
+      asWeight = productSellByWeight(product) && !productSellByQty(product);
+    }
+
+    await _addProductToCart(product, orderProvider, sellAsWeight: asWeight);
+  }
+
   Future<void> _addProductToCart(
     Map<String, dynamic> product,
-    OrderProvider orderProvider,
-    bool isWeight,
-  ) async {
-    if (isWeight) {
+    OrderProvider orderProvider, {
+    required bool sellAsWeight,
+  }) async {
+    if (sellAsWeight && !productSellByWeight(product)) {
+      _showTopNotification('This product cannot be sold by weight', isSuccess: false);
+      return;
+    }
+    if (!sellAsWeight && !productSellByQty(product)) {
+      _showTopNotification('This product cannot be sold by quantity', isSuccess: false);
+      return;
+    }
+
+    if (sellAsWeight) {
       // Before showing the weight dialog, clear any existing focus
       // and temporarily disable search auto-focus so the dialog's
       // TextField can receive keyboard input.
@@ -500,9 +608,13 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
       _searchFocusNode.unfocus();
 
       // Show weight input dialog
+      final initialWeight = parsedWeightGramsFromScan(product);
       final weight = await showDialog<double>(
         context: context,
-        builder: (_) => WeightInputDialog(),
+        builder: (_) => WeightInputDialog(
+          product: product,
+          initialWeightG: initialWeight,
+        ),
       );
       if (!mounted) return;
 
@@ -513,12 +625,22 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
 
       if (weight != null && weight > 0) {
         final l10n = AppLocalizations.of(context)!;
-        orderProvider.addToCart(product, weight: weight, message: l10n.addedWeightToCart(weight));
+        orderProvider.addToCart(
+          product,
+          weight: weight,
+          sellAsWeight: true,
+          message: l10n.addedWeightToCart(weight),
+        );
         _requestSearchFocusIfCurrent();
       }
     } else {
       final l10n = AppLocalizations.of(context)!;
-      orderProvider.addToCart(product, quantity: 1, message: l10n.addedToCart);
+      orderProvider.addToCart(
+        product,
+        quantity: 1,
+        sellAsWeight: false,
+        message: l10n.addedToCart,
+      );
       _requestSearchFocusIfCurrent();
     }
   }
@@ -533,6 +655,14 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     String barcode,
     OrderProvider orderProvider,
   ) async {
+    void refocusSearch() {
+      if (!_suppressSearchAutofocus && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _requestSearchFocusIfCurrent();
+        });
+      }
+    }
+
     // If barcode is invoice/receipt QR (ORDER_NUMBER|CHECK_CODE|invoice or |receipt), hand off to order pickup
     final normalized = barcode.replaceAll('｜', '|').trim();
     if (normalized.contains('|')) {
@@ -560,62 +690,57 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     final l10n = AppLocalizations.of(context)!;
     final productProvider = Provider.of<ProductProvider>(context, listen: false);
     
-    // Try to find product by exact barcode match
-    Map<String, dynamic>? product;
-    final allProducts = productProvider.products;
-    try {
-      product = allProducts.firstWhere(
-        (p) => (p['barcode'] ?? '').toString().trim() == barcode.trim(),
-      );
-    } catch (e) {
-      // Product not found in memory, try database lookup
-      product = await productProvider.getProductByBarcode(barcode.trim());
-    }
+    // Resolve product by qty or weight barcode
+    Map<String, dynamic>? product =
+        await productProvider.resolveProductScan(barcode.trim());
     
-    if (product != null && product.isNotEmpty && mounted) {
-      final unitType = product['unit_type'] ?? 'quantity';
-      final isWeight = unitType == 'weight';
+      if (product != null && product.isNotEmpty && mounted) {
+      if (product['_sale_mode_blocked'] == true) {
+        _searchController.clear();
+        setState(() => _searchQuery = '');
+        final blockedAsWeight = product['_scan_mode'] == 'weight';
+        _showTopNotification(
+          blockedAsWeight
+              ? 'This product cannot be sold by weight'
+              : 'This product cannot be sold by quantity',
+          isSuccess: false,
+        );
+        refocusSearch();
+        return;
+      }
+      var sellAsWeight = scanIsWeightMode(product);
+      // Prefix/weight barcode already implies weight; skip qty/weight picker.
+      if (productNeedsSaleModePicker(product) && parsedWeightGramsFromScan(product) == null) {
+        final pick = await _pickSaleMode(product);
+        if (pick == null || !mounted) {
+          refocusSearch();
+          return;
+        }
+        sellAsWeight = pick;
+      }
+      if (sellAsWeight && !productSellByWeight(product)) {
+        _showTopNotification('This product cannot be sold by weight', isSuccess: false);
+        refocusSearch();
+        return;
+      }
+      if (!sellAsWeight && !productSellByQty(product)) {
+        _showTopNotification('This product cannot be sold by quantity', isSuccess: false);
+        refocusSearch();
+        return;
+      }
       // Clear search
       _searchController.clear();
       setState(() => _searchQuery = '');
-      _requestSearchFocusIfCurrent();
-      
-      // Add to cart with message
-      final productName = _getProductName(product, context);
-      if (isWeight) {
-        // Clear any existing focus and temporarily disable search auto-focus
-        // so the weight dialog can take focus.
-        setState(() {
-          _suppressSearchAutofocus = true;
-        });
-        _searchFocusNode.unfocus();
+      refocusSearch();
 
-        final weight = await showDialog<double>(
-          context: context,
-          builder: (_) => WeightInputDialog(),
-        );
-        if (!mounted) return;
-
-        // Re-enable search auto-focus after dialog closes
-        setState(() {
-          _suppressSearchAutofocus = false;
-        });
-
-        if (weight != null && weight > 0) {
-          orderProvider.addToCart(product, weight: weight, message: l10n.productAddedToCart(productName));
-          _requestSearchFocusIfCurrent();
-        }
-      } else {
-        orderProvider.addToCart(product, quantity: 1, message: l10n.productAddedToCart(productName));
-        _requestSearchFocusIfCurrent();
-      }
+      await _addProductToCart(product, orderProvider, sellAsWeight: sellAsWeight);
     } else {
-      // Not an exact barcode match, treat as search query
-      setState(() => _searchQuery = barcode);
-      
+      _searchController.clear();
+      setState(() => _searchQuery = '');
       if (mounted) {
         _showTopNotification(l10n.noProductsFound(barcode), isSuccess: false);
       }
+      refocusSearch();
     }
   }
 

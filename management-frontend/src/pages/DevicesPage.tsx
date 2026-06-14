@@ -30,11 +30,13 @@ import {
   Edit as EditIcon,
   People as PeopleIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { devicesAPI, storesAPI, usersAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { POSDevice, Store, User } from '../types';
 
 export default function DevicesPage() {
+  const { t } = useTranslation('devicesPage');
   const [devices, setDevices] = useState<POSDevice[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -117,13 +119,13 @@ export default function DevicesPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Devices</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setOpen(true)}
         >
-          Register Device
+          {t('registerDevice')}
         </Button>
       </Box>
 
@@ -131,25 +133,25 @@ export default function DevicesPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Device Code</TableCell>
-              <TableCell>Device Name</TableCell>
-              <TableCell>Store</TableCell>
-              <TableCell>Assigned Users</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('deviceCode')}</TableCell>
+              <TableCell>{t('deviceName')}</TableCell>
+              <TableCell>{t('store')}</TableCell>
+              <TableCell>{t('assignedUsers')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={6} align="center">
-                  Loading...
+                  {t('loading')}
                 </TableCell>
               </TableRow>
             ) : devices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} align="center">
-                  No devices found
+                  {t('noDevices')}
                 </TableCell>
               </TableRow>
             ) : (

@@ -75,6 +75,7 @@ CREATE TABLE products (
     category VARCHAR(100),
     image_url VARCHAR(500),
     unit_type ENUM('quantity', 'weight') NOT NULL DEFAULT 'quantity',
+    price_weight_g DECIMAL(10, 3) DEFAULT 0 COMMENT 'Grams the retail price applies to (weight products; 0 = 1 kg)',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

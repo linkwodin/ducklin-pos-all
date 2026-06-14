@@ -9,6 +9,7 @@ import 'package:barcode/barcode.dart';
 import 'package:image/image.dart' as img;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'receipt_printer_helpers.dart';
+import '../utils/weight_barcode.dart';
 
 /// Barcode receipt printer - with entry price and total, with barcode
 class BarcodeReceiptPrinter {
@@ -145,7 +146,7 @@ class BarcodeReceiptPrinter {
     const int qtyWidth = 6;
     const int priceWidth = 10;
     final productHeader = 'Product 產品'.padRight(lineChars - qtyWidth - priceWidth, ' ');
-    final headerLine = productHeader + 'Qty'.padLeft(qtyWidth, ' ') + 'Price'.padLeft(priceWidth, ' ');
+    final headerLine = productHeader + 'Qty'.padLeft(qtyWidth, ' ') + 'Subtotal'.padLeft(priceWidth, ' ');
 
     final headerWidth = _getHeaderLineWidth(headerLine);
 
@@ -180,30 +181,43 @@ class BarcodeReceiptPrinter {
       final product = item['product'] as Map<String, dynamic>?;
       final quantityValue = item['quantity'];
       final quantity = (quantityValue != null ? (quantityValue as num).toDouble() : 0.0);
-      final unitType = product?['unit_type'] ?? 'quantity';
+      final itemMap = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item as Map);
+      final unitType = ReceiptPrinterHelpers.resolveReceiptUnitType(itemMap, product);
       final productNameChinese = product?['name_chinese']?.toString() ?? '';
       final productNameEnglish = product?['name']?.toString() ?? '';
       final barcode = product?['barcode']?.toString() ?? '';
-      final unitPriceNum = (item['unit_price'] != null ? (item['unit_price'] as num).toDouble() : 0.0);
-      final unitPriceText = _formatCurrency(unitPriceNum);
+      final weightPrefix = product?['weight_barcode_prefix']?.toString();
+      final receiptBarcode = unitType == 'weight'
+          ? WeightBarcode.formatReceiptBarcode(
+                prefix: weightPrefix,
+                productBarcode: barcode,
+                weightGrams: quantity,
+              ) ??
+              (barcode.isNotEmpty ? barcode : null)
+          : (barcode.isNotEmpty ? barcode : null);
+      if (unitType == 'weight' && (receiptBarcode == null || receiptBarcode.isEmpty)) {
+        debugPrint(
+          'BarcodeReceiptPrinter: no weight barcode for product ${product?['id']} '
+          '(prefix=${weightPrefix ?? 'missing'}, barcode=${barcode.isEmpty ? 'missing' : barcode})',
+        );
+      }
+      final lineTotalNum = (item['line_total'] != null ? (item['line_total'] as num).toDouble() : 0.0);
+      final lineTotalText = _formatCurrency(lineTotalNum);
 
       final productLine = ReceiptPrinterHelpers.formatProductName(
         productNameChinese: productNameChinese,
         productNameEnglish: productNameEnglish,
       );
 
-      // Format quantity text
-      final quantityText = unitType == 'weight'
-          ? '${quantity.toStringAsFixed(2)}g'
-          : '${quantity.toStringAsFixed(0)} ';
+      final quantityText = ReceiptPrinterHelpers.formatReceiptQuantity(itemMap, product);
 
       // With qty and price, with barcode: product line width = header width for alignment
-      if (barcode.isNotEmpty) {
+      if (receiptBarcode != null && receiptBarcode.isNotEmpty) {
         final result = await _renderProductLineWithBarcode(
           productLine,
-          barcode,
+          receiptBarcode,
           quantityText,
-          unitPriceText: unitPriceText,
+          unitPriceText: lineTotalText,
           fontSize: 24,
           lineWidth: headerWidth,
         );
@@ -218,13 +232,19 @@ class BarcodeReceiptPrinter {
           if (barcodeImg != null) {
             bytes += generator.image(barcodeImg, align: esc_pos_utils.PosAlign.left);
           }
+        } else if (receiptBarcode.isNotEmpty) {
+          bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
+            generator,
+            receiptBarcode,
+            baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.left),
+          );
         }
       } else {
         // No barcode: product name with quantity, price
         final productLineImageBytes = await _renderProductLineSimple(
           productLine,
           quantityText,
-          unitPriceText: unitPriceText,
+          unitPriceText: lineTotalText,
           fontSize: 24,
           lineWidth: headerWidth,
         );

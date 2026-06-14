@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -19,8 +20,11 @@ import {
   DialogContent,
   DialogActions,
   MenuItem,
-  Autocomplete,
+  CircularProgress,
+  useMediaQuery,
+  Tooltip,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   Add as AddIcon,
   Edit as EditIcon,
@@ -30,9 +34,13 @@ import {
 } from '@mui/icons-material';
 import { productsAPI, categoriesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import type { Product } from '../types';
+import { productDisplayBarcode, productIsWeight } from '../utils/productInventory';
+import ProductVariantDialog from '../components/ProductVariantDialog';
 
 export default function ProductsPage() {
+  const { t } = useTranslation();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +51,8 @@ export default function ProductsPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+  const theme = useTheme();
+  const isListMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   useEffect(() => {
     fetchProducts();
@@ -72,7 +82,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to deactivate this product?')) {
+    if (!window.confirm(t('productsPage.confirmDeactivate'))) {
       return;
     }
     try {
@@ -105,22 +115,39 @@ export default function ProductsPage() {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Products</Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+    <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 1.5,
+        }}
+      >
+        <Typography variant="h4" sx={{ typography: { xs: 'h5', md: 'h4' } }}>
+          {t('products.title')}
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
           <Button
             variant="outlined"
             onClick={() => setImportDialogOpen(true)}
           >
-            Import from Excel
+            {t('productsPage.importFromExcel')}
           </Button>
           <Button
             variant="outlined"
             startIcon={<EditNoteIcon />}
             onClick={() => navigate('/product-cost-editor')}
           >
-            Cost & Price Editor
+            {t('productsPage.costPriceEditor')}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/product-lines')}
+          >
+            {t('productLines.title')}
           </Button>
           <Button
             variant="contained"
@@ -130,7 +157,7 @@ export default function ProductsPage() {
               setOpen(true);
             }}
           >
-            Add Product
+            {t('products.addProduct')}
           </Button>
         </Box>
       </Box>
@@ -138,13 +165,13 @@ export default function ProductsPage() {
       <Box sx={{ mb: 2 }}>
         <TextField
           select
-          label="Filter by Category"
+          label={t('productsPage.filterByCategory')}
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          sx={{ minWidth: 200 }}
+          sx={{ minWidth: { xs: 0, sm: 200 }, width: { xs: '100%', sm: 'auto' } }}
           size="small"
         >
-          <MenuItem value="">All Categories</MenuItem>
+          <MenuItem value="">{t('productsPage.allCategories')}</MenuItem>
           {categories.map((cat) => (
             <MenuItem key={cat} value={cat}>
               {cat}
@@ -153,64 +180,64 @@ export default function ProductsPage() {
         </TextField>
       </Box>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>SKU</TableCell>
-              <TableCell>Barcode</TableCell>
-              <TableCell>Category</TableCell>
-              <TableCell>Unit Type</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Price (GBP)</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">
-                  Loading...
-                </TableCell>
-              </TableRow>
-            ) : products.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">
-                  No products found
-                </TableCell>
-              </TableRow>
-            ) : (
-              products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell>{product.name}</TableCell>
-                  <TableCell>{product.sku || '-'}</TableCell>
-                  <TableCell>{product.barcode || '-'}</TableCell>
-                  <TableCell>{product.category || '-'}</TableCell>
-                  <TableCell>
+      {isListMobile ? (
+        <Stack spacing={1.5} component={Paper} sx={{ p: 1.5 }}>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={28} />
+            </Box>
+          ) : products.length === 0 ? (
+            <Typography align="center" color="text.secondary" sx={{ py: 4 }}>
+              {t('productsPage.noProductsFound')}
+            </Typography>
+          ) : (
+            products.map((product) => (
+              <Paper key={product.id} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, wordBreak: 'break-word', lineHeight: 1.35, mb: 1 }}>
+                  {product.name}
+                </Typography>
+                <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('productsPage.sku')}: {product.sku || '—'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('productsPage.barcode')}: {productDisplayBarcode(product) || '—'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('productsPage.category')}: {product.category || '—'}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
                     <Chip
-                      label={product.unit_type}
                       size="small"
-                      color={product.unit_type === 'weight' ? 'primary' : 'default'}
+                      variant="outlined"
+                      color={productIsWeight(product) ? 'secondary' : 'primary'}
+                      label={productIsWeight(product) ? t('productLines.byWeight') : t('productLines.byQty')}
                     />
-                  </TableCell>
-                  <TableCell>
                     <Chip
-                      label={product.is_active ? 'Active' : 'Inactive'}
+                      label={product.is_active ? t('productsPage.active') : t('productsPage.inactive')}
                       size="small"
                       color={product.is_active ? 'success' : 'default'}
                     />
-                  </TableCell>
-                  <TableCell>
-                    £{product.current_cost?.wholesale_cost_gbp?.toFixed(2) || '-'}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton
-                      size="small"
-                      onClick={() => navigate(`/products/${product.id}`)}
-                    >
-                      <VisibilityIcon />
-                    </IconButton>
+                  </Box>
+                  <Typography variant="body2">
+                    <Box component="span" sx={{ color: 'text.secondary' }}>
+                      {t('productsPage.priceGbp')}{' '}
+                    </Box>
+                    £{product.current_cost?.wholesale_cost_gbp?.toFixed(2) || '—'}
+                  </Typography>
+                </Stack>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  size="medium"
+                  startIcon={<VisibilityIcon />}
+                  onClick={() => navigate(`/products/${product.id}`)}
+                  sx={{ mb: 1 }}
+                >
+                  {t('productsPage.viewProduct')}
+                </Button>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+                  <Tooltip title={t('products.editProduct')}>
                     <IconButton
                       size="small"
                       onClick={() => {
@@ -220,22 +247,94 @@ export default function ProductsPage() {
                     >
                       <EditIcon />
                     </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(product.id)}
-                      color="error"
-                    >
+                  </Tooltip>
+                  <Tooltip title={t('common.delete')}>
+                    <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
                       <DeleteIcon />
                     </IconButton>
+                  </Tooltip>
+                </Box>
+              </Paper>
+            ))
+          )}
+        </Stack>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('productsPage.name')}</TableCell>
+                <TableCell>{t('productsPage.sku')}</TableCell>
+                <TableCell>{t('productsPage.barcodes')}</TableCell>
+                <TableCell>{t('productsPage.category')}</TableCell>
+                <TableCell>{t('productLines.saleType')}</TableCell>
+                <TableCell>{t('productsPage.status')}</TableCell>
+                <TableCell>{t('productsPage.priceGbp')}</TableCell>
+                <TableCell>{t('productsPage.actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    {t('productsPage.loading')}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              ) : products.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    {t('productsPage.noProductsFound')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                products.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>{product.name}</TableCell>
+                    <TableCell>{product.sku || '-'}</TableCell>
+                    <TableCell>{productDisplayBarcode(product) || '-'}</TableCell>
+                    <TableCell>{product.category || '-'}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={productIsWeight(product) ? 'secondary' : 'primary'}
+                        label={productIsWeight(product) ? t('productLines.byWeight') : t('productLines.byQty')}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={product.is_active ? t('productsPage.active') : t('productsPage.inactive')}
+                        size="small"
+                        color={product.is_active ? 'success' : 'default'}
+                      />
+                    </TableCell>
+                    <TableCell>£{product.current_cost?.wholesale_cost_gbp?.toFixed(2) || '-'}</TableCell>
+                    <TableCell>
+                      <IconButton size="small" onClick={() => navigate(`/products/${product.id}`)}>
+                        <VisibilityIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setEditingProduct(product);
+                          setOpen(true);
+                        }}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
-      <ProductDialog
+      <ProductVariantDialog
         open={open}
         onClose={() => {
           setOpen(false);
@@ -255,26 +354,26 @@ export default function ProductsPage() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Import Products from Excel</DialogTitle>
+        <DialogTitle>{t('productsPage.importDialogTitle')}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2 }}>
-            Upload an Excel file (.xlsx) with the following headers in the first row:
+            {t('productsPage.importDialogIntro')}
           </Typography>
           <Box sx={{ mb: 2, pl: 2 }}>
-            <Typography variant="body2">• Chinese Name</Typography>
-            <Typography variant="body2">• English name</Typography>
-            <Typography variant="body2">• Unit ("weight" or leave blank for quantity)</Typography>
-            <Typography variant="body2">• Barcode</Typography>
-            <Typography variant="body2">• Retail Price (Direct Retail Price)</Typography>
-            <Typography variant="body2">• Category (optional)</Typography>
-            <Typography variant="body2">• Sector - Loog Fung Retail (optional)</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderChineseName')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderEnglishName')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderUnit')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderBarcode')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderRetailPrice')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderCategory')}</Typography>
+            <Typography variant="body2">• {t('productsPage.importHeaderSector')}</Typography>
           </Box>
           <Button
             variant="outlined"
             component="label"
             sx={{ mt: 1 }}
           >
-            Choose Excel File
+            {t('productsPage.chooseExcelFile')}
             <input
               type="file"
               accept=".xlsx"
@@ -286,7 +385,7 @@ export default function ProductsPage() {
             />
           </Button>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            {importFile ? importFile.name : 'No file selected'}
+            {importFile ? importFile.name : t('productsPage.noFileSelected')}
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -296,7 +395,7 @@ export default function ProductsPage() {
               setImportFile(null);
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             variant="contained"
@@ -327,267 +426,11 @@ export default function ProductsPage() {
               }
             }}
           >
-            Import
+            {t('productsPage.import')}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
-  );
-}
-
-function ProductDialog({
-  open,
-  onClose,
-  onSave,
-  product,
-  existingCategories,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: (data: Partial<Product> | FormData) => void;
-  product: Product | null;
-  existingCategories: string[];
-}) {
-  const [formData, setFormData] = useState({
-    name: '',
-    name_chinese: '',
-    barcode: '',
-    sku: '',
-    category: '',
-    unit_type: 'quantity' as 'quantity' | 'weight',
-  });
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (product) {
-      setFormData({
-        name: product.name || '',
-        name_chinese: product.name_chinese || '',
-        barcode: product.barcode || '',
-        sku: product.sku || '',
-        category: product.category || '',
-        unit_type: product.unit_type || 'quantity',
-      });
-      // Show existing image as preview if available
-      if (product.image_url) {
-        setImagePreview(product.image_url);
-      } else {
-        setImagePreview(null);
-      }
-      setImageFile(null);
-    } else {
-      setFormData({
-        name: '',
-        name_chinese: '',
-        barcode: '',
-        sku: '',
-        category: '',
-        unit_type: 'quantity',
-      });
-      setImagePreview(null);
-      setImageFile(null);
-    }
-  }, [product, open]);
-
-  const validateAndSetImage = (file: File) => {
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      alert('Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image.');
-      return false;
-    }
-    
-    // No file size limit - backend will resize if needed
-
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-    return true;
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      validateAndSetImage(file);
-    }
-  };
-
-  // Handle clipboard paste
-  useEffect(() => {
-    const handlePasteGlobal = (e: ClipboardEvent) => {
-      if (!open) return;
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile();
-          if (blob) {
-            // Create a File object from the blob
-            const file = new File([blob], `pasted-image-${Date.now()}.png`, {
-              type: blob.type || 'image/png',
-            });
-            if (validateAndSetImage(file)) {
-              e.preventDefault();
-            }
-            break;
-          }
-        }
-      }
-    };
-
-    if (open) {
-      document.addEventListener('paste', handlePasteGlobal);
-      return () => {
-        document.removeEventListener('paste', handlePasteGlobal);
-      };
-    }
-  }, [open]);
-
-  const handleSubmit = () => {
-    // If image file is selected, we need to send FormData
-    if (imageFile) {
-      const formDataToSend = new FormData();
-      formDataToSend.append('name', formData.name);
-      formDataToSend.append('name_chinese', formData.name_chinese);
-      formDataToSend.append('barcode', formData.barcode);
-      formDataToSend.append('sku', formData.sku);
-      formDataToSend.append('category', formData.category);
-      formDataToSend.append('unit_type', formData.unit_type);
-      formDataToSend.append('image', imageFile);
-      
-      // Call onSave with FormData
-      onSave(formDataToSend as any);
-    } else {
-      // Use regular JSON if no file
-      onSave(formData);
-    }
-  };
-
-  return (
-    <Dialog 
-      open={open} 
-      onClose={onClose} 
-      maxWidth="sm" 
-      fullWidth
-    >
-      <DialogTitle>{product ? 'Edit Product' : 'Add Product'}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField
-            label="Name"
-            required
-            fullWidth
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          />
-          <TextField
-            label="Name (Chinese)"
-            fullWidth
-            value={formData.name_chinese}
-            onChange={(e) =>
-              setFormData({ ...formData, name_chinese: e.target.value })
-            }
-          />
-          <TextField
-            label="SKU"
-            fullWidth
-            value={formData.sku}
-            onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-          />
-          <TextField
-            label="Barcode"
-            fullWidth
-            value={formData.barcode}
-            onChange={(e) =>
-              setFormData({ ...formData, barcode: e.target.value })
-            }
-          />
-          <Autocomplete
-            freeSolo
-            options={existingCategories}
-            value={formData.category || null}
-            onChange={(_, newValue) => {
-              // Handle both string selection and new input
-              const categoryValue = typeof newValue === 'string' ? newValue : (newValue || '');
-              setFormData({ ...formData, category: categoryValue });
-            }}
-            onInputChange={(_, newInputValue) => {
-              // Update as user types
-              setFormData({ ...formData, category: newInputValue });
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Category"
-                placeholder="Select existing or type new category"
-              />
-            )}
-          />
-          <Box>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Product Image
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-              Upload an image file or paste from clipboard (Ctrl+V / Cmd+V)
-            </Typography>
-            <input
-              accept="image/*"
-              style={{ display: 'none' }}
-              id="image-upload"
-              type="file"
-              onChange={handleImageChange}
-            />
-            <label htmlFor="image-upload">
-              <Button variant="outlined" component="span" fullWidth sx={{ mb: 1 }}>
-                {imageFile ? 'Change Image' : 'Upload Image'}
-              </Button>
-            </label>
-            {imagePreview && (
-              <Box
-                component="img"
-                src={imagePreview}
-                alt="Preview"
-                sx={{
-                  width: '100%',
-                  maxHeight: 200,
-                  objectFit: 'contain',
-                  borderRadius: 1,
-                  mb: 1,
-                  border: '1px solid #e0e0e0',
-                }}
-              />
-            )}
-          </Box>
-          <TextField
-            select
-            label="Unit Type"
-            required
-            fullWidth
-            value={formData.unit_type}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                unit_type: e.target.value as 'quantity' | 'weight',
-              })
-            }
-          >
-            <MenuItem value="quantity">Quantity</MenuItem>
-            <MenuItem value="weight">Weight</MenuItem>
-          </TextField>
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained">
-          Save
-        </Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Box,
   Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -22,13 +23,11 @@ import {
   Select,
   FormControl,
   InputLabel,
+  CircularProgress,
+  useMediaQuery,
 } from '@mui/material';
-import {
-  Visibility as VisibilityIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
+import { useTheme } from '@mui/material/styles';
+import { Refresh as RefreshIcon } from '@mui/icons-material';
 import { ordersAPI, storesAPI, usersAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { Order, Store, User } from '../types';
@@ -48,6 +47,8 @@ export default function OrdersPage() {
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const { enqueueSnackbar } = useSnackbar();
+  const theme = useTheme();
+  const isListMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   useEffect(() => {
     fetchStores();
@@ -61,7 +62,7 @@ export default function OrdersPage() {
 
   const fetchStores = async () => {
     try {
-      const data = await storesAPI.list();
+      const data = await storesAPI.list({ exclude_warehouse_only: true });
       setStores(data);
     } catch (error) {
       enqueueSnackbar(t('orders.failedToFetchStores'), { variant: 'error' });
@@ -109,10 +110,21 @@ export default function OrdersPage() {
     }
   };
 
+  const refreshOrderInDialog = async (orderId: number) => {
+    if (selectedOrder?.id !== orderId) return;
+    try {
+      const fullOrder = await ordersAPI.get(orderId);
+      setSelectedOrder(fullOrder);
+    } catch {
+      // List refresh still runs; dialog may show stale data until closed.
+    }
+  };
+
   const handleMarkPaid = async (orderId: number) => {
     try {
       await ordersAPI.markPaid(orderId);
       enqueueSnackbar(t('orders.orderMarkedPaid'), { variant: 'success' });
+      await refreshOrderInDialog(orderId);
       fetchOrders();
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || t('orders.failedToUpdateOrder'), { variant: 'error' });
@@ -123,6 +135,7 @@ export default function OrdersPage() {
     try {
       await ordersAPI.markComplete(orderId);
       enqueueSnackbar(t('orders.orderMarkedComplete'), { variant: 'success' });
+      await refreshOrderInDialog(orderId);
       fetchOrders();
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || t('orders.failedToUpdateOrder'), { variant: 'error' });
@@ -136,6 +149,7 @@ export default function OrdersPage() {
     try {
       await ordersAPI.cancel(orderId);
       enqueueSnackbar(t('orders.orderCancelled'), { variant: 'success' });
+      await refreshOrderInDialog(orderId);
       fetchOrders();
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || t('orders.failedToUpdateOrder'), { variant: 'error' });
@@ -159,10 +173,26 @@ export default function OrdersPage() {
     }
   };
 
+  const statusLabel = (status: string) => {
+    const suffix = status.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+    return t(`orders.status${suffix}` as 'orders.statusPending');
+  };
+
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">{t('orders.title')}</Typography>
+    <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 1.5,
+        }}
+      >
+        <Typography variant="h4" sx={{ typography: { xs: 'h5', md: 'h4' } }}>
+          {t('orders.title')}
+        </Typography>
         <Tooltip title={t('orders.refresh')}>
           <IconButton onClick={fetchOrders} disabled={loading}>
             <RefreshIcon />
@@ -171,8 +201,8 @@ export default function OrdersPage() {
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <FormControl sx={{ minWidth: 200 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <FormControl sx={{ minWidth: { xs: 0, sm: 200 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>{t('orders.filterByStore')}</InputLabel>
             <Select
               value={selectedStore}
@@ -188,7 +218,7 @@ export default function OrdersPage() {
             </Select>
           </FormControl>
 
-          <FormControl sx={{ minWidth: 200 }}>
+          <FormControl sx={{ minWidth: { xs: 0, sm: 200 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>{t('orders.filterByStatus')}</InputLabel>
             <Select
               value={selectedStatus}
@@ -204,7 +234,7 @@ export default function OrdersPage() {
             </Select>
           </FormControl>
 
-          <FormControl sx={{ minWidth: 200 }}>
+          <FormControl sx={{ minWidth: { xs: 0, sm: 200 }, width: { xs: '100%', sm: 'auto' } }}>
             <InputLabel>{t('orders.filterByStaff')}</InputLabel>
             <Select
               value={selectedStaffId === '' ? '' : selectedStaffId}
@@ -222,97 +252,113 @@ export default function OrdersPage() {
         </Box>
       </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('orders.orderNumber')}</TableCell>
-              <TableCell>{t('orders.store')}</TableCell>
-              <TableCell>{t('orders.user')}</TableCell>
-              <TableCell>{t('orders.status')}</TableCell>
-              <TableCell>{t('orders.total')}</TableCell>
-              <TableCell>{t('orders.createdAt')}</TableCell>
-              <TableCell>{t('orders.actions')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  {t('orders.loading')}
-                </TableCell>
-              </TableRow>
-            ) : orders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  {t('orders.noOrders')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              orders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell>{order.order_number}</TableCell>
-                  <TableCell>{order.store?.name || `Store ${order.store_id}`}</TableCell>
-                  <TableCell>
+      {isListMobile ? (
+        <Stack spacing={1.5} component={Paper} sx={{ p: 1.5 }}>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={28} />
+            </Box>
+          ) : orders.length === 0 ? (
+            <Typography align="center" color="text.secondary" sx={{ py: 4 }}>
+              {t('orders.noOrders')}
+            </Typography>
+          ) : (
+            orders.map((order) => (
+              <Paper
+                key={order.id}
+                variant="outlined"
+                onClick={() => handleViewOrder(order)}
+                sx={{ p: 1.5, borderRadius: 2, cursor: 'pointer' }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, wordBreak: 'break-word', lineHeight: 1.3, flex: 1, minWidth: 0 }}>
+                    {order.order_number}
+                  </Typography>
+                  <Chip
+                    label={statusLabel(order.status)}
+                    color={getStatusColor(order.status) as any}
+                    size="small"
+                    sx={{ flexShrink: 0, maxWidth: '48%', height: 'auto', '& .MuiChip-label': { whiteSpace: 'normal', textAlign: 'right', py: 0.5 } }}
+                  />
+                </Box>
+                <Stack spacing={0.5} sx={{ mb: 1.5 }}>
+                  <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                    <Box component="span" sx={{ color: 'text.secondary' }}>
+                      {t('orders.store')}{' '}
+                    </Box>
+                    {order.store?.name || `Store ${order.store_id}`}
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {t('orders.user')}
+                    </Typography>
                     <UserDisplay user={order.user} showName={true} size="small" />
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={t(`orders.status${order.status.charAt(0).toUpperCase() + order.status.slice(1)}`)}
-                      color={getStatusColor(order.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>£{order.total_amount.toFixed(2)}</TableCell>
-                  <TableCell>
+                  </Box>
+                  <Typography variant="body2">
+                    <Box component="span" sx={{ color: 'text.secondary' }}>
+                      {t('orders.total')}{' '}
+                    </Box>
+                    £{order.total_amount.toFixed(2)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
                     {format(new Date(order.created_at), 'yyyy-MM-dd HH:mm')}
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip title={t('orders.viewDetails')}>
-                      <IconButton size="small" onClick={() => handleViewOrder(order)}>
-                        <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {order.status === 'pending' && (
-                      <>
-                        <Tooltip title={t('orders.markPaid')}>
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleMarkPaid(order.id)}
-                          >
-                            <CheckCircleIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('orders.cancel')}>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleCancel(order.id)}
-                          >
-                            <CancelIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )}
-                    {order.status === 'paid' && (
-                      <Tooltip title={t('orders.markComplete')}>
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={() => handleMarkComplete(order.id)}
-                        >
-                          <CheckCircleIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
+                  </Typography>
+                </Stack>
+              </Paper>
+            ))
+          )}
+        </Stack>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('orders.orderNumber')}</TableCell>
+                <TableCell>{t('orders.store')}</TableCell>
+                <TableCell>{t('orders.user')}</TableCell>
+                <TableCell>{t('orders.status')}</TableCell>
+                <TableCell>{t('orders.total')}</TableCell>
+                <TableCell>{t('orders.createdAt')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    {t('orders.loading')}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              ) : orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    {t('orders.noOrders')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                orders.map((order) => (
+                  <TableRow
+                    key={order.id}
+                    hover
+                    onClick={() => handleViewOrder(order)}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    <TableCell>{order.order_number}</TableCell>
+                    <TableCell>{order.store?.name || `Store ${order.store_id}`}</TableCell>
+                    <TableCell>
+                      <UserDisplay user={order.user} showName={true} size="small" />
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={statusLabel(order.status)} color={getStatusColor(order.status) as any} size="small" />
+                    </TableCell>
+                    <TableCell>£{order.total_amount.toFixed(2)}</TableCell>
+                    <TableCell>{format(new Date(order.created_at), 'yyyy-MM-dd HH:mm')}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Order Details Dialog */}
       <Dialog open={orderDialogOpen} onClose={() => setOrderDialogOpen(false)} maxWidth="md" fullWidth>
@@ -331,11 +377,7 @@ export default function OrdersPage() {
               </Typography>
               <Typography variant="subtitle2" gutterBottom>
                 <strong>{t('orders.status')}:</strong>{' '}
-                <Chip
-                  label={t(`orders.status${selectedOrder.status.charAt(0).toUpperCase() + selectedOrder.status.slice(1)}`)}
-                  color={getStatusColor(selectedOrder.status) as any}
-                  size="small"
-                />
+                <Chip label={statusLabel(selectedOrder.status)} color={getStatusColor(selectedOrder.status) as any} size="small" />
               </Typography>
               <Typography variant="subtitle2" gutterBottom>
                 <strong>{t('orders.createdAt')}:</strong>{' '}
@@ -409,6 +451,21 @@ export default function OrdersPage() {
           )}
         </DialogContent>
         <DialogActions>
+          {selectedOrder?.status === 'pending' && (
+            <>
+              <Button color="primary" onClick={() => handleMarkPaid(selectedOrder.id)}>
+                {t('orders.markPaid')}
+              </Button>
+              <Button color="error" onClick={() => handleCancel(selectedOrder.id)}>
+                {t('orders.cancel')}
+              </Button>
+            </>
+          )}
+          {selectedOrder?.status === 'paid' && (
+            <Button color="success" onClick={() => handleMarkComplete(selectedOrder.id)}>
+              {t('orders.markComplete')}
+            </Button>
+          )}
           <Button onClick={() => setOrderDialogOpen(false)}>{t('orders.close')}</Button>
         </DialogActions>
       </Dialog>

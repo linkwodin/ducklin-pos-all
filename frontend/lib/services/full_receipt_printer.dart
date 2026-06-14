@@ -144,7 +144,7 @@ class FullReceiptPrinter {
       final product = item['product'] as Map<String, dynamic>?;
       final quantityValue = item['quantity'];
       final quantity = (quantityValue != null ? (quantityValue as num).toDouble() : 0.0);
-      final unitType = product?['unit_type'] ?? 'quantity';
+      final itemMap = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item as Map);
 
       final productNameChinese = product?['name_chinese']?.toString() ?? '';
       final productNameEnglish = product?['name']?.toString() ?? '';
@@ -154,10 +154,7 @@ class FullReceiptPrinter {
         productNameEnglish: productNameEnglish,
       );
 
-      // Full receipt: product name, quantity (right-aligned), and optionally price
-      final quantityText = unitType == 'weight'
-          ? '${quantity.toStringAsFixed(2)}g'
-          : '${quantity.toStringAsFixed(0)} ';
+      final quantityText = ReceiptPrinterHelpers.formatReceiptQuantity(itemMap, product);
 
       String? lineTotal;
       if (includePrice) {

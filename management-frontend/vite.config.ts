@@ -1,5 +1,9 @@
-import { defineConfig } from 'vite'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Declare process for TypeScript (available in Node.js environment)
 declare const process: {
@@ -11,6 +15,16 @@ declare const process: {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, '')
+  if (mode === 'uat') {
+    const api = (env.VITE_API_URL ?? '').trim()
+    if (!api.startsWith('http://') && !api.startsWith('https://')) {
+      throw new Error(
+        'UAT build needs VITE_API_URL as an absolute URL in .env.uat (see env.uat example). Relative /api/v1 breaks Firebase Hosting.',
+      )
+    }
+  }
+
   // Use '/' for Firebase Hosting (absolute paths work fine)
   // Firebase Hosting supports absolute paths and handles routing properly
   // Use './' for Cloud Storage deployments (relative paths required)
@@ -23,6 +37,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     base: base,
+    resolve: {
+      alias: {
+        '@repoDocs': path.resolve(__dirname, '../docs'),
+      },
+    },
     server: {
       port: 3000,
       proxy: {

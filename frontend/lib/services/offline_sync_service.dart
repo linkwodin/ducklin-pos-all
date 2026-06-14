@@ -121,6 +121,7 @@ class OfflineSyncService {
             item['product_id'] as int,
             storeId,
             quantity: (item['quantity'] as num).toDouble(),
+            weightQuantityG: (item['weight_quantity_g'] as num?)?.toDouble(),
             reason: reason,
           );
         }

@@ -24,6 +24,7 @@ import {
   Delete as DeleteIcon,
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { restockAPI, storesAPI, productsAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { RestockOrder, Store, Product } from '../types';
@@ -31,6 +32,7 @@ import { format } from 'date-fns';
 import ProductAutocomplete from '../components/ProductAutocomplete';
 
 export default function RestockOrdersPage() {
+  const { t } = useTranslation('shipment');
   const [orders, setOrders] = useState<RestockOrder[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
@@ -73,12 +75,12 @@ export default function RestockOrdersPage() {
   };
 
   const handleReceive = async (id: number) => {
-    if (!window.confirm('Mark this order as received? This will update stock levels.')) {
+    if (!window.confirm(t('markReceived'))) {
       return;
     }
     try {
       await restockAPI.receive(id);
-      enqueueSnackbar('Order marked as received', { variant: 'success' });
+      enqueueSnackbar(t('orderReceived'), { variant: 'success' });
       fetchOrders();
     } catch (error) {
       enqueueSnackbar('Failed to receive order', { variant: 'error' });
@@ -92,7 +94,7 @@ export default function RestockOrdersPage() {
   }) => {
     try {
       await restockAPI.create(orderData);
-      enqueueSnackbar('Shipment created', { variant: 'success' });
+      enqueueSnackbar(t('shipmentCreated'), { variant: 'success' });
       setOpen(false);
       fetchOrders();
     } catch (error: any) {
@@ -117,29 +119,39 @@ export default function RestockOrdersPage() {
     }
   };
 
+  const statusToLabel = (status: string) => {
+    const map: Record<string, string> = {
+      initiated: t('initiated'),
+      in_transit: t('inTransit'),
+      received: t('received'),
+      cancelled: t('cancelled'),
+    };
+    return map[status] || status;
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Shipment</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => setOpen(true)}
         >
-          Create Shipment
+          {t('createShipment')}
         </Button>
       </Box>
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           select
-          label="Filter by Store"
+          label={t('filterByStore')}
           value={storeFilter}
           onChange={(e) => setStoreFilter(e.target.value ? Number(e.target.value) : '')}
           sx={{ minWidth: 200 }}
           size="small"
         >
-          <MenuItem value="">All Stores</MenuItem>
+          <MenuItem value="">{t('allStores')}</MenuItem>
           {stores.map((store) => (
             <MenuItem key={store.id} value={store.id}>
               {store.name}
@@ -148,17 +160,17 @@ export default function RestockOrdersPage() {
         </TextField>
         <TextField
           select
-          label="Filter by Status"
+          label={t('filterByStatus')}
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           sx={{ minWidth: 200 }}
           size="small"
         >
-          <MenuItem value="">All Statuses</MenuItem>
-          <MenuItem value="initiated">Initiated</MenuItem>
-          <MenuItem value="in_transit">In Transit</MenuItem>
-          <MenuItem value="received">Received</MenuItem>
-          <MenuItem value="cancelled">Cancelled</MenuItem>
+          <MenuItem value="">{t('allStatuses')}</MenuItem>
+          <MenuItem value="initiated">{t('initiated')}</MenuItem>
+          <MenuItem value="in_transit">{t('inTransit')}</MenuItem>
+          <MenuItem value="received">{t('received')}</MenuItem>
+          <MenuItem value="cancelled">{t('cancelled')}</MenuItem>
         </TextField>
       </Box>
 
@@ -166,26 +178,26 @@ export default function RestockOrdersPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Order ID</TableCell>
-              <TableCell>Store</TableCell>
-              <TableCell>Items</TableCell>
-              <TableCell>Tracking Number</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Initiated At</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('orderId')}</TableCell>
+              <TableCell>{t('store')}</TableCell>
+              <TableCell>{t('items')}</TableCell>
+              <TableCell>{t('trackingNumber')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
+              <TableCell>{t('initiatedAt')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={7} align="center">
-                  Loading...
+                  {t('loading')}
                 </TableCell>
               </TableRow>
             ) : orders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} align="center">
-                  No orders found
+                  {t('noOrders')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -194,7 +206,7 @@ export default function RestockOrdersPage() {
                   <TableCell>#{order.id}</TableCell>
                   <TableCell>{order.store?.name || '-'}</TableCell>
                   <TableCell>
-                    {order.items?.length || 0} item(s)
+                    {t('itemsCount', { count: order.items?.length || 0 })}
                     {order.items && order.items.length > 0 && (
                       <Box component="ul" sx={{ pl: 2, m: 0, fontSize: '0.875rem' }}>
                         {order.items.slice(0, 2).map((item) => (
@@ -203,7 +215,7 @@ export default function RestockOrdersPage() {
                           </li>
                         ))}
                         {order.items.length > 2 && (
-                          <li>...and {order.items.length - 2} more</li>
+                          <li>{t('andMore', { count: order.items.length - 2 })}</li>
                         )}
                       </Box>
                     )}
@@ -211,7 +223,7 @@ export default function RestockOrdersPage() {
                   <TableCell>{order.tracking_number || '-'}</TableCell>
                   <TableCell>
                     <Chip
-                      label={order.status}
+                      label={statusToLabel(order.status)}
                       size="small"
                       color={getStatusColor(order.status) as any}
                     />
@@ -242,6 +254,7 @@ export default function RestockOrdersPage() {
         onClose={() => setOpen(false)}
         onSave={handleSave}
         stores={stores}
+        t={t}
       />
     </Box>
   );
@@ -252,6 +265,7 @@ function RestockOrderDialog({
   onClose,
   onSave,
   stores,
+  t,
 }: {
   open: boolean;
   onClose: () => void;
@@ -261,6 +275,7 @@ function RestockOrderDialog({
     notes?: string;
   }) => void;
   stores: Store[];
+  t: (key: string) => string;
 }) {
   const [formData, setFormData] = useState({
     store_id: 0,
@@ -313,12 +328,12 @@ function RestockOrderDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Create Shipment</DialogTitle>
+      <DialogTitle>{t('createShipment')}</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           <TextField
             select
-            label="Store"
+            label={t('store')}
             required
             fullWidth
             value={formData.store_id}
@@ -333,7 +348,7 @@ function RestockOrderDialog({
             ))}
           </TextField>
           <TextField
-            label="Notes"
+            label={t('notes')}
             fullWidth
             multiline
             rows={3}
@@ -342,7 +357,7 @@ function RestockOrderDialog({
           />
           <Box>
             <Button onClick={handleAddItem} startIcon={<AddIcon />}>
-              Add Item
+              {t('addItem')}
             </Button>
             {formData.items.map((item, index) => (
               <Box key={index} sx={{ display: 'flex', gap: 1, mt: 1 }}>
@@ -351,11 +366,11 @@ function RestockOrderDialog({
                     products={products}
                     value={item.product_id || null}
                     onChange={(id) => handleItemChange(index, 'product_id', id ?? 0)}
-                    label="Product"
+                    label={t('product')}
                   />
                 </Box>
                 <TextField
-                  label="Quantity"
+                  label={t('quantity')}
                   type="number"
                   required
                   sx={{ flex: 1 }}
@@ -374,9 +389,9 @@ function RestockOrderDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('cancel')}</Button>
         <Button onClick={handleSubmit} variant="contained">
-          Create Order
+          {t('createOrder')}
         </Button>
       </DialogActions>
     </Dialog>

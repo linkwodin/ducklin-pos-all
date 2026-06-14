@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,13 @@ class _LineItem {
   _LineItem({this.productId, this.quantity = 1, this.discountAmount = 0});
 }
 
+class _PoAttachmentFile {
+  final String path;
+  final String name;
+
+  const _PoAttachmentFile({required this.path, required this.name});
+}
+
 class CreateWholesaleOrderScreen extends StatefulWidget {
   const CreateWholesaleOrderScreen({super.key});
 
@@ -23,21 +31,40 @@ class CreateWholesaleOrderScreen extends StatefulWidget {
 }
 
 class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen> {
+  static const _orderChannelOptions = <Map<String, String>>[
+    {'value': 'po', 'label': 'Client PO'},
+    {'value': 'whatsapp', 'label': 'WhatsApp'},
+    {'value': 'wechat', 'label': 'WeChat'},
+    {'value': 'email', 'label': 'Email'},
+    {'value': 'na', 'label': 'N/A'},
+  ];
+
   List<dynamic> _stores = [];
   List<dynamic> _clients = [];
   int? _selectedStoreId;
   int? _selectedClientId;
+  int? _deliveryStoreId;
+  DateTime _poDate = DateTime.now();
+  String _orderChannel = 'whatsapp';
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _poNumberController = TextEditingController();
+  final TextEditingController _paymentTermsController = TextEditingController();
+  final TextEditingController _shippingFeeController = TextEditingController();
   final List<_LineItem> _lines = [_LineItem()];
+  final List<_PoAttachmentFile> _poAttachments = [];
   bool _orderDiscountIsRate = false; // false = amount in £, true = rate %
   double _orderDiscountValue = 0; // amount or rate, depending on _orderDiscountIsRate
+  Map<int, Map<String, dynamic>> _pricingByProductId = {};
   bool _loadingStores = true;
+  bool _loadingPricing = false;
   bool _submitting = false;
+  bool _submitSucceeded = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadPricingProducts();
   }
 
   Future<void> _loadData() async {
@@ -57,6 +84,7 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
         }
         if (_selectedClientId == null && clientList.isNotEmpty) {
           _selectedClientId = _clientId(clientList.first);
+          _applyClientDefaults(clientList.first);
         }
       });
     } catch (_) {
@@ -74,9 +102,120 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
   int _clientId(dynamic c) => c is Map ? (c['id'] is int ? c['id'] as int : (c['id'] as num).toInt()) : 0;
   String _clientName(dynamic c) => c is Map ? (c['name'] ?? '').toString() : '';
 
+  Map<String, dynamic>? get _selectedClient {
+    if (_selectedClientId == null) return null;
+    for (final c in _clients) {
+      if (c is Map && _clientId(c) == _selectedClientId) return c.cast<String, dynamic>();
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> get _clientDeliveryStores {
+    final stores = _selectedClient?['stores'];
+    if (stores is! List) return [];
+    return stores
+        .whereType<Map>()
+        .map((s) => s.cast<String, dynamic>())
+        .where((s) => s['is_active'] != false)
+        .toList();
+  }
+
+  void _applyClientDefaults(dynamic client) {
+    if (client is! Map) return;
+    _paymentTermsController.text = (client['terms'] ?? '').toString();
+    _deliveryStoreId = null;
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _deliveryStoreLabel(Map<String, dynamic> s) {
+    final name = (s['name'] ?? '').toString();
+    final line1 = (s['address_line1'] ?? '').toString();
+    final postcode = (s['postcode'] ?? '').toString();
+    final parts = <String>[name];
+    if (line1.isNotEmpty) parts.add(line1);
+    if (postcode.isNotEmpty) parts.add(postcode);
+    return parts.join(' — ');
+  }
+
+  Future<void> _loadPricingProducts() async {
+    setState(() => _loadingPricing = true);
+    try {
+      final date = _formatDate(_poDate);
+      final list = await ApiService.instance.listProducts(
+        effectiveFrom: date,
+        effectiveTo: date,
+      );
+      final map = <int, Map<String, dynamic>>{};
+      for (final p in list) {
+        if (p is! Map) continue;
+        final rawId = p['id'];
+        final id = rawId is int ? rawId : (rawId as num?)?.toInt();
+        if (id != null) map[id] = p.cast<String, dynamic>();
+      }
+      if (mounted) {
+        setState(() {
+          _pricingByProductId = map;
+          _loadingPricing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingPricing = false);
+    }
+  }
+
+  Future<void> _pickPoDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _poDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => _poDate = picked);
+      await _loadPricingProducts();
+    }
+  }
+
+  Map<String, dynamic>? _productForPricing(int? productId, [Map<String, dynamic>? fallback]) {
+    if (productId == null) return fallback;
+    return _pricingByProductId[productId] ?? fallback;
+  }
+
+  bool _isPoAttachmentFile(PlatformFile file) {
+    final ext = file.extension?.toLowerCase() ?? '';
+    if (ext == 'pdf') return true;
+    return const {'jpg', 'jpeg', 'png', 'webp', 'heic', 'gif', 'bmp'}.contains(ext);
+  }
+
+  Future<void> _pickPoAttachments() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'gif', 'bmp'],
+      allowMultiple: true,
+      withData: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final picked = <_PoAttachmentFile>[];
+    for (final file in result.files) {
+      final path = file.path;
+      if (path == null || path.isEmpty || !_isPoAttachmentFile(file)) continue;
+      picked.add(_PoAttachmentFile(
+        path: path,
+        name: file.name.isNotEmpty ? file.name : path.split('/').last,
+      ));
+    }
+    if (picked.isEmpty) return;
+    setState(() => _poAttachments.addAll(picked));
+  }
+
   @override
   void dispose() {
     _notesController.dispose();
+    _poNumberController.dispose();
+    _paymentTermsController.dispose();
+    _shippingFeeController.dispose();
     super.dispose();
   }
 
@@ -118,9 +257,13 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
     final cost = product['current_cost'];
     double price = 0;
     if (cost is Map) {
-      final wholesale = (cost['wholesale_cost_gbp'] as num?)?.toDouble() ?? 0.0;
+      // Match management create + server pricing: retail first, then wholesale.
       final directRetail = (cost['direct_retail_online_store_price_gbp'] as num?)?.toDouble() ?? 0.0;
-      price = wholesale > 0 ? wholesale : directRetail;
+      final wholesale = (cost['wholesale_cost_gbp'] as num?)?.toDouble() ?? 0.0;
+      price = directRetail > 0 ? directRetail : wholesale;
+    }
+    if (price <= 0) {
+      price = (product['pos_price'] as num?)?.toDouble() ?? 0.0;
     }
 
     final sectorId = _clientSectorId;
@@ -156,7 +299,8 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
       }
     }
     if (product == null) return 0.0;
-    final unit = _unitPrice(product);
+    final priced = _productForPricing(line.productId, product) ?? product;
+    final unit = _unitPrice(priced);
     final before = unit * line.quantity;
     final discount = line.discountAmount.clamp(0, before);
     final subtotal = before - discount;
@@ -185,14 +329,7 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
     final unitPrice = _unitPrice(product);
     final before = unitPrice * line.quantity;
     double tempAmount = line.discountAmount;
-    bool isRateMode = false;
-
-    if (before > 0 && line.discountAmount > 0) {
-      final currentRate = (line.discountAmount / before) * 100;
-      // Default to amount mode but allow switching to rate with a sensible initial value.
-      tempAmount = line.discountAmount;
-      isRateMode = false;
-    }
+    String discountMode = 'amount'; // amount | rate | per_unit
 
     await showDialog<void>(
       context: context,
@@ -203,10 +340,14 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
             final effectiveAmount = () {
               final parsed = double.tryParse(input);
               if (parsed == null || parsed <= 0) return tempAmount;
-              if (isRateMode) {
+              if (discountMode == 'rate') {
                 if (before <= 0) return 0.0;
                 final rate = parsed.clamp(0, 100);
                 return before * rate / 100;
+              }
+              if (discountMode == 'per_unit') {
+                if (line.quantity <= 0) return 0.0;
+                return (parsed * line.quantity).clamp(0, before);
               }
               return parsed.clamp(0, before);
             }();
@@ -218,27 +359,39 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
                       ChoiceChip(
                         label: const Text('Amount £'),
-                        selected: !isRateMode,
+                        selected: discountMode == 'amount',
                         onSelected: (sel) {
                           if (!sel) return;
                           setStateDialog(() {
-                            isRateMode = false;
+                            discountMode = 'amount';
                             input = '';
                           });
                         },
                       ),
-                      const SizedBox(width: 8),
                       ChoiceChip(
                         label: const Text('Rate %'),
-                        selected: isRateMode,
+                        selected: discountMode == 'rate',
                         onSelected: (sel) {
                           if (!sel) return;
                           setStateDialog(() {
-                            isRateMode = true;
+                            discountMode = 'rate';
+                            input = '';
+                          });
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('Per unit £'),
+                        selected: discountMode == 'per_unit',
+                        onSelected: (sel) {
+                          if (!sel) return;
+                          setStateDialog(() {
+                            discountMode = 'per_unit';
                             input = '';
                           });
                         },
@@ -251,7 +404,11 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                     textInputAction: TextInputAction.done,
                     autofocus: true,
                     decoration: InputDecoration(
-                      labelText: isRateMode ? 'Discount rate (%)' : 'Discount amount (£)',
+                      labelText: discountMode == 'rate'
+                          ? 'Discount rate (%)'
+                          : discountMode == 'per_unit'
+                              ? 'Discount per unit (£)'
+                              : 'Discount amount (£)',
                     ),
                     onChanged: (v) => setStateDialog(() => input = v),
                   ),
@@ -274,12 +431,18 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                     double newAmount;
                     if (parsed == null || parsed <= 0) {
                       newAmount = 0;
-                    } else if (isRateMode) {
+                    } else if (discountMode == 'rate') {
                       if (before <= 0) {
                         newAmount = 0;
                       } else {
                         final rate = parsed.clamp(0, 100);
                         newAmount = before * rate / 100;
+                      }
+                    } else if (discountMode == 'per_unit') {
+                      if (line.quantity <= 0) {
+                        newAmount = 0;
+                      } else {
+                        newAmount = (parsed * line.quantity).clamp(0, before);
                       }
                     } else {
                       newAmount = parsed.clamp(0, before);
@@ -449,6 +612,7 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
   }
 
   Future<void> _submit() async {
+    if (_submitSucceeded || _submitting) return;
     if (_selectedClientId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a wholesale client'), backgroundColor: Colors.orange),
@@ -484,37 +648,53 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
       final subtotal = _orderSubtotal(products);
       final orderDiscountAmount = _orderDiscountAmount(subtotal);
 
+      final shippingFee = double.tryParse(_shippingFeeController.text.trim());
+      final poNumber = _poNumberController.text.trim();
       final result = await ApiService.instance.createWholesaleOrder(
         wholesaleClientId: _selectedClientId!,
         storeId: _selectedStoreId!,
         sectorId: _clientSectorId,
+        wholesaleClientStoreId: _deliveryStoreId,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        poNumber: poNumber.isNotEmpty ? poNumber : null,
+        orderChannel: _orderChannel,
+        poDate: _formatDate(_poDate),
+        paymentTerms: _paymentTermsController.text.trim().isEmpty
+            ? null
+            : _paymentTermsController.text.trim(),
+        shippingFee: shippingFee != null && shippingFee >= 0 ? shippingFee : null,
         items: items,
-        totalDiscount: orderDiscountAmount,
+        totalDiscount: orderDiscountAmount > 0 ? orderDiscountAmount : null,
       );
+      if (!mounted) return;
+      _submitSucceeded = true;
+      final orderId = result['id'] is int
+          ? result['id'] as int
+          : (result['id'] as num?)?.toInt();
+      if (orderId != null && _poAttachments.isNotEmpty) {
+        await ApiService.instance.uploadWholesaleOrderPoAttachments(
+          orderId,
+          _poAttachments.map((f) => f.path).toList(),
+        );
+      }
       if (!mounted) return;
       final orderNumber = result['order_number']?.toString() ?? '—';
       setState(() => _submitting = false);
-      await showDialog(
+      await showDialog<void>(
         context: context,
+        barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           title: const Text('Submitted'),
           content: Text('Your wholesale order has been submitted for approval.\n\nOrder: $orderNumber'),
           actions: [
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('OK'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-              },
-              child: const Text('Done'),
             ),
           ],
         ),
       );
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         setState(() => _submitting = false);
@@ -538,6 +718,10 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
         subtotal > 0 ? (orderDiscountAmount / subtotal) * 100 : 0.0;
     final totalAfterOrderDiscount =
         (subtotal - orderDiscountAmount).clamp(0, double.infinity);
+    final shippingFeeAmount =
+        double.tryParse(_shippingFeeController.text.trim()) ?? 0.0;
+    final grandTotal = totalAfterOrderDiscount +
+        (shippingFeeAmount > 0 ? shippingFeeAmount : 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -565,7 +749,16 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                             final id = _clientId(c);
                             return DropdownMenuItem(value: id, child: Text(_clientName(c)));
                           }).toList(),
-                          onChanged: (v) => setState(() => _selectedClientId = v),
+                          onChanged: (v) {
+                            setState(() {
+                              _selectedClientId = v;
+                              final client = _clients.cast<Map?>().firstWhere(
+                                    (c) => c != null && _clientId(c) == v,
+                                    orElse: () => null,
+                                  );
+                              if (client != null) _applyClientDefaults(client);
+                            });
+                          },
                         ),
                         if (_clientSectorName != null)
                           Padding(
@@ -575,6 +768,103 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             ),
                           ),
+                        const SizedBox(height: 16),
+                        const Text('Delivery location', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int?>(
+                          value: _deliveryStoreId,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Company address'),
+                            ),
+                            ..._clientDeliveryStores.map((s) {
+                              final id = s['id'] is int ? s['id'] as int : (s['id'] as num).toInt();
+                              return DropdownMenuItem<int?>(
+                                value: id,
+                                child: Text(
+                                  _deliveryStoreLabel(s),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }),
+                          ],
+                          onChanged: (v) => setState(() => _deliveryStoreId = v),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('Order channel', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: _orderChannel,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: _orderChannelOptions
+                              .map(
+                                (o) => DropdownMenuItem(
+                                  value: o['value'],
+                                  child: Text(o['label']!),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _orderChannel = v ?? 'whatsapp'),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('PO number', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _poNumberController,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: 'Client PO number (optional)',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('PO date', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _pickPoDate,
+                          icon: const Icon(Icons.calendar_today, size: 18),
+                          label: Text(_formatDate(_poDate)),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            _loadingPricing
+                                ? 'Loading prices for PO date…'
+                                : 'Prices reflect PO date and client sector discount.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('Payment terms', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _paymentTermsController,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: 'From client terms',
+                          ),
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text('Shipping fee (£)', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _shippingFeeController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: '0.00 (optional)',
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         const Text('Store', style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
@@ -602,6 +892,36 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                           maxLines: 2,
                         ),
                         const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('PO attachment', style: TextStyle(fontWeight: FontWeight.bold)),
+                            TextButton.icon(
+                              onPressed: _pickPoAttachments,
+                              icon: const Icon(Icons.attach_file, size: 20),
+                              label: const Text('Add files'),
+                            ),
+                          ],
+                        ),
+                        if (_poAttachments.isEmpty)
+                          Text(
+                            'Optional PDF or images of the client PO',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          )
+                        else
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _poAttachments.asMap().entries.map((e) {
+                              final file = e.value;
+                              final isPdf = file.name.toLowerCase().endsWith('.pdf');
+                              return InputChip(
+                                avatar: Icon(isPdf ? Icons.picture_as_pdf : Icons.image_outlined, size: 18),
+                                label: Text(file.name, overflow: TextOverflow.ellipsis),
+                                onDeleted: () => setState(() => _poAttachments.removeAt(e.key)),
+                              );
+                            }).toList(),
+                          ),
                         const SizedBox(height: 20),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -624,10 +944,13 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                                   .where((p) => (p['id'] is int ? p['id'] as int : (p['id'] as num).toInt()) == line.productId)
                                   .toList();
                           final product = productList.isEmpty ? null : productList.first;
+                          final pricedProduct =
+                              product != null ? _productForPricing(line.productId, product) : null;
                           final imageUrl = product?['image_url']?.toString();
                           final productName = product != null ? _productName(product) : '';
 
-                          final unitPrice = product != null ? _unitPrice(product) : 0.0;
+                          final unitPrice =
+                              pricedProduct != null ? _unitPrice(pricedProduct) : 0.0;
                           final beforeDiscount = unitPrice * line.quantity;
                           final lineDiscount = line.discountAmount;
                           final subtotal = (beforeDiscount - lineDiscount).clamp(0, double.infinity);
@@ -727,7 +1050,9 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                                 SizedBox(
                                   width: 120,
                                   child: OutlinedButton(
-                                    onPressed: product == null ? null : () => _editLineDiscount(line, product),
+                                    onPressed: pricedProduct == null
+                                        ? null
+                                        : () => _editLineDiscount(line, pricedProduct),
                                     child: Text(
                                       discountLabel,
                                       maxLines: 1,
@@ -779,15 +1104,26 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                                 ],
                               ),
                               const SizedBox(height: 4),
+                              if (shippingFeeAmount > 0) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('Shipping fee'),
+                                    Text('£${shippingFeeAmount.toStringAsFixed(2)}'),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 4),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
-                                    'Total after discount',
+                                    'Total',
                                     style: TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   Text(
-                                    '£${totalAfterOrderDiscount.toStringAsFixed(2)}',
+                                    '£${grandTotal.toStringAsFixed(2)}',
                                     style: const TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -804,14 +1140,14 @@ class _CreateWholesaleOrderScreenState extends State<CreateWholesaleOrderScreen>
                   decoration: BoxDecoration(color: Colors.grey[200]),
                   child: SafeArea(
                     child: FilledButton(
-                      onPressed: _submitting ? null : _submit,
+                      onPressed: (_submitting || _submitSucceeded) ? null : _submit,
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(double.infinity, 52),
                         textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       child: _submitting
                           ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Submit for approval'),
+                          : Text(_submitSucceeded ? 'Submitted' : 'Submit for approval'),
                     ),
                   ),
                 ),

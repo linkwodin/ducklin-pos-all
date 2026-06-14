@@ -14,11 +14,13 @@ import {
   TableRow,
 } from '@mui/material';
 import { Download as DownloadIcon } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { catalogAPI, sectorsAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { Sector } from '../types';
 
 export default function CatalogPage() {
+  const { t } = useTranslation('catalogs');
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [selectedSector, setSelectedSector] = useState<number | ''>('');
   const [catalogData, setCatalogData] = useState<any>(null);
@@ -78,14 +80,14 @@ export default function CatalogPage() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        E-Catalog Generation
+        {t('eCatalogTitle')}
       </Typography>
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
           <TextField
             select
-            label="Select Sector"
+            label={t('selectSector')}
             value={selectedSector}
             onChange={(e) => setSelectedSector(e.target.value ? Number(e.target.value) : '')}
             sx={{ minWidth: 300 }}
@@ -101,7 +103,7 @@ export default function CatalogPage() {
             onClick={handleGenerate}
             disabled={loading || !selectedSector}
           >
-            Generate Catalog
+            {t('generateCatalog')}
           </Button>
           {catalogData && (
             <Button
@@ -109,7 +111,7 @@ export default function CatalogPage() {
               startIcon={<DownloadIcon />}
               onClick={handleDownload}
             >
-              Download PDF
+              {t('downloadPdf')}
             </Button>
           )}
         </Box>
@@ -118,21 +120,21 @@ export default function CatalogPage() {
       {catalogData && (
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Catalog Preview - {catalogData.sector?.name} ({catalogData.quarter})
+            {t('catalogPreview')} - {catalogData.sector?.name} ({catalogData.quarter})
           </Typography>
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            Generated at: {new Date(catalogData.generated_at).toLocaleString()}
+            {t('generatedAt')}: {new Date(catalogData.generated_at).toLocaleString()}
           </Typography>
           <TableContainer sx={{ mt: 2 }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Product</TableCell>
-                  <TableCell>SKU</TableCell>
-                  <TableCell>Barcode</TableCell>
-                  <TableCell>Wholesale Cost</TableCell>
-                  <TableCell>Discount</TableCell>
-                  <TableCell>Final Price</TableCell>
+                  <TableCell>{t('product')}</TableCell>
+                  <TableCell>{t('sku')}</TableCell>
+                  <TableCell>{t('barcode')}</TableCell>
+                  <TableCell>{t('wholesaleCost')}</TableCell>
+                  <TableCell>{t('discount')}</TableCell>
+                  <TableCell>{t('finalPrice')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>

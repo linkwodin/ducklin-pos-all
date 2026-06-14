@@ -51,6 +51,21 @@ if [ ! -f "firebase.json" ]; then
     exit 1
 fi
 
+# Firebase project (for success message)
+FIREBASE_PROJECT="ducklin-uk-uat"
+if [ -f ".firebaserc" ]; then
+    EXTRACTED=$(grep '"default"' .firebaserc | sed -E 's/.*"default"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' 2>/dev/null || echo "")
+    if [ -n "$EXTRACTED" ]; then
+        FIREBASE_PROJECT="$EXTRACTED"
+    fi
+fi
+
+# Optional: bake AI playbook URL into the bundle (see management-frontend/functions/README.md).
+if [ -n "${VITE_AI_PLAYBOOK_URL:-}" ]; then
+    export VITE_AI_PLAYBOOK_URL
+    print_info "VITE_AI_PLAYBOOK_URL from environment: $VITE_AI_PLAYBOOK_URL"
+fi
+
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
     print_info "Installing dependencies..."
@@ -85,20 +100,14 @@ fi
 
 print_success "Build completed successfully"
 
-# Get Firebase project ID from .firebaserc (we're already in management-frontend directory)
-FIREBASE_PROJECT="ducklin-uk-uat"  # Default project
-if [ -f ".firebaserc" ]; then
-    # Extract project ID from .firebaserc JSON (looks for "default": "project-id")
-    EXTRACTED=$(grep '"default"' .firebaserc | sed -E 's/.*"default"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' 2>/dev/null || echo "")
-    if [ -n "$EXTRACTED" ]; then
-        FIREBASE_PROJECT="$EXTRACTED"
-    fi
+# Hosting only by default (aiPlaybook Cloud Function: set JWT_SECRET, then deploy separately — see functions/README.md).
+print_info "Deploying Firebase Hosting..."
+FIREBASE_DEPLOY_TARGETS="hosting"
+if [ "${DEPLOY_FIREBASE_FUNCTIONS:-}" = "1" ]; then
+    FIREBASE_DEPLOY_TARGETS="hosting,functions"
+    print_info "DEPLOY_FIREBASE_FUNCTIONS=1 → also deploying Cloud Functions"
 fi
-
-# Deploy to Firebase
-print_info "Deploying to Firebase Hosting..."
-# Use default hosting (the uat target in .firebaserc maps to "default" site)
-firebase deploy --only hosting
+firebase deploy --only "$FIREBASE_DEPLOY_TARGETS"
 
 print_success "Deployment completed!"
 

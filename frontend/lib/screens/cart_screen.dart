@@ -41,7 +41,8 @@ class CartScreen extends StatelessWidget {
               final item = orderProvider.cartItems[index];
               final product = item['product'] as Map<String, dynamic>;
               final quantity = (item['quantity'] as num).toDouble();
-              final unitType = product['unit_type'] ?? 'quantity';
+              final lineUnitType = (item['unit_type'] ?? 'quantity').toString();
+              final isWeightLine = lineUnitType == 'weight';
 
               final imageUrl = (product['image_url'] ?? '').toString().trim();
               return ListTile(
@@ -69,7 +70,7 @@ class CartScreen extends StatelessWidget {
                       ),
                 title: Text(_getProductName(product, context)),
                 subtitle: Text(
-                  unitType == 'weight'
+                  isWeightLine
                       ? l10n.weightDisplay(quantity.toStringAsFixed(2))
                       : l10n.qty(quantity.toStringAsFixed(0)),
                 ),
@@ -79,7 +80,10 @@ class CartScreen extends StatelessWidget {
                     Text('£${(item['line_total'] as num).toStringAsFixed(2)}'),
                     IconButton(
                       icon: const Icon(Icons.delete),
-                      onPressed: () => orderProvider.removeFromCart(product['id']),
+                      onPressed: () => orderProvider.removeFromCart(
+                        product['id'] as int,
+                        unitType: lineUnitType,
+                      ),
                     ),
                   ],
                 ),
@@ -189,8 +193,8 @@ class CartScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final product = item['product'] as Map<String, dynamic>;
     final currentQuantity = (item['quantity'] as num).toDouble();
-    final unitType = product['unit_type'] ?? 'quantity';
-    final isWeight = unitType == 'weight';
+    final lineUnitType = (item['unit_type'] ?? 'quantity').toString();
+    final isWeight = lineUnitType == 'weight';
 
     final TextEditingController quantityController = TextEditingController(
       text: currentQuantity.toStringAsFixed(isWeight ? 2 : 0),
@@ -220,7 +224,11 @@ class CartScreen extends StatelessWidget {
           onSubmitted: (value) {
             final newQuantity = double.tryParse(value);
             if (newQuantity != null && newQuantity > 0) {
-              orderProvider.updateCartItemQuantity(product['id'], newQuantity);
+              orderProvider.updateCartItemQuantity(
+                product['id'] as int,
+                newQuantity,
+                unitType: lineUnitType,
+              );
               Navigator.pop(context);
             }
           },
@@ -234,7 +242,11 @@ class CartScreen extends StatelessWidget {
             onPressed: () {
               final newQuantity = double.tryParse(quantityController.text);
               if (newQuantity != null && newQuantity > 0) {
-                orderProvider.updateCartItemQuantity(product['id'], newQuantity);
+                orderProvider.updateCartItemQuantity(
+                product['id'] as int,
+                newQuantity,
+                unitType: lineUnitType,
+              );
                 Navigator.pop(context);
               }
             },

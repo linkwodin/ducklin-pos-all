@@ -25,7 +25,9 @@ var defaultCompanySettings = models.CompanySettings{
 	BankAccountNumber: "25307108",
 	BankSortCode:      "23-08-01",
 	BankAddress:       "56 Shoreditch High Street, London E1 6JJ",
-	BankIBAN:          "GB90 TRWI 2308 0125 3071 08",
+	BankIBAN:                       "GB90 TRWI 2308 0125 3071 08",
+	WholesaleOrderEmailDefaultCC:    "",
+	ShipmentCouriers:                "In-house\nDPD\nRoyal Mail",
 }
 
 // SettingsHandler handles company/settings API.
@@ -74,6 +76,10 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 		BankAddress       *string `json:"bank_address"`
 		BankIBAN          *string `json:"bank_iban"`
 		PaymentInfo       *string `json:"payment_info"`
+		PaymentTransferToInfo              *string `json:"payment_transfer_to_info"`
+		WholesaleOrderEmailSubjectTemplate *string `json:"wholesale_order_email_subject_template"`
+		WholesaleOrderEmailDefaultCC       *string `json:"wholesale_order_email_default_cc"`
+		ShipmentCouriers                   *string `json:"shipment_couriers"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -83,6 +89,20 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 		lines := strings.Split(*body.PaymentInfo, "\n")
 		if len(lines) > 5 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Payment details must not exceed 5 lines (invoice layout)"})
+			return
+		}
+	}
+	if body.PaymentTransferToInfo != nil {
+		lines := strings.Split(*body.PaymentTransferToInfo, "\n")
+		if len(lines) > 5 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Payment transfer destinations must not exceed 5 lines"})
+			return
+		}
+	}
+	if body.ShipmentCouriers != nil {
+		lines := strings.Split(*body.ShipmentCouriers, "\n")
+		if len(lines) > 30 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Shipment couriers must not exceed 30 lines"})
 			return
 		}
 	}
@@ -139,6 +159,18 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 	}
 	if body.PaymentInfo != nil {
 		s.PaymentInfo = *body.PaymentInfo
+	}
+	if body.PaymentTransferToInfo != nil {
+		s.PaymentTransferToInfo = *body.PaymentTransferToInfo
+	}
+	if body.WholesaleOrderEmailSubjectTemplate != nil {
+		s.WholesaleOrderEmailSubjectTemplate = *body.WholesaleOrderEmailSubjectTemplate
+	}
+	if body.WholesaleOrderEmailDefaultCC != nil {
+		s.WholesaleOrderEmailDefaultCC = strings.TrimSpace(*body.WholesaleOrderEmailDefaultCC)
+	}
+	if body.ShipmentCouriers != nil {
+		s.ShipmentCouriers = *body.ShipmentCouriers
 	}
 	if err := h.db.Save(&s).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

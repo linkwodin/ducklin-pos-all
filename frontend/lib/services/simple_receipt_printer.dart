@@ -163,7 +163,7 @@ class SimpleReceiptPrinter {
       final product = item['product'] as Map<String, dynamic>?;
       final quantityValue = item['quantity'];
       final quantity = (quantityValue != null ? (quantityValue as num).toDouble() : 0.0);
-      final unitType = product?['unit_type'] ?? 'quantity';
+      final itemMap = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item as Map);
       final productNameChinese = product?['name_chinese']?.toString() ?? '';
       final productNameEnglish = product?['name']?.toString() ?? '';
 
@@ -172,10 +172,7 @@ class SimpleReceiptPrinter {
         productNameEnglish: productNameEnglish,
       );
 
-      // Format quantity text
-      final quantityText = unitType == 'weight'
-          ? '${quantity.toStringAsFixed(2)}g'
-          : '${quantity.toStringAsFixed(0)} ';
+      final quantityText = ReceiptPrinterHelpers.formatReceiptQuantity(itemMap, product);
 
       // No price, no barcode - just product name with quantity
       final productLineImageBytes = await _renderProductLineSimple(productLine, quantityText, fontSize: 24);

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -34,7 +35,7 @@ func NewStockHandler(db *gorm.DB) *StockHandler {
 
 func (h *StockHandler) ListStock(c *gin.Context) {
 	var stock []models.Stock
-	query := h.db.Preload("Product").Preload("Store")
+	query := h.db.Preload("Product.ProductLine").Preload("Store")
 
 	if storeID := c.Query("store_id"); storeID != "" {
 		query = query.Where("store_id = ?", storeID)
@@ -48,7 +49,32 @@ func (h *StockHandler) ListStock(c *gin.Context) {
 	// Calculate incoming quantities for each stock item
 	type StockResponse struct {
 		models.Stock
-		IncomingQuantity float64 `json:"incoming_quantity"`
+		IncomingQuantity   float64 `json:"incoming_quantity"`
+		PendingPackQuantity float64 `json:"pending_pack_quantity"`
+	}
+
+	pendingPackByKey := map[string]float64{}
+	type pendingPackRow struct {
+		StoreID   uint
+		ProductID uint
+		Qty       float64
+	}
+	var pendingRows []pendingPackRow
+	if err := h.db.Table("shipment_items si").
+		Select(`s.store_id AS store_id, woi.product_id AS product_id,
+			SUM(CASE WHEN si.quantity > 0 THEN si.quantity ELSE woi.quantity END) AS qty`).
+		Joins("INNER JOIN shipments s ON s.id = si.shipment_id").
+		Joins("INNER JOIN wholesale_order_items woi ON woi.id = si.wholesale_order_item_id").
+		Joins("INNER JOIN wholesale_orders wo ON wo.id = s.wholesale_order_id AND wo.status != ?", models.WholesaleOrderStatusDeleted).
+		Where("s.status IN ?", []string{models.ShipmentStatusAssigned, models.ShipmentStatusPacking}).
+		Group("s.store_id, woi.product_id").
+		Scan(&pendingRows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for _, row := range pendingRows {
+		key := fmt.Sprintf("%d:%d", row.StoreID, row.ProductID)
+		pendingPackByKey[key] = row.Qty
 	}
 
 	response := make([]StockResponse, len(stock))
@@ -70,18 +96,49 @@ func (h *StockHandler) ListStock(c *gin.Context) {
 		}
 
 		response[i] = StockResponse{
-			Stock:            s,
-			IncomingQuantity: incomingQty,
+			Stock:               s,
+			IncomingQuantity:    incomingQty,
+			PendingPackQuantity: pendingPackByKey[fmt.Sprintf("%d:%d", s.StoreID, s.ProductID)],
 		}
 	}
 
 	c.JSON(http.StatusOK, response)
 }
 
+// GetWholesaleShipFromMap returns product_id -> store_id for products with a default wholesale ship store.
+func (h *StockHandler) GetWholesaleShipFromMap(c *gin.Context) {
+	var rows []models.Stock
+	if err := h.db.Where("wholesale_ship_from = ?", true).Find(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make(map[string]uint, len(rows))
+	for _, row := range rows {
+		out[strconv.FormatUint(uint64(row.ProductID), 10)] = row.StoreID
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// GetProductStockAssignments returns all store stock rows for one product.
+func (h *StockHandler) GetProductStockAssignments(c *gin.Context) {
+	productID, err := strconv.ParseUint(c.Param("product_id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product_id"})
+		return
+	}
+	var stock []models.Stock
+	if err := h.db.Where("product_id = ?", uint(productID)).
+		Preload("Store").Find(&stock).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, stock)
+}
+
 func (h *StockHandler) GetStoreStock(c *gin.Context) {
 	var stock []models.Stock
 	if err := h.db.Where("store_id = ?", c.Param("store_id")).
-		Preload("Product").Find(&stock).Error; err != nil {
+		Preload("Product.ProductLine").Find(&stock).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -126,6 +183,9 @@ func (h *StockHandler) AssignProductsToStore(c *gin.Context) {
 			ProductID:         productID,
 			StoreID:           req.StoreID,
 			Quantity:          0,
+			WeightQuantityG:   0,
+			TrackPrepacked:    true,
+			TrackWeight:       productSupportsDualInventory(&product),
 			LowStockThreshold: 0,
 			LastUpdated:       now,
 		}
@@ -161,6 +221,113 @@ func (h *StockHandler) UnassignProductsFromStore(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"unassigned": int(result.RowsAffected), "store_id": req.StoreID, "product_ids": req.ProductIDs})
 }
 
+type StockAssignmentItem struct {
+	ProductID         uint `json:"product_id" binding:"required"`
+	TrackPrepacked    bool `json:"track_prepacked"`
+	TrackWeight       bool `json:"track_weight"`
+	WholesaleShipFrom bool `json:"wholesale_ship_from"`
+}
+
+type SetStockAssignmentsRequest struct {
+	StoreID     uint                  `json:"store_id" binding:"required"`
+	Assignments []StockAssignmentItem `json:"assignments" binding:"required"`
+}
+
+// SetStockAssignments upserts store stock rows with prepacked/weight tracking flags.
+func (h *StockHandler) SetStockAssignments(c *gin.Context) {
+	if !requireManagementOrSupervisor(c) {
+		return
+	}
+	var req SetStockAssignmentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var store models.Store
+	if err := h.db.First(&store, req.StoreID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Store not found"})
+		return
+	}
+
+	now := time.Now()
+	updated := 0
+	for _, item := range req.Assignments {
+		var product models.Product
+		if err := h.db.First(&product, item.ProductID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Product not found: " + strconv.FormatUint(uint64(item.ProductID), 10)})
+			return
+		}
+		dual := productSupportsDualInventory(&product)
+		trackPrepacked := item.TrackPrepacked
+		trackWeight := item.TrackWeight
+		if !dual {
+			trackPrepacked = item.TrackPrepacked || item.TrackWeight
+			trackWeight = false
+		}
+
+		var stock models.Stock
+		err := h.db.Where("product_id = ? AND store_id = ?", item.ProductID, req.StoreID).First(&stock).Error
+		if !trackPrepacked && !trackWeight {
+			if err == nil {
+				if stock.Quantity != 0 || stock.WeightQuantityG != 0 {
+					c.JSON(http.StatusBadRequest, gin.H{
+						"error": fmt.Sprintf("Cannot unassign product %d from store %d while stock quantities remain", item.ProductID, req.StoreID),
+					})
+					return
+				}
+				if delErr := h.db.Delete(&stock).Error; delErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": delErr.Error()})
+					return
+				}
+				updated++
+			}
+			continue
+		}
+
+		if err != nil {
+			stock = models.Stock{
+				ProductID:       item.ProductID,
+				StoreID:         req.StoreID,
+				Quantity:        0,
+				WeightQuantityG: 0,
+				LastUpdated:     now,
+			}
+		}
+		stock.TrackPrepacked = trackPrepacked
+		stock.TrackWeight = trackWeight
+		if item.WholesaleShipFrom {
+			if !trackPrepacked && !trackWeight {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Product %d must be assigned to store %d before marking as wholesale ship-from store", item.ProductID, req.StoreID),
+				})
+				return
+			}
+			if err := h.db.Model(&models.Stock{}).
+				Where("product_id = ? AND store_id != ?", item.ProductID, req.StoreID).
+				Update("wholesale_ship_from", false).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			stock.WholesaleShipFrom = true
+		} else if err == nil {
+			stock.WholesaleShipFrom = false
+		}
+		stock.LastUpdated = now
+		if err != nil {
+			if createErr := h.db.Create(&stock).Error; createErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": createErr.Error()})
+				return
+			}
+		} else if saveErr := h.db.Save(&stock).Error; saveErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": saveErr.Error()})
+			return
+		}
+		updated++
+	}
+
+	c.JSON(http.StatusOK, gin.H{"updated": updated, "store_id": req.StoreID})
+}
+
 func (h *StockHandler) GetLowStock(c *gin.Context) {
 	var stock []models.Stock
 	if err := h.db.Where("quantity <= low_stock_threshold").
@@ -185,6 +352,7 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 	storeIDStr := c.Param("store_id")
 
 	oldQuantity := 0.0
+	oldWeightG := 0.0
 	if err := h.db.Where("product_id = ? AND store_id = ?",
 		productIDStr, storeIDStr).First(&stock).Error; err != nil {
 		// Create if doesn't exist
@@ -196,10 +364,12 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 		}
 	} else {
 		oldQuantity = stock.Quantity
+		oldWeightG = stock.WeightQuantityG
 	}
 
 	var req struct {
 		Quantity          float64 `json:"quantity"`
+		WeightQuantityG   *float64 `json:"weight_quantity_g"`
 		LowStockThreshold float64 `json:"low_stock_threshold"`
 		Reason            string  `json:"reason"` // Reason for the update (e.g., "manual adjustment", "received stock", etc.)
 	}
@@ -209,6 +379,9 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 	}
 
 	stock.Quantity = req.Quantity
+	if req.WeightQuantityG != nil {
+		stock.WeightQuantityG = *req.WeightQuantityG
+	}
 	stock.LowStockThreshold = req.LowStockThreshold
 	stock.LastUpdated = time.Now()
 
@@ -219,11 +392,13 @@ func (h *StockHandler) UpdateStock(c *gin.Context) {
 
 	// Record audit log
 	changes := map[string]interface{}{
-		"product_id":   stock.ProductID,
-		"store_id":     stock.StoreID,
-		"old_quantity": oldQuantity,
-		"new_quantity": stock.Quantity,
-		"reason":       req.Reason,
+		"product_id":        stock.ProductID,
+		"store_id":          stock.StoreID,
+		"old_quantity":      oldQuantity,
+		"new_quantity":      stock.Quantity,
+		"old_weight_quantity_g": oldWeightG,
+		"new_weight_quantity_g": stock.WeightQuantityG,
+		"reason":            req.Reason,
 	}
 	changesJSON, _ := json.Marshal(changes)
 	auditLog := models.AuditLog{
@@ -575,7 +750,11 @@ func (h *StockHandler) ReceiveRestockOrder(c *gin.Context) {
 
 func (h *StockHandler) ListStores(c *gin.Context) {
 	var stores []models.Store
-	if err := h.db.Where("is_active = ?", true).Find(&stores).Error; err != nil {
+	query := h.db.Where("is_active = ?", true)
+	if c.Query("exclude_warehouse_only") == "true" {
+		query = query.Where("is_warehouse_only = ?", false)
+	}
+	if err := query.Find(&stores).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -585,8 +764,9 @@ func (h *StockHandler) ListStores(c *gin.Context) {
 
 func (h *StockHandler) CreateStore(c *gin.Context) {
 	var req struct {
-		Name    string `json:"name" binding:"required"`
-		Address string `json:"address"`
+		Name            string `json:"name" binding:"required"`
+		Address         string `json:"address"`
+		IsWarehouseOnly bool   `json:"is_warehouse_only"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -594,9 +774,10 @@ func (h *StockHandler) CreateStore(c *gin.Context) {
 	}
 
 	store := models.Store{
-		Name:     req.Name,
-		Address:  req.Address,
-		IsActive: true,
+		Name:            req.Name,
+		Address:         req.Address,
+		IsWarehouseOnly: req.IsWarehouseOnly,
+		IsActive:        true,
 	}
 
 	if err := h.db.Create(&store).Error; err != nil {
@@ -605,4 +786,102 @@ func (h *StockHandler) CreateStore(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, store)
+}
+
+// ConvertStockInventory moves inventory between prepacked units and loose weight (grams).
+func (h *StockHandler) ConvertStockInventory(c *gin.Context) {
+	if !requireManagementOrSupervisor(c) {
+		return
+	}
+	userIDInterface, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userID := userIDInterface.(uint)
+
+	var req struct {
+		Direction string  `json:"direction" binding:"required,oneof=unpack pack"`
+		Amount    float64 `json:"amount" binding:"required,gt=0"`
+		Reason    string  `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var stock models.Stock
+	if err := h.db.Preload("Product").Where("product_id = ? AND store_id = ?",
+		c.Param("product_id"), c.Param("store_id")).First(&stock).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Stock record not found"})
+		return
+	}
+	product := stock.Product
+	if !productSupportsDualInventory(&product) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Product does not support prepacked/weight inventory"})
+		return
+	}
+	prepackG := effectivePrepackWeightG(&product)
+	if prepackG <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Set prepack weight (g) on the product before pack/unpack"})
+		return
+	}
+
+	prepacked := effectivePrepackedQuantity(&stock, &product)
+	weightG := effectiveWeightQuantityG(&stock, &product)
+	oldPrepacked := prepacked
+	oldWeightG := weightG
+
+	switch req.Direction {
+	case "unpack":
+		if prepacked+1e-9 < req.Amount {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient prepacked inventory"})
+			return
+		}
+		prepacked -= req.Amount
+		weightG += req.Amount * prepackG
+	case "pack":
+		if weightG+1e-9 < req.Amount {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient weight inventory"})
+			return
+		}
+		units := req.Amount / prepackG
+		weightG -= req.Amount
+		prepacked += units
+	}
+
+	stock.Quantity = prepacked
+	stock.WeightQuantityG = weightG
+	stock.LastUpdated = time.Now()
+	if err := h.db.Save(&stock).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	changes := map[string]interface{}{
+		"product_id":              stock.ProductID,
+		"store_id":                stock.StoreID,
+		"direction":               req.Direction,
+		"amount":                  req.Amount,
+		"prepack_weight_g":        prepackG,
+		"old_prepacked_quantity":  oldPrepacked,
+		"new_prepacked_quantity":  prepacked,
+		"old_weight_quantity_g":   oldWeightG,
+		"new_weight_quantity_g":   weightG,
+		"reason":                  strings.TrimSpace(req.Reason),
+	}
+	changesJSON, _ := json.Marshal(changes)
+	auditLog := models.AuditLog{
+		UserID:     &userID,
+		Action:     "stock_convert_inventory",
+		EntityType: "stock",
+		EntityID:   &stock.ID,
+		Changes:    string(changesJSON),
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+	}
+	h.db.Create(&auditLog)
+
+	h.db.Preload("Product").Preload("Store").First(&stock, stock.ID)
+	c.JSON(http.StatusOK, stock)
 }

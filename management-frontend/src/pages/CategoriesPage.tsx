@@ -23,10 +23,12 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { categoriesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 
 export default function CategoriesPage() {
+  const { t } = useTranslation('categories');
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -53,12 +55,12 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (categoryName: string) => {
-    if (!window.confirm(`Are you sure you want to delete category "${categoryName}"? This will remove the category from all products.`)) {
+    if (!window.confirm(t('confirmDelete', { name: categoryName }))) {
       return;
     }
     try {
       await categoriesAPI.delete(categoryName);
-      enqueueSnackbar('Category deleted successfully', { variant: 'success' });
+      enqueueSnackbar(t('deleteSuccess'), { variant: 'success' });
       fetchCategories();
     } catch (error: any) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to delete category', {
@@ -78,7 +80,7 @@ export default function CategoriesPage() {
     }
     try {
       await categoriesAPI.rename(oldName, newName);
-      enqueueSnackbar('Category renamed successfully', { variant: 'success' });
+      enqueueSnackbar(t('renameSuccess'), { variant: 'success' });
       setRenameOpen(false);
       setEditingCategory(null);
       setNewCategoryName('');
@@ -97,7 +99,7 @@ export default function CategoriesPage() {
     }
     try {
       await categoriesAPI.create(newCategoryName);
-      enqueueSnackbar('Category created. It will appear when used in a product.', {
+      enqueueSnackbar(t('addSuccess'), {
         variant: 'success',
       });
       setOpen(false);
@@ -116,8 +118,8 @@ export default function CategoriesPage() {
       const { products_updated } = await categoriesAPI.normalize();
       enqueueSnackbar(
         products_updated > 0
-          ? `Normalized ${products_updated} product category name(s). Duplicate names merged.`
-          : 'Category names are already normalized.',
+          ? t('normalizeSuccess', { count: products_updated })
+          : t('normalizeAlready'),
         { variant: 'success' }
       );
       fetchCategories();
@@ -133,14 +135,14 @@ export default function CategoriesPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-        <Typography variant="h4">Categories</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
             onClick={handleNormalize}
             disabled={normalizing}
           >
-            {normalizing ? 'Normalizing…' : 'Normalize names (fix duplicates)'}
+            {normalizing ? t('normalizeBusy') : t('normalize')}
           </Button>
           <Button
             variant="contained"
@@ -150,35 +152,34 @@ export default function CategoriesPage() {
             setOpen(true);
           }}
           >
-            Add Category
+            {t('addCategory')}
           </Button>
         </Box>
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        Categories are automatically created when you assign them to products. 
-        Deleting a category will remove it from all products.
+        {t('infoMessage')}
       </Alert>
 
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Category Name</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('categoryName')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={2} align="center">
-                  Loading...
+                  {t('loading')}
                 </TableCell>
               </TableRow>
             ) : categories.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={2} align="center">
-                  No categories found. Categories are created when you assign them to products.
+                  {t('noCategories')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -212,11 +213,11 @@ export default function CategoriesPage() {
       </TableContainer>
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Category</DialogTitle>
+        <DialogTitle>{t('addCategory')}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
-              label="Category Name"
+              label={t('categoryName')}
               required
               fullWidth
               value={newCategoryName}
@@ -228,24 +229,24 @@ export default function CategoriesPage() {
               }}
             />
             <Alert severity="info">
-              The category will be created when you assign it to a product.
+              {t('createInfo')}
             </Alert>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => setOpen(false)}>{t('cancel')}</Button>
           <Button onClick={handleCreate} variant="contained">
-            Create
+            {t('create')}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Rename Category</DialogTitle>
+        <DialogTitle>{t('renameCategory')}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
-              label="New Category Name"
+              label={t('newCategoryName')}
               required
               fullWidth
               value={newCategoryName}
@@ -257,12 +258,12 @@ export default function CategoriesPage() {
               }}
             />
             <Alert severity="warning">
-              This will rename the category in all products that use it.
+              {t('renameWarning')}
             </Alert>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
+          <Button onClick={() => setRenameOpen(false)}>{t('cancel')}</Button>
           <Button
             onClick={() => {
               if (editingCategory) {
@@ -271,7 +272,7 @@ export default function CategoriesPage() {
             }}
             variant="contained"
           >
-            Rename
+            {t('rename')}
           </Button>
         </DialogActions>
       </Dialog>

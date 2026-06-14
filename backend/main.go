@@ -29,6 +29,11 @@ func main() {
 
 	// Log configuration (without sensitive data)
 	log.Printf("Storage Provider: %s", cfg.StorageProvider)
+	if cfg.SMTPHost != "" && cfg.SMTPUser != "" && cfg.SMTPPassword != "" {
+		log.Printf("SMTP: configured (%s:%d, user=%s)", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser)
+	} else {
+		log.Printf("SMTP: not configured (set SMTP_HOST, SMTP_USER, SMTP_PASSWORD in backend/.env)")
+	}
 	if cfg.DatabaseURL != "" {
 		// Mask password in database URL for logging
 		maskedURL := cfg.DatabaseURL

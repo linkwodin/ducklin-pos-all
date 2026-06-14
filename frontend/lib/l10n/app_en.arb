@@ -255,6 +255,26 @@
   "@quantity": {
     "description": "Quantity label"
   },
+  "pickSaleModeTitle": "How to sell?",
+  "@pickSaleModeTitle": {
+    "description": "Dialog title when product supports qty and weight with one barcode"
+  },
+  "pickSaleModeMessage": "This product can be sold by quantity or by weight. Choose one:",
+  "@pickSaleModeMessage": {
+    "description": "Dialog message for qty vs weight picker"
+  },
+  "sellByQuantity": "By quantity",
+  "@sellByQuantity": {
+    "description": "Sell by unit count"
+  },
+  "sellByWeight": "By weight",
+  "@sellByWeight": {
+    "description": "Sell by weight in grams"
+  },
+  "tapToChooseQtyOrWeight": "Tap · Qty or Wt",
+  "@tapToChooseQtyOrWeight": {
+    "description": "Hint on dual-inventory product card with shared barcode"
+  },
   "inventoryManagement": "Inventory Management",
   "@inventoryManagement": {
     "description": "Inventory management title"

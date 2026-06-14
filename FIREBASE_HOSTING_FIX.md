@@ -38,7 +38,7 @@ This will guide you through the setup.
 cd management-frontend
 
 # Make sure you're using the right project
-firebase use ducklin-uk-uat
+firebase useaanan
 
 # Initialize hosting (interactive)
 firebase init hosting

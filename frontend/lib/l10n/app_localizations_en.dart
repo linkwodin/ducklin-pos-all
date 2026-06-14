@@ -205,6 +205,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quantity => 'Quantity';
 
   @override
+  String get pickSaleModeTitle => 'How to sell?';
+
+  @override
+  String get pickSaleModeMessage =>
+      'This product can be sold by quantity or by weight. Choose one:';
+
+  @override
+  String get sellByQuantity => 'By quantity';
+
+  @override
+  String get sellByWeight => 'By weight';
+
+  @override
+  String get tapToChooseQtyOrWeight => 'Tap · Qty or Wt';
+
+  @override
   String get inventoryManagement => 'Inventory Management';
 
   @override

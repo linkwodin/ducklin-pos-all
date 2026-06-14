@@ -6,20 +6,58 @@ import enTranslations from '../locales/en/translation.json';
 import zhTWTranslations from '../locales/zh-TW/translation.json';
 import zhCNTranslations from '../locales/zh-CN/translation.json';
 
+type TranslationDict = Record<string, unknown>;
+
+const PAGE_NAMESPACES = [
+  'common',
+  'layout',
+  'shipment',
+  'categories',
+  'sectors',
+  'catalogs',
+  'assignProductToStore',
+  'stock',
+  'productLines',
+  'storeDetail',
+  'stockReport',
+  'stocktake',
+  'users',
+  'usersPage',
+  'stores',
+  'storesPage',
+  'devicesPage',
+  'currencyRates',
+  'companySettings',
+  'wholesaleOrderDetail',
+  'wholesaleOrderAudit',
+  'wholesaleOrdersPage',
+  'wholesaleShipments',
+  'productBarcodeReference',
+] as const;
+
+function getNs(t: TranslationDict, name: string): TranslationDict {
+  const s = t[name];
+  return (s && typeof s === 'object' && !Array.isArray(s)) ? (s as TranslationDict) : {};
+}
+
+function buildResources(lang: TranslationDict) {
+  const out: Record<string, TranslationDict> = {
+    translation: lang,
+  };
+  PAGE_NAMESPACES.forEach((name) => {
+    out[name] = getNs(lang, name);
+  });
+  return out;
+}
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
-      en: {
-        translation: enTranslations,
-      },
-      'zh-TW': {
-        translation: zhTWTranslations,
-      },
-      'zh-CN': {
-        translation: zhCNTranslations,
-      },
+      en: buildResources(enTranslations as TranslationDict),
+      'zh-TW': buildResources(zhTWTranslations as TranslationDict),
+      'zh-CN': buildResources(zhCNTranslations as TranslationDict),
     },
     fallbackLng: 'en',
     debug: false,

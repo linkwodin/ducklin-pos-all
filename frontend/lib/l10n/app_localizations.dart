@@ -472,6 +472,36 @@ abstract class AppLocalizations {
   /// **'Quantity'**
   String get quantity;
 
+  /// Dialog title when product supports qty and weight with one barcode
+  ///
+  /// In en, this message translates to:
+  /// **'How to sell?'**
+  String get pickSaleModeTitle;
+
+  /// Dialog message for qty vs weight picker
+  ///
+  /// In en, this message translates to:
+  /// **'This product can be sold by quantity or by weight. Choose one:'**
+  String get pickSaleModeMessage;
+
+  /// Sell by unit count
+  ///
+  /// In en, this message translates to:
+  /// **'By quantity'**
+  String get sellByQuantity;
+
+  /// Sell by weight in grams
+  ///
+  /// In en, this message translates to:
+  /// **'By weight'**
+  String get sellByWeight;
+
+  /// Hint on dual-inventory product card with shared barcode
+  ///
+  /// In en, this message translates to:
+  /// **'Tap · Qty or Wt'**
+  String get tapToChooseQtyOrWeight;
+
   /// Inventory management title
   ///
   /// In en, this message translates to:

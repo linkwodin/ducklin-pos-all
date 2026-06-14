@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"pos-system/backend/internal/config"
@@ -102,6 +104,84 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// Refresh issues a new JWT when the caller presents a current or recently-expired token
+// (same calendar day grace). Keeps management sessions alive during long work days.
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	if h.db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database connection not available. Please try again later."})
+		return
+	}
+
+	tokenString := bearerTokenFromHeader(c.GetHeader("Authorization"))
+	if tokenString == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		return
+	}
+
+	claims, err := parseJWTClaimsWithGrace(tokenString, h.cfg.JWTSecret, refreshGracePeriod(h.cfg.JWTExpiration))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	uid, ok := jwtClaimUint(claims, "user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: missing or invalid user_id"})
+		return
+	}
+
+	var user models.User
+	if err := h.db.Where("id = ? AND is_active = ?", uid, true).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
+		}
+		return
+	}
+
+	token, err := h.generateJWT(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	user.PasswordHash = ""
+	user.PINHash = ""
+	c.JSON(http.StatusOK, LoginResponse{Token: token, User: user})
+}
+
+func bearerTokenFromHeader(header string) string {
+	header = strings.TrimSpace(header)
+	if len(header) > 7 && strings.EqualFold(header[:7], "Bearer ") {
+		return strings.TrimSpace(header[7:])
+	}
+	return header
+}
+
+func parseJWTClaimsWithGrace(tokenString, secret string, grace time.Duration) (jwt.MapClaims, error) {
+	parser := jwt.NewParser(jwt.WithLeeway(grace))
+	token, err := parser.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil || token == nil || !token.Valid {
+		return nil, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid token claims")
+	}
+	return claims, nil
+}
+
+func refreshGracePeriod(jwtExpirationHours int) time.Duration {
+	grace := time.Duration(jwtExpirationHours) * time.Hour
+	if grace < 72*time.Hour {
+		return 72 * time.Hour
+	}
+	return grace
 }
 
 func (h *AuthHandler) PINLogin(c *gin.Context) {
@@ -223,6 +303,42 @@ func (h *AuthHandler) generateJWT(userID uint, username, role string) (string, e
 	return token.SignedString([]byte(h.cfg.JWTSecret))
 }
 
+// jwtClaimUint reads user_id-style numeric claims without panicking (jwt.JSON can decode numbers as float64).
+func jwtClaimUint(claims jwt.MapClaims, key string) (uint, bool) {
+	raw, ok := claims[key]
+	if !ok || raw == nil {
+		return 0, false
+	}
+	switch v := raw.(type) {
+	case float64:
+		if v < 0 || v > 1<<31 {
+			return 0, false
+		}
+		return uint(v), true
+	case string:
+		n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 32)
+		if err != nil {
+			return 0, false
+		}
+		return uint(n), true
+	default:
+		return 0, false
+	}
+}
+
+func jwtClaimString(claims jwt.MapClaims, key string) (string, bool) {
+	raw, ok := claims[key]
+	if !ok || raw == nil {
+		return "", false
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return "", false
+	}
+	s = strings.TrimSpace(s)
+	return s, s != ""
+}
+
 func authMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := c.GetHeader("Authorization")
@@ -254,10 +370,23 @@ func authMiddleware(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// Set user info in context
-		c.Set("user_id", uint(claims["user_id"].(float64)))
-		c.Set("username", claims["username"].(string))
-		c.Set("role", claims["role"].(string))
+		uid, ok := jwtClaimUint(claims, "user_id")
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: missing or invalid user_id"})
+			c.Abort()
+			return
+		}
+		role, ok := jwtClaimString(claims, "role")
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: missing or invalid role"})
+			c.Abort()
+			return
+		}
+		username, _ := jwtClaimString(claims, "username")
+
+		c.Set("user_id", uid)
+		c.Set("username", username)
+		c.Set("role", role)
 
 		c.Next()
 	}

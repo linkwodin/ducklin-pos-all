@@ -1,0 +1,147 @@
+
+vite v5.4.21 building for uat...
+✓ 13121 modules transformed.
+dist/indehtml                        0.75 kB │ gzip:   0.39 kB
+dist/assets/index-BgPPK5Xa.css         0.12 kB │ gzip:   0.11 kB
+dist/assets/purify.es-BgtpMKW3.j  22.77 kB │ gzip:   8.79 kB
+dist/assets/index.es-CX88MCh7.js     150.38 kB │ gzip:  51.46 kB
+dist/assets/index-1YS0bYvr.js      2,556.31 kB │ gzip: 758.77 kB
+
+(!) Some chunks are larger than 500 kB after minification. Considesing dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://ro
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+�built in 9.86s
+✅ Build completed succesully
+ℹ️  Deploying Firebase Hosting
+=== Deploying to 'ducklin-uk-uat'...
+
+i  deploying hosting
+i  hosting[ducklin-uk-uat]: beginning deploy...
+i  hosting[ducklin-uk-uat]: found 6 files in dist
+✔  hosting[ducklin-uk-uat]: file upload complete
+i  hosting[ducklin-uk-uat]: finalizing version...
+⚠  hosting[ducklin-uk-uat]: Unable to find a valid endpoint for function `aiP
+⚠  hosting[ducklin-uk-uat]: Unable to find a valid endpoint for function `aiPlaybook`, but still including it in the config
+✔  hosting[ducklin-uk-uat]: version finalized
+i  hosting[ducklin-uk-uat]: releasing new version...
+✔  hosting[ducklin-uk-uat]: release complete
+
+✔  Deploy complete!
+
+Project Console: https://console.firebase.google.com/project/ducklin-uk-uat/o
+Project Console: https://console.firebase.google.com/project/ducklin-uk-uat/overview
+Hosting URL: https://ducklin-uk-uat.web.app
+
+   ╭───────────────────────────────────────────────────────────────────╮
+   │                                                                   �                  npm install -g firebase-tools                   │
+   │   For other CLI management options, visit the CLI documentation   │
+   │                                                                   │
+   │                                                                   │
+   │                                                                   │
+   ╰───────────────────────────────────────────────────────────────────╯
+
+✅ Deployment completed!
+✅ Frontend deployed successfully!
+ℹ️  Frontend URL: https://ducklin-uk-uat
+          "default".web.app
+[INFO] Deployment completed!tommy@Tommys-MacBook-Pro pos-system % ./scripts/deploy.sh all uat
+[INFO] Starting deployment to GCP...
+[INFO] Checking prerequisites...
+[INFO] Using project: ducklin-uk-uat
+[INFO] Using region: europe-west1
+[INFO] Deploying all UAT: backend (GCP) + frontend (Firebase)...
+[INFO] Deploying backend to Cloud Run...
+[INFO] PDF fonts present in backend/pdf-assets/fonts
+Creating temporary archive of 38 file(s) totalling 14.7 MiB before compressio
+Creating temporary archive of 38 file(s) totalling 14.7 MiB before compression.
+Some files were not included in the source upload.
+
+Check the gcloud log [/Users/tommy/.config/gcloud/logs/2026.04.09/20.15.20.30
+Check the gcloud log [/Users/tommy/.config/gcloud/logs/2026.04.09/20.15.20.302214.log] to see which files and the contents of the
+default gcloudignore file used (see `$ gcloud topic gcloudignore` to learn
+more).
+
+Uploading tarball of [.] to [gs://ducklin-uk-uat_cloudbuild/source/1775762120
+Uploading tarball of [.] to [gs://ducklin-uk-uat_cloudbuild/source/1775762120.671655-89d8e002b1c540bab1f284988f6fb433.tgz]
+Created [https://cloudbuild.googleapis.com/v1/projects/ducklin-uk-uat/locatio
+Created [https://cloudbuild.googleapis.com/v1/projects/ducklin-uk-uat/locations/global/builds/ed8e5ef1-2834-42fd-8b76-ebd473504bed].
+Logs are available at [ https://console.cloud.google.com/cloud-build/builds/e
+Logs are available at [ https://console.cloud.google.com/cloud-build/builds/ed8e5ef1-2834-42fd-8b76-ebd473504bed?project=28040503481 ].
+
+gcloud builds submit only displays logs from Cloud Storage. To view logs from
+gcloud builds submit only displays logs from Cloud Storage. To view logs from Cloud Logging, run:
+gcloud beta builds submit
+
+Waiting for build to complete. Polling interval: 1 second(s).
+ID                                    CREATE_TIME                DURATION  SO
+ID                                    CREATE_TIME                DURATION  SOURCE                                                                         
+ID                                    CREATE_TIME                DURATION  SOURCE                                                                                        IMAGES                                                        
+ID                                    CREATE_TIME                DURATION  SOURCE                                                                                        IMAGES                                                                            STATUS
+ed8e5ef1-2834-42fd-8b76-ebd473504bed  2026-04-09T19:15:34+00:00  1M43S     gs
+ed8e5ef1-2834-42fd-8b76-ebd473504bed  2026-04-09T19:15:34+00:00  1M43S     gs://ducklin-uk-uat_cloudbuild/source/1775762120.671655-89d8e002b1c540bab1f2849
+ed8e5ef1-2834-42fd-8b76-ebd473504bed  2026-04-09T19:15:34+00:00  1M43S     gs://ducklin-uk-uat_cloudbuild/source/1775762120.671655-89d8e002b1c540bab1f284988f6fb433.tgz  gcr.io/ducklin-uk-uat/pos-backend:ed8e5ef1-2834-42fd-8b76-ebd4
+ed8e5ef1-2834-42fd-8b76-ebd473504bed  2026-04-09T19:15:34+00:00  1M43S     gs://ducklin-uk-uat_cloudbuild/source/1775762120.671655-89d8e002b1c540bab1f284988f6fb433.tgz  gcr.io/ducklin-uk-uat/pos-backend:ed8e5ef1-2834-42fd-8b76-ebd473504bed (+2 more)  SUCCESS
+
+
+Updates are available for some Google Cloud CLI components.  To install them,
+please run:
+  $ gcloud components update
+
+[INFO] Backend deployed successfully!
+ℹ️  Cleaning previous builds...
+ℹ️  Building for UAT environment...
+
+> pos-management-frontend@1.0.0 build:uat
+> tsc && vite build --mode uat
+
+vite v5.4.21 building for uat...
+✓ 13121 modules transformed.
+dist/index.html                        0.75 kB │ gzip:   0.39 kB
+dist/assets/index-BgPPK5Xa.css         0.12 kB │ gzip:   0.11 kB
+dist/assets/purify.es-BgtpMKW3.js     22.77 kB │ gzip:   8.79 kB
+dist/assets/index.es-CX88MCh7.js     150.38 kB │ gzip:  51.46 kB
+dist/assets/index-1YS0bYvr.js      2,556.31 kB │ gzip: 758.77 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://ro
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningL6s
+✅ Build completed successfully
+ℹ️  Deploying Firebase Hosting...
+
+=== Deploying to 'ducklin-uk-uat'...
+
+i  deploying hosting
+i  hosting[ducklin-uk-uat]: beginning deploy...
+i  hosting[ducklin-uk-uat]: found 6 files in dist
+✔  hosting[ducklin-uk-uat]: file upload complete
+i  hosting[ducklin-uk-uat]: finalizing version...
+⚠  hosting[ducklin-uk-uat]: Unable to find a valid endpoint for function `aiP
+⚠  hosting[ducklin-uk-uat]: Unable to find a valid endpoint for function `aiPlaybook`, but still including it in the config
+✔  hosting[ducklin-uk-uat]: version finalized
+i  hosting[ducklin-uk-uat]: releasing new version...
+✔  hosting[ducklin-uk-uat]: release complete
+
+✔  Deploy complete!
+
+Project Console: https://console.firebase.google.com/project/ducklin-uk-uat/o
+Project Console: https://console.firebase.google.com/project/ducklin-uk-uat/overview
+Hosting URL: https://ducklin-uk-uat.web.app
+
+   ╭─────────────────────────────────────────────────────────�14.0                 │
+   │          To update to the latest version using npm, run           │
+   │                   npm install -g firebase-tools                   │
+   │   For other CLI management options, visit the CLI documentation   │
+   │                                                                   │
+   │                                                                   │
+   │                                                                   │
+   ╰───────────────────────────────────────────────────────────────────╯
+
+✅ Deployment completed!
+✅ Frontend deployed successfully!
+ℹ️  Frontend URL: https://ducklin-uk-uat
+          "default".web.app
+[INFO] DepCreated [https://cloudbuild.googleapis.com/v1/projects/ducklin-uk-uat/locatio
+Created [https://cloudbuild.googleapis.com/v1/projects/ducklin-uk-uat/zsh: no

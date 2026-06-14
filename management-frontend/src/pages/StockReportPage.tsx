@@ -18,6 +18,7 @@ import {
   Alert,
   Button,
 } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import PrintIcon from '@mui/icons-material/Print';
 import { stockAPI, storesAPI } from '../services/api';
 import type { StockReportRow, Store } from '../types';
@@ -27,6 +28,7 @@ function formatQty(n: number): string {
 }
 
 export default function StockReportPage() {
+  const { t } = useTranslation('stockReport');
   const [rows, setRows] = useState<StockReportRow[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,10 +72,10 @@ export default function StockReportPage() {
 
   const handlePrint = () => {
     setPrinting(true);
-    const storeLabel = storeId === '' ? 'All stores' : stores.find((s) => s.id === storeId)?.name ?? `Store ${storeId}`;
+    const storeLabel = storeId === '' ? t('allStores') : stores.find((s) => s.id === storeId)?.name ?? `Store ${storeId}`;
     const tableRows =
       rows.length === 0
-        ? '<tr><td colspan="4">No data for this date</td></tr>'
+        ? `<tr><td colspan="4">${t('noData')}</td></tr>`
         : rows
             .map(
               (r) =>
@@ -98,7 +100,7 @@ export default function StockReportPage() {
   <h1>Stock report</h1>
   <p class="meta">Date: ${date} · ${storeLabel} · Printed ${new Date().toLocaleString()}</p>
   <table>
-    <thead><tr><th>Product</th><th>Store</th><th>Day start</th><th>Day end</th></tr></thead>
+    <thead><tr><th>${t('product')}</th><th>${t('store')}</th><th>${t('dayStart')}</th><th>${t('dayEnd')}</th></tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
   <p style="margin-top: 24px;"><button onclick="window.print()">Print</button> <button onclick="window.close()">Close</button></p>
@@ -122,15 +124,15 @@ export default function StockReportPage() {
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h5" sx={{ mb: 2 }}>
-        Stock report
+        {t('title')}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Day start and day end quantities per product from stocktake audit (select date and optional store).
+        {t('subtitle')}
       </Typography>
 
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
         <TextField
-          label="Date"
+          label={t('date')}
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
@@ -138,13 +140,13 @@ export default function StockReportPage() {
           size="small"
         />
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Store</InputLabel>
+          <InputLabel>{t('store')}</InputLabel>
           <Select
             value={storeId}
-            label="Store"
+            label={t('store')}
             onChange={(e) => setStoreId(e.target.value === '' ? '' : Number(e.target.value))}
           >
-            <MenuItem value="">All stores</MenuItem>
+            <MenuItem value="">{t('allStores')}</MenuItem>
             {stores.map((s) => (
               <MenuItem key={s.id} value={s.id}>
                 {s.name}
@@ -158,7 +160,7 @@ export default function StockReportPage() {
           onClick={handlePrint}
           disabled={loading || printing}
         >
-          {printing ? 'Preparing…' : 'Print'}
+          {printing ? t('preparing') : t('print')}
         </Button>
       </Box>
 
@@ -177,17 +179,17 @@ export default function StockReportPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Product</TableCell>
-                <TableCell>Store</TableCell>
-                <TableCell>Day start</TableCell>
-                <TableCell>Day end</TableCell>
+                <TableCell>{t('product')}</TableCell>
+                <TableCell>{t('store')}</TableCell>
+                <TableCell>{t('dayStart')}</TableCell>
+                <TableCell>{t('dayEnd')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
-                    No stocktake data for this date. Day start / day end come from completed stocktakes.
+                    {t('noData')}
                   </TableCell>
                 </TableRow>
               ) : (

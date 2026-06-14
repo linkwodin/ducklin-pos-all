@@ -27,11 +27,13 @@ import {
   Lock as LockIcon,
   Image as ImageIcon,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { usersAPI, storesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import type { User, Store } from '../types';
 
 export default function UsersPage() {
+  const { t } = useTranslation(['users', 'usersPage']);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -104,7 +106,7 @@ export default function UsersPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Users</Typography>
+        <Typography variant="h4">{t('users:title')}</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -113,7 +115,7 @@ export default function UsersPage() {
             setOpen(true);
           }}
         >
-          Add User
+          {t('usersPage:addUser')}
         </Button>
       </Box>
 
@@ -121,27 +123,27 @@ export default function UsersPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Icon</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Username</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Role</TableCell>
-              <TableCell>Stores</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('usersPage:icon')}</TableCell>
+              <TableCell>{t('usersPage:name')}</TableCell>
+              <TableCell>{t('usersPage:username')}</TableCell>
+              <TableCell>{t('usersPage:email')}</TableCell>
+              <TableCell>{t('usersPage:role')}</TableCell>
+              <TableCell>{t('usersPage:stores')}</TableCell>
+              <TableCell>{t('usersPage:status')}</TableCell>
+              <TableCell>{t('usersPage:actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell colSpan={8} align="center">
-                  Loading...
+                  {t('usersPage:loading')}
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} align="center">
-                  No users found
+                  {t('usersPage:noUsers')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -189,7 +191,7 @@ export default function UsersPage() {
                           setEditingUser(user);
                           setOpen(true);
                         }}
-                        title="Edit User"
+                        title={t('usersPage:editUser')}
                       >
                         <EditIcon />
                       </IconButton>
@@ -288,6 +290,7 @@ function UserDialog({
   onSave: (data: any) => void;
   user: User | null;
 }) {
+  const { t } = useTranslation(['users', 'usersPage']);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -348,11 +351,11 @@ function UserDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{user ? 'Edit User' : 'Add User'}</DialogTitle>
+      <DialogTitle>{user ? t('usersPage:editUser') : t('usersPage:addUser')}</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           <TextField
-            label="Username"
+            label={t('users:username')}
             required
             fullWidth
             value={formData.username}
@@ -361,7 +364,7 @@ function UserDialog({
           />
           {!user && (
             <TextField
-              label="Password"
+              label={t('users:password')}
               type="password"
               required
               fullWidth
@@ -377,21 +380,21 @@ function UserDialog({
             helperText="4-digit PIN for POS login"
           />
           <TextField
-            label="First Name"
+            label={t('users:firstName')}
             required
             fullWidth
             value={formData.first_name}
             onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
           />
           <TextField
-            label="Last Name"
+            label={t('users:lastName')}
             required
             fullWidth
             value={formData.last_name}
             onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
           />
           <TextField
-            label="Email"
+            label={t('users:email')}
             type="email"
             fullWidth
             value={formData.email}
@@ -399,22 +402,22 @@ function UserDialog({
           />
           <TextField
             select
-            label="Role"
+            label={t('users:role')}
             required
             fullWidth
             value={formData.role}
             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
           >
-            <MenuItem value="management">Management</MenuItem>
-            <MenuItem value="pos_user">POS User</MenuItem>
-            <MenuItem value="supervisor">Supervisor</MenuItem>
+            <MenuItem value="management">{t('users:roleManagement')}</MenuItem>
+            <MenuItem value="pos_user">{t('users:rolePosUser')}</MenuItem>
+            <MenuItem value="supervisor">{t('users:roleSupervisor')}</MenuItem>
           </TextField>
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t('users:cancel')}</Button>
         <Button onClick={handleSubmit} variant="contained">
-          Save
+          {t('users:save')}
         </Button>
       </DialogActions>
     </Dialog>

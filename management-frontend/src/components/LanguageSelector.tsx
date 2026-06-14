@@ -39,7 +39,8 @@ export default function LanguageSelector() {
       <IconButton
         color="inherit"
         onClick={handleMenuOpen}
-        sx={{ mr: 1 }}
+        sx={{ mr: { xs: 0.25, sm: 1 } }}
+        aria-label="Change language"
         title="Change Language"
       >
         <LanguageIcon />

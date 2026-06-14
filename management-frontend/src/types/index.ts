@@ -17,6 +17,7 @@ export interface Store {
   id: number;
   name: string;
   address?: string;
+  is_warehouse_only?: boolean;
   is_active: boolean;
 }
 
@@ -36,8 +37,22 @@ export interface Sector {
   is_active: boolean;
 }
 
+export interface ProductLine {
+  id: number;
+  name: string;
+  name_chinese?: string;
+  category?: string;
+  image_url?: string;
+  is_active: boolean;
+  variants?: Product[];
+}
+
 export interface Product {
   id: number;
+  product_line_id?: number;
+  variant_label?: string;
+  units_per_pack?: number;
+  product_line?: ProductLine;
   name: string;
   name_chinese?: string;
   barcode?: string;
@@ -45,9 +60,25 @@ export interface Product {
   category?: string;
   image_url?: string;
   unit_type: 'quantity' | 'weight';
+  /** Sell by unit count (uses barcode). */
+  sell_by_qty?: boolean;
+  /** Sell by weight in grams (uses weight_barcode). */
+  sell_by_weight?: boolean;
+  weight_barcode?: string;
+  weight_barcode_prefix?: string;
+  /** Grams the retail price applies to (weight products only; 0 = 1 kg default). */
+  price_weight_g?: number;
+  /** @deprecated use sell_by_weight */
+  can_sell_by_weight?: boolean;
+  /** Grams per prepacked unit for pack/unpack conversions. */
+  prepack_weight_g?: number;
+  wholesale_units_per_box?: number;
   is_active: boolean;
   current_cost?: ProductCost;
   discounts?: ProductSectorDiscount[];
+  /** Sum of on-hand stock across all store locations (product line detail API). */
+  total_stock_quantity?: number;
+  total_stock_weight_g?: number;
 }
 
 export interface ProductCost {
@@ -92,9 +123,14 @@ export interface Stock {
   product_id: number;
   store_id: number;
   quantity: number;
+  weight_quantity_g?: number;
+  track_prepacked?: boolean;
+  track_weight?: boolean;
+  wholesale_ship_from?: boolean;
   low_stock_threshold: number;
   last_updated: string;
   incoming_quantity?: number;
+  pending_pack_quantity?: number;
   product?: Product;
   store?: Store;
 }
@@ -239,6 +275,8 @@ export interface WholesaleOrderItem {
   product_id: number;
   quantity: number;
   unit_price: number;
+  line_discount_type?: 'order_entry' | 'order_entry_unit';
+  line_discount_unit?: number;
   line_discount_amount?: number;
   line_total: number;
   assigned_store_id?: number | null;
@@ -291,13 +329,17 @@ export interface WholesaleOrder {
   order_channel?: string;
   ref_no: string;
   po_date?: string;
+  order_date?: string;
+  invoice_date?: string; // YYYY-MM-DD; used on invoice PDF "Date:", editable, default to current date when empty
+  /** YYYY-MM-DD; when the invoice was sent to the client (optional operational field) */
+  invoice_sent_at?: string;
   payment_terms?: string;
   wholesale_client_id: number;
   wholesale_client_store_id?: number; // shipping address
   store_id: number;
   user_id: number;
   sector_id?: number;
-  status: 'pending_approval' | 'assign_shipment' | 'approved' | 'rejected';
+  status: 'pending_approval' | 'assign_shipment' | 'approved' | 'rejected' | 'deleted';
   subtotal?: number;
   discount_amount?: number;
   total_net?: number;
@@ -307,16 +349,53 @@ export interface WholesaleOrder {
   notes?: string;
   rejection_reason?: string;
   created_at: string;
+  updated_at?: string;
   reviewed_at?: string;
   reviewed_by?: number;
+  payment_confirmed_at?: string;
+  payment_proof_url?: string;
   wholesale_client?: WholesaleClient;
   store?: Store;
   user?: User;
   sector?: Sector;
   reviewer?: User;
+  wholesale_client_store?: WholesaleClientStore;
   items?: WholesaleOrderItem[];
   documents?: WholesaleOrderDocument[];
   shipments?: Shipment[];
+  /** Server-computed: true when invoice exists, all shipments done, and payment confirmed */
+  is_completed?: boolean;
+  /** Server-computed from audit logs for list/detail status alignment */
+  workflow_invoice_email_done?: boolean;
+  workflow_payment_proof_total?: number;
+}
+
+export interface EndorseAllocationAssignmentPreview {
+  wholesale_order_item_id: number;
+  store_id: number;
+  store_name: string;
+  quantity: number;
+  stock_available: number;
+  stock_after: number;
+}
+
+export interface EndorseAllocationLinePreview {
+  wholesale_order_item_id: number;
+  product_id: number;
+  needed: number;
+  allocated: number;
+  shortfall: number;
+  default_store_id?: number;
+  default_store_name?: string;
+}
+
+export interface EndorseAllocationPreview {
+  outcome: 'single_store' | 'split_required' | 'insufficient_stock';
+  primary_store_id?: number;
+  primary_store_name?: string;
+  store_ids: number[];
+  lines: EndorseAllocationLinePreview[];
+  assignments: EndorseAllocationAssignmentPreview[];
 }
 
 export interface Shipment {
@@ -327,7 +406,9 @@ export interface Shipment {
   tracking_number?: string;
   shipment_fee?: number;
   delivery_note_pdf_url?: string;
-  status: 'packing' | 'completed';
+  signed_delivery_note_pdf_url?: string; // uploaded when completing without courier tracking
+  delivery_date?: string; // YYYY-MM-DD, set when completing shipment
+  status: 'assigned' | 'packed' | 'shipped' | 'completed' | 'packing';
   created_at: string;
   updated_at: string;
   store?: Store;
@@ -339,6 +420,7 @@ export interface ShipmentItem {
   id: number;
   shipment_id: number;
   wholesale_order_item_id: number;
+  quantity?: number;
   case_qty?: number;
   wholesale_order_item?: WholesaleOrderItem;
 }
@@ -346,8 +428,9 @@ export interface ShipmentItem {
 export interface WholesaleOrderDocument {
   id: number;
   wholesale_order_id: number;
-  type: 'order_confirmation' | 'delivery_note' | 'invoice';
+  type: 'order_confirmation' | 'delivery_note' | 'invoice' | 'po_attachment' | 'payment_proof';
   file_url: string;
+  original_filename?: string; // user's file name for po_attachment
   created_at: string;
 }
 
@@ -366,6 +449,10 @@ export interface CompanySettings {
   bank_address: string;
   bank_iban: string;
   payment_info: string;
+  payment_transfer_to_info?: string;
+  shipment_couriers?: string;
+  wholesale_order_email_subject_template?: string;
+  wholesale_order_email_default_cc?: string;
   updated_at: string;
 }
 

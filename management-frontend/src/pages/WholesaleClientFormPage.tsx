@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -24,13 +24,14 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Link,
 } from '@mui/material';
 import {
-  ArrowBack as BackIcon,
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
   AutoFixHigh as AutoGenIcon,
+  ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
 import { wholesaleClientsAPI, sectorsAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
@@ -142,14 +143,13 @@ export default function WholesaleClientFormPage() {
         enqueueSnackbar('Client updated', { variant: 'success' });
       } else {
         const created = await wholesaleClientsAPI.create(payload);
-        enqueueSnackbar('Client created', { variant: 'success' });
         for (const s of pendingStores) {
           const name = s.name.trim() || `${created.name} (Shipping)`;
           if (name || s.address_line1.trim()) {
             await wholesaleClientsAPI.createStore(created.id, { ...s, name });
           }
         }
-        navigate(`/wholesale-clients/${created.id}`, { replace: true });
+        navigate('/wholesale-clients', { replace: true, state: { createdClientId: created.id } });
       }
     } catch (e: any) {
       enqueueSnackbar(e.response?.data?.error || 'Failed to save', { variant: 'error' });
@@ -282,14 +282,28 @@ export default function WholesaleClientFormPage() {
 
   return (
     <Box sx={{ p: 3, width: '100%' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, gap: 1 }}>
-        <IconButton onClick={() => navigate('/wholesale-clients')}>
-          <BackIcon />
-        </IconButton>
-        <Typography variant="h5">
-          {isEdit ? `Edit: ${client?.name ?? ''}` : 'New wholesale client'}
-        </Typography>
-      </Box>
+      <Typography variant="body2" component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 2 }}>
+        <Link component={RouterLink} to="/" color="primary" underline="none">Home</Link>
+        <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+        <Link component={RouterLink} to="/wholesale-clients" color="primary" underline="none">
+          Wholesale clients
+        </Link>
+        <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+        {isEdit && client ? (
+          <Link component={RouterLink} to={`/wholesale-clients/${client.id}`} color="primary" underline="none">{client.name}</Link>
+        ) : (
+          <span>{isEdit ? (client?.name ?? '') : 'New wholesale client'}</span>
+        )}
+        {isEdit && (
+          <>
+            <ChevronRightIcon sx={{ fontSize: 18, mx: 0.5, color: 'text.secondary' }} />
+            <span>Edit</span>
+          </>
+        )}
+      </Typography>
+      <Typography variant="h5" sx={{ mb: 3 }}>
+        {isEdit ? `Edit: ${client?.name ?? ''}` : 'New wholesale client'}
+      </Typography>
 
       {/* Company details */}
       <Paper sx={{ p: 3, mb: 3 }}>
