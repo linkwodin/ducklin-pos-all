@@ -15,7 +15,8 @@
 
 param(
     [ValidateSet('uat', 'production')]
-    [string]$Env = 'uat',
+    [Alias('Env')]
+    [string]$BuildEnv = 'uat',
 
     [switch]$Deploy,
 
@@ -203,20 +204,20 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$backendUrl = if ($Env -eq 'production') { $ProdBackendUrl } else { $UatBackendUrl }
-$appTitle = Get-PosAppTitle -TargetEnv $Env
-$iconPng = if ($Env -eq 'production') { 'assets\images\app_icon.png' } else { 'assets\images\app_icon_uat.png' }
+$backendUrl = if ($BuildEnv -eq 'production') { $ProdBackendUrl } else { $UatBackendUrl }
+$appTitle = Get-PosAppTitle -TargetEnv $BuildEnv
+$iconPng = if ($BuildEnv -eq 'production') { 'assets\images\app_icon.png' } else { 'assets\images\app_icon_uat.png' }
 
 Set-Location $FrontendDir
 
 Write-Host ''
 Write-Host '==========================================' -ForegroundColor Cyan
-Write-Host " POS Windows build$(if ($Deploy) { ' + deploy' }) ($Env)" -ForegroundColor Cyan
+Write-Host " POS Windows build$(if ($Deploy) { ' + deploy' }) ($BuildEnv)" -ForegroundColor Cyan
 Write-Host '==========================================' -ForegroundColor Cyan
 Write-Host ''
 Write-Info "Backend: $backendUrl"
 
-if ($Env -eq 'uat') {
+if ($BuildEnv -eq 'uat') {
     Write-Info 'Generating UAT app icon...'
     dart run tool/generate_uat_icon.dart
 }
@@ -226,7 +227,7 @@ $convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
 & powershell -ExecutionPolicy Bypass -File $convertScript -PngPath $iconPng
 if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
 
-if ($Env -eq 'uat') {
+if ($BuildEnv -eq 'uat') {
     Write-Info "Setting Windows app title to: $appTitle"
     $RunnerRcBak = "$RunnerRc.buildbak"
     $MainCppBak = "$MainCpp.buildbak"
@@ -253,9 +254,9 @@ if ($Clean) {
     flutter pub get
 }
 
-Write-Info "Building Windows release ($Env)..."
+Write-Info "Building Windows release ($BuildEnv)..."
 flutter build windows --release `
-    --dart-define=ENV=$Env `
+    --dart-define=ENV=$BuildEnv `
     --dart-define=API_BASE_URL="$backendUrl"
 if ($LASTEXITCODE -ne 0) { throw 'flutter build windows failed' }
 
@@ -279,14 +280,14 @@ if ($Deploy) {
     if (-not $gcpProject) {
         throw 'No GCP project. Run: gcloud config set project ducklin-uk-uat (or ducklin-uk-prod)'
     }
-    if ($Env -eq 'uat' -and $gcpProject -ne 'ducklin-uk-uat') {
+    if ($BuildEnv -eq 'uat' -and $gcpProject -ne 'ducklin-uk-uat') {
         Write-Warn "GCP project is $gcpProject (expected ducklin-uk-uat for UAT downloads)."
     }
-    if ($Env -eq 'production' -and $gcpProject -ne 'ducklin-uk-prod') {
+    if ($BuildEnv -eq 'production' -and $gcpProject -ne 'ducklin-uk-prod') {
         Write-Warn "GCP project is $gcpProject (expected ducklin-uk-prod for production downloads)."
     }
     Write-Info "Deploying to project: $gcpProject"
-    Publish-WindowsZip -ReleaseDir $releaseDir -GcpProject $gcpProject -TargetEnv $Env
+    Publish-WindowsZip -ReleaseDir $releaseDir -GcpProject $gcpProject -TargetEnv $BuildEnv
 } else {
     Write-Host ''
     Write-Host 'Tip: run with -Deploy to zip and upload to GCS.' -ForegroundColor Yellow

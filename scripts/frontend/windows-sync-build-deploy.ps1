@@ -270,15 +270,15 @@ if (-not (Test-Path $buildScript)) {
     throw "Build script not found: $buildScript"
 }
 
-$buildArgs = @{
+$buildParams = @{
     Env       = $selection.Env
     ProjectId = $selection.ProjectId
 }
 if (-not $BuildOnly) {
-    $buildArgs['Deploy'] = $true
+    $buildParams['Deploy'] = $true
 }
 
 Write-Host ''
 Write-Info 'Starting build...'
-& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript @buildArgs
+& $buildScript @buildParams
 exit $LASTEXITCODE
