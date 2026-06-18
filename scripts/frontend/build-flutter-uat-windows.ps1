@@ -237,9 +237,21 @@ if ($BuildEnv -eq 'uat') {
 }
 
 Write-Info 'Converting icon to ICO...'
-$convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
-& $convertScript -PngPath $iconPng
-if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
+Push-Location $FrontendDir
+try {
+    $pngFull = Join-Path $FrontendDir ($iconPng -replace '/', '\')
+    $icoFull = Join-Path $FrontendDir 'windows\runner\resources\app_icon.ico'
+    dart run tool/generate_app_icon_ico.dart $pngFull $icoFull
+    if ($LASTEXITCODE -ne 0) {
+        $convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
+        & $convertScript -PngPath $pngFull -IcoPath $icoFull
+    }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $icoFull)) {
+        throw 'Icon conversion failed'
+    }
+} finally {
+    Pop-Location
+}
 
 Clear-WindowsBuildCache -Root $FrontendDir
 

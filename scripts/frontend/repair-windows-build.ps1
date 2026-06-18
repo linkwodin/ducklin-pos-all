@@ -30,11 +30,18 @@ foreach ($bak in @(
     }
 }
 
-Write-Info 'Regenerating app_icon.ico (bad ICO causes CVTRES / LNK1123)...'
-$convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
-& $convertScript
-if ($LASTEXITCODE -ne 0) {
-    throw 'Icon conversion failed'
+Write-Info 'Regenerating app_icon.ico (Dart tool)...'
+Push-Location $FrontendDir
+try {
+    dart run tool/generate_app_icon_ico.dart
+    if ($LASTEXITCODE -ne 0) {
+        & (Join-Path $FrontendDir 'convert-icon-to-ico.ps1')
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Icon conversion failed'
+    }
+} finally {
+    Pop-Location
 }
 
 Write-Info 'flutter clean'
@@ -55,7 +62,7 @@ Write-Info 'Regenerating Windows platform files (only if missing)...'
 if (-not (Test-Path (Join-Path $FrontendDir 'windows\CMakeLists.txt'))) {
     flutter create --platforms=windows .
     if ($LASTEXITCODE -ne 0) { throw 'flutter create --platforms=windows failed' }
-    & $convertScript
+    dart run tool/generate_app_icon_ico.dart
     if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
 }
 
