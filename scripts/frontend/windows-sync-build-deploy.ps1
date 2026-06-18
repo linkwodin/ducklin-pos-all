@@ -96,6 +96,22 @@ function Invoke-Gcloud {
     }
 }
 
+function Get-GcloudProject {
+    if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) {
+        return ''
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        $value = & gcloud config get-value project 2>$null
+        if ($null -eq $value) { return '' }
+        return "$value".Trim()
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
 function Find-RepoRoot([string]$StartDir) {
     $dir = (Resolve-Path $StartDir).Path
     while ($true) {
@@ -240,13 +256,7 @@ Write-Info "Selected: $($selection.Label)"
 Write-Info "GCP project: $($selection.ProjectId)"
 
 if (Get-Command gcloud -ErrorAction SilentlyContinue) {
-    $oldEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $currentProject = (gcloud config get-value project 2>$null).Trim()
-    } finally {
-        $ErrorActionPreference = $oldEap
-    }
+    $currentProject = Get-GcloudProject
     if ($currentProject -ne $selection.ProjectId) {
         Write-Info "Setting gcloud project to $($selection.ProjectId)..."
         Invoke-Gcloud config set project $selection.ProjectId

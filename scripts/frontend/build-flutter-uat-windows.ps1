@@ -43,6 +43,22 @@ function Write-Info([string]$Message) { Write-Host "[INFO] $Message" -Foreground
 function Write-Warn([string]$Message) { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
 function Write-Err([string]$Message) { Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
+function Get-GcloudProject {
+    if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) {
+        return ''
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        $value = & gcloud config get-value project 2>$null
+        if ($null -eq $value) { return '' }
+        return "$value".Trim()
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
 function Restore-WindowsBranding {
     if ($RunnerRcBak -and (Test-Path $RunnerRcBak)) {
         Move-Item -Force $RunnerRcBak $RunnerRc
@@ -247,7 +263,7 @@ Write-Host "  Exe:    $exePath" -ForegroundColor Cyan
 if ($Deploy) {
     $gcpProject = $ProjectId
     if (-not $gcpProject) {
-        $gcpProject = (gcloud config get-value project 2>$null).Trim()
+        $gcpProject = Get-GcloudProject
     }
     if (-not $gcpProject) {
         throw 'No GCP project. Run: gcloud config set project ducklin-uk-uat (or ducklin-uk-prod)'
