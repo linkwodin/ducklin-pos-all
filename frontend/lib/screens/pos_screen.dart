@@ -44,7 +44,6 @@ class POSScreen extends StatefulWidget {
 class _POSScreenState extends State<POSScreen> {
   int _selectedIndex = 0;
   String? _userRole;
-  double groupAlignment = -1.0;
   int _pendingShipmentsCount = 0;
 
   // Global keys to access state of screens that need refreshing
@@ -378,6 +377,245 @@ class _POSScreenState extends State<POSScreen> {
     }
   }
 
+  void _onNavDestinationSelected(int index) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    authProvider.updateLastActivity();
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 2 && _orderHistoryKey.currentState != null) {
+      _orderHistoryKey.currentState!.refreshOrders();
+    }
+    if (index == 4) {
+      _refreshPendingShipmentsCount();
+    }
+  }
+
+  Widget _buildWholesaleNavIcon({required bool selected}) {
+    final baseIcon = Icon(
+      selected ? Icons.local_shipping : Icons.local_shipping_outlined,
+      size: 24,
+    );
+    if (_pendingShipmentsCount <= 0) return baseIcon;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        baseIcon,
+        Positioned(
+          right: -6,
+          top: -6,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+            child: Text(
+              _pendingShipmentsCount > 9 ? '9+' : '$_pendingShipmentsCount',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNavRailItem({
+    required int index,
+    required IconData icon,
+    required IconData selectedIcon,
+    required String label,
+    Widget? iconWidget,
+  }) {
+    final isSelected = _selectedIndex == index;
+    final theme = Theme.of(context);
+    final color = isSelected
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    final displayIcon = iconWidget ??
+        Icon(isSelected ? selectedIcon : icon, color: color, size: 24);
+
+    return Material(
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: () => _onNavDestinationSelected(index),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconTheme.merge(
+                data: IconThemeData(color: color, size: 24),
+                child: displayIcon,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(fontSize: 11, color: color, height: 1.15),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScrollableNavigationRail(AppLocalizations l10n) {
+    const railWidth = 80.0;
+    return SizedBox(
+      width: railWidth,
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Logo(fontSize: 12, textColor: Colors.black),
+              ),
+              _buildNavRailItem(
+                index: 0,
+                icon: Icons.add_box_outlined,
+                selectedIcon: Icons.add_box_rounded,
+                label: l10n.newOrder,
+              ),
+              _buildNavRailItem(
+                index: 1,
+                icon: Icons.qr_code_scanner_outlined,
+                selectedIcon: Icons.qr_code_scanner,
+                label: l10n.orderPickup ?? 'Order Pickup',
+              ),
+              _buildNavRailItem(
+                index: 2,
+                icon: Icons.screen_search_desktop_outlined,
+                selectedIcon: Icons.screen_search_desktop_rounded,
+                label: l10n.searchOrder,
+              ),
+              _buildNavRailItem(
+                index: 3,
+                icon: Icons.inventory_2_outlined,
+                selectedIcon: Icons.inventory,
+                label: l10n.inventory,
+              ),
+              _buildNavRailItem(
+                index: 4,
+                icon: Icons.local_shipping_outlined,
+                selectedIcon: Icons.local_shipping,
+                label: l10n.wholesale,
+                iconWidget: _buildWholesaleNavIcon(selected: _selectedIndex == 4),
+              ),
+              if (_showUserManagement)
+                _buildNavRailItem(
+                  index: 5,
+                  icon: Icons.people_alt_outlined,
+                  selectedIcon: Icons.people_alt,
+                  label: l10n.userManagement,
+                ),
+              _buildNavRailItem(
+                index: _showUserManagement ? 6 : 5,
+                icon: Icons.dashboard_outlined,
+                selectedIcon: Icons.dashboard_rounded,
+                label: l10n.report,
+              ),
+              const Divider(height: 24),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Consumer<SyncStatusProvider>(
+                    builder: (context, syncStatus, _) {
+                      return _SyncButtonWithLongPress(
+                        pendingCount: syncStatus.pendingOrdersCount +
+                            syncStatus.pendingStocktakesCount +
+                            syncStatus.pendingUserActivityEventsCount,
+                        onSync: _syncData,
+                        onFullResync: _fullResync,
+                        tooltip: l10n.sync,
+                      );
+                    },
+                  ),
+                  Text(
+                    l10n.sync,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.language, color: Colors.grey),
+                    onPressed: () => _showLanguageDialog(context),
+                    tooltip: l10n.language,
+                  ),
+                  Text(
+                    l10n.language,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: Colors.grey),
+                    onPressed: () {
+                      _globalBarcodeFocus.unfocus();
+                      productSelectionScreenKey.currentState
+                          ?.setSearchAutofocusEnabled(false);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      ).then((_) async {
+                        if (!mounted) return;
+                        final should = Provider.of<StocktakeStatusProvider>(
+                          context,
+                          listen: false,
+                        ).hasPendingDayStartToday;
+                        if (!mounted) return;
+                        if (should) {
+                          final flowProvider =
+                              Provider.of<StocktakeFlowProvider>(
+                            context,
+                            listen: false,
+                          );
+                          flowProvider.setAllowBarcodeFocus(false);
+                          _showDayStartStocktakeDialog();
+                        }
+                      });
+                    },
+                    tooltip: l10n.settings,
+                  ),
+                  Text(
+                    l10n.settings,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -392,226 +630,10 @@ class _POSScreenState extends State<POSScreen> {
           children: [
             Scaffold(
               body: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  NavigationRail(
-                    selectedIndex: _selectedIndex,
-                    extended: false, // compact to save space
-                    groupAlignment: groupAlignment,
-                    labelType: NavigationRailLabelType.all,
-                    onDestinationSelected: (int index) {
-                      // Track activity on navigation
-                      authProvider.updateLastActivity();
-                      setState(() {
-                        _selectedIndex = index;
-                      });
-                      // Refresh order history when navigating to it (index 2)
-                      if (index == 2 && _orderHistoryKey.currentState != null) {
-                        _orderHistoryKey.currentState!.refreshOrders();
-                      }
-                      if (index == 4) {
-                        _refreshPendingShipmentsCount();
-                      }
-                      // IMPORTANT: Do NOT change focus here anymore.
-                      // Let each screen and dialog manage its own focus
-                      // so inputs like weight and change-PIN fields work reliably.
-                    },
-                    leading: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Column(
-                        children: const [
-                          Logo(fontSize: 12, textColor: Colors.black),
-                        ],
-                      ),
-                    ),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Consumer<SyncStatusProvider>(
-                              builder: (context, syncStatus, _) {
-                                return _SyncButtonWithLongPress(
-                                  pendingCount: syncStatus.pendingOrdersCount + syncStatus.pendingStocktakesCount + syncStatus.pendingUserActivityEventsCount,
-                                  onSync: _syncData,
-                                  onFullResync: _fullResync,
-                                  tooltip: l10n.sync,
-                                );
-                              },
-                            ),
-                            Text(
-                              l10n.sync,
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon:
-                                  const Icon(Icons.language, color: Colors.grey),
-                              onPressed: () {
-                                _showLanguageDialog(context);
-                              },
-                              tooltip: l10n.language,
-                            ),
-                            Text(
-                              l10n.language,
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon:
-                                  const Icon(Icons.settings, color: Colors.grey),
-                              onPressed: () {
-                                // When opening settings, release any barcode/search focus
-                                // so text fields/dialogs on settings-related screens
-                                // can receive keyboard input.
-                                _globalBarcodeFocus.unfocus();
-                                if (productSelectionScreenKey.currentState != null) {
-                                  productSelectionScreenKey.currentState!
-                                      .setSearchAutofocusEnabled(false);
-                                }
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SettingsScreen(),
-                                  ),
-                                ).then((_) async {
-                                  if (!mounted) return;
-                                  final should = Provider.of<StocktakeStatusProvider>(context, listen: false).hasPendingDayStartToday;
-                                  if (!mounted) return;
-                                  if (should) {
-                                    final flowProvider = Provider.of<StocktakeFlowProvider>(context, listen: false);
-                                    flowProvider.setAllowBarcodeFocus(false);
-                                    _showDayStartStocktakeDialog();
-                                  }
-                                });
-                              },
-                              tooltip: l10n.settings,
-                            ),
-                            Text(
-                              l10n.settings,
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    destinations: <NavigationRailDestination>[
-                      NavigationRailDestination(
-                        icon: const Icon(Icons.add_box_outlined),
-                        selectedIcon: const Icon(Icons.add_box_rounded),
-                        label: Text(l10n.newOrder),
-                      ),
-                      NavigationRailDestination(
-                        icon:
-                            const Icon(Icons.qr_code_scanner_outlined),
-                        selectedIcon: const Icon(Icons.qr_code_scanner),
-                        label: Text(l10n.orderPickup ?? 'Order Pickup'),
-                      ),
-                      NavigationRailDestination(
-                        icon: const Icon(Icons.screen_search_desktop_outlined),
-                        selectedIcon:
-                            const Icon(Icons.screen_search_desktop_rounded),
-                        label: Text(l10n.searchOrder),
-                      ),
-                      NavigationRailDestination(
-                        icon: const Icon(Icons.inventory_2_outlined),
-                        selectedIcon: const Icon(Icons.inventory),
-                        label: Text(l10n.inventory),
-                      ),
-                      NavigationRailDestination(
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(Icons.local_shipping_outlined),
-                            if (_pendingShipmentsCount > 0)
-                              Positioned(
-                                right: -6,
-                                top: -6,
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Text(
-                                    _pendingShipmentsCount > 9 ? '9+' : '$_pendingShipmentsCount',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        selectedIcon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(Icons.local_shipping),
-                            if (_pendingShipmentsCount > 0)
-                              Positioned(
-                                right: -6,
-                                top: -6,
-                                child: Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Text(
-                                    _pendingShipmentsCount > 9 ? '9+' : '$_pendingShipmentsCount',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        label: Text(l10n.wholesale),
-                      ),
-                      if (_showUserManagement)
-                        NavigationRailDestination(
-                          icon: const Icon(Icons.people_alt_outlined),
-                          selectedIcon: const Icon(Icons.people_alt),
-                          label: Text(l10n.userManagement),
-                        ),
-                      NavigationRailDestination(
-                        icon: const Icon(Icons.dashboard_outlined),
-                        selectedIcon: const Icon(Icons.dashboard_rounded),
-                        label: Text(l10n.report),
-                      ),
-                    ],
-                  ),
+                  _buildScrollableNavigationRail(l10n),
                   const VerticalDivider(thickness: 1, width: 1),
-                  // Main content
                   Expanded(
                     child: _pages[_pageIndex],
                   ),
