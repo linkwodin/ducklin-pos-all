@@ -293,8 +293,8 @@ flutter build windows --release `
 $buildExit = $LASTEXITCODE
 $ErrorActionPreference = $oldEap
 if ($buildExit -ne 0) {
-    Write-Warn 'Build failed. For LNK1123 / CVT1103 run: scripts\frontend\repair-windows-build.bat'
-    Write-Warn 'Also use a short path (e.g. C:\dev\ducklin-pos-all) and close antivirus scan on build folder.'
+    Write-Warn 'For LNK1123 / CVT1103 run: scripts\frontend\repair-windows-build.bat'
+    Write-Warn 'Repo should be at C:\dev\ducklin-pos-all (short path). Exclude build folder from antivirus.'
     throw 'flutter build windows failed'
 }
 

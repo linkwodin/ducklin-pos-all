@@ -54,5 +54,5 @@ if ($LASTEXITCODE -ne 0) { throw 'flutter pub get failed' }
 
 Write-Host ''
 Write-Info 'Repair complete. Run BUILD-AND-DEPLOY-WINDOWS.bat again.'
-Write-Warn 'If errors continue, clone to a shorter path: C:\dev\ducklin-pos-all'
+Write-Info 'Repo path: C:\dev\ducklin-pos-all'
 Write-Warn 'Ensure Visual Studio 2022 has "Desktop development with C++" installed.'

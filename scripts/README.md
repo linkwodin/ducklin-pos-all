@@ -49,8 +49,8 @@ All scripts should be run from the project root directory:
 ./scripts/frontend/setup-icon.sh
 
 # Flutter Windows (run on a Windows PC — double-click BUILD-AND-DEPLOY-WINDOWS.bat)
-BUILD-AND-DEPLOY-WINDOWS.bat                 # git pull/clone → pick 1=UAT / 2=Prod → build + upload
-scripts\frontend\build-flutter-uat-windows.bat  # build only (no git, no menu)
+# Repo is cloned/moved to C:\dev\ducklin-pos-all for shorter MSVC paths.
+BUILD-AND-DEPLOY-WINDOWS.bat
 
 # Clone UAT data to local dev (DB + optional uploads)
 ./scripts/clone-uat-to-dev.sh

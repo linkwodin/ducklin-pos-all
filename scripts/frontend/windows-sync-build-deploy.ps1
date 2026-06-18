@@ -21,7 +21,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DefaultCloneDir = Join-Path $env:USERPROFILE 'ducklin-pos-all'
+$DefaultCloneDir = 'C:\dev\ducklin-pos-all'
+$LegacyCloneDir = Join-Path $env:USERPROFILE 'ducklin-pos-all'
 
 function Write-Info([string]$Message) { Write-Host "[INFO] $Message" -ForegroundColor Green }
 function Write-Warn([string]$Message) { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
@@ -210,20 +211,46 @@ function Read-EnvironmentChoice {
     }
 }
 
+function Ensure-DevRepoLocation {
+    if (-not (Test-Path 'C:\dev')) {
+        New-Item -ItemType Directory -Path 'C:\dev' -Force | Out-Null
+    }
+
+    $hasDefault = (Test-Path (Join-Path $DefaultCloneDir 'frontend\pubspec.yaml')) -or
+        (Test-Path (Join-Path $DefaultCloneDir '.git'))
+    if ($hasDefault) {
+        return
+    }
+
+    if (Test-Path (Join-Path $LegacyCloneDir '.git')) {
+        Write-Info "Moving repo to $DefaultCloneDir ..."
+        Move-Item -Path $LegacyCloneDir -Destination $DefaultCloneDir
+    }
+}
+
 Write-Host ''
 Write-Host '==========================================' -ForegroundColor Cyan
 Write-Host ' POS Windows - sync, build, deploy' -ForegroundColor Cyan
 Write-Host '==========================================' -ForegroundColor Cyan
 Write-Host ''
 
-$launcherDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$repoRoot = Find-RepoRoot -StartDir (Join-Path $launcherDir '..\..')
-if (-not $repoRoot) {
-    $repoRoot = Find-RepoRoot -StartDir $launcherDir
+Ensure-DevRepoLocation
+
+$targetDir = if ($CloneDir) { $CloneDir } else { $DefaultCloneDir }
+$repoRoot = $null
+if ((Test-Path (Join-Path $targetDir 'frontend\pubspec.yaml')) -or (Test-Path (Join-Path $targetDir '.git'))) {
+    $repoRoot = (Resolve-Path $targetDir).Path
 }
 
 if (-not $repoRoot) {
-    $targetDir = if ($CloneDir) { $CloneDir } else { $DefaultCloneDir }
+    $launcherDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    $repoRoot = Find-RepoRoot -StartDir (Join-Path $launcherDir '..\..')
+    if (-not $repoRoot) {
+        $repoRoot = Find-RepoRoot -StartDir $launcherDir
+    }
+}
+
+if (-not $repoRoot) {
     if (Test-Path (Join-Path $targetDir 'frontend\pubspec.yaml')) {
         $repoRoot = (Resolve-Path $targetDir).Path
     } elseif (Test-Path (Join-Path $targetDir '.git')) {

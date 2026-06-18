@@ -1,24 +1,45 @@
 @echo off
 REM One-click Windows POS: git pull, pick UAT (1) or Production (2), build + deploy.
+REM Repo always lives at C:\dev\ducklin-pos-all (short path for MSVC builds).
 chcp 65001 >nul
 setlocal EnableExtensions
 
 set "GIT_URL=https://github.com/linkwodin/ducklin-pos-all.git"
 set "GIT_BRANCH=main"
-set "CLONE_DIR=%USERPROFILE%\ducklin-pos-all"
+set "CLONE_DIR=C:\dev\ducklin-pos-all"
+set "OLD_DIR=%USERPROFILE%\ducklin-pos-all"
 set "REPO_DIR="
 set "SYNC_SCRIPT="
 
-REM --- Step 1: resolve repo folder ---
-if exist "%~dp0.git" (
-    set "REPO_DIR=%~dp0"
-) else if exist "%CLONE_DIR%\.git" (
-    set "REPO_DIR=%CLONE_DIR%\"
+if not exist "C:\dev" (
+    echo [INFO] Creating C:\dev
+    mkdir "C:\dev"
 )
 
-REM --- Step 2: git pull (first action when repo already exists) ---
+REM Migrate previous clone from %%USERPROFILE%% to C:\dev
+if not exist "%CLONE_DIR%\.git" (
+    if exist "%OLD_DIR%\.git" (
+        echo.
+        echo [INFO] Moving repo to short path:
+        echo        %OLD_DIR%
+        echo     -^> %CLONE_DIR%
+        echo.
+        move "%OLD_DIR%" "%CLONE_DIR%"
+        if errorlevel 1 (
+            echo [ERROR] Could not move folder. Close programs using the old path and retry.
+            pause
+            exit /b 1
+        )
+    )
+)
+
+REM --- Step 1: use C:\dev\ducklin-pos-all ---
+if exist "%CLONE_DIR%\.git" (
+    set "REPO_DIR=%CLONE_DIR%"
+)
+
+REM --- Step 2: git pull (first action when repo exists) ---
 if defined REPO_DIR (
-    if "%REPO_DIR:~-1%"=="\" set "REPO_DIR=%REPO_DIR:~0,-1%"
     cd /d "%REPO_DIR%"
     echo.
     echo [INFO] git pull --ff-only origin %GIT_BRANCH%
@@ -40,7 +61,7 @@ if defined REPO_DIR (
 REM --- Step 3: clone on first run ---
 if not defined SYNC_SCRIPT (
     echo.
-    echo [INFO] Repository not found locally. Cloning to:
+    echo [INFO] Repository not found. Cloning to:
     echo        %CLONE_DIR%
     echo.
     where git >nul 2>&1
@@ -72,7 +93,9 @@ if not exist "%SYNC_SCRIPT%" (
 )
 
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SYNC_SCRIPT%" -SkipGit
+echo [INFO] Working folder: %REPO_DIR%
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SYNC_SCRIPT%" -SkipGit -CloneDir "%CLONE_DIR%"
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.
@@ -80,6 +103,7 @@ if %EXIT_CODE% EQU 0 (
     echo All done.
 ) else (
     echo Failed. See errors above.
+    echo Try: %REPO_DIR%\scripts\frontend\repair-windows-build.bat
 )
 echo.
 pause
