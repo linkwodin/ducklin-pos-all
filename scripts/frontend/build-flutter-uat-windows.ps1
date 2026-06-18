@@ -35,9 +35,8 @@ $Region = if ($env:REGION) { $env:REGION } else { 'europe-west1' }
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir '..\..')
 $FrontendDir = Join-Path $RepoRoot 'frontend'
-$RunnerRc = Join-Path $FrontendDir 'windows\runner\Runner.rc'
 $MainCpp = Join-Path $FrontendDir 'windows\runner\main.cpp'
-$RunnerRcBak = ''
+$RunnerRc = Join-Path $FrontendDir 'windows\runner\Runner.rc'
 $MainCppBak = ''
 
 function Write-Info([string]$Message) { Write-Host "[INFO] $Message" -ForegroundColor Green }
@@ -72,12 +71,46 @@ function Get-PosAppTitle {
 }
 
 function Restore-WindowsBranding {
-    if ($RunnerRcBak -and (Test-Path $RunnerRcBak)) {
-        Move-Item -Force $RunnerRcBak $RunnerRc
-    }
     if ($MainCppBak -and (Test-Path $MainCppBak)) {
         Move-Item -Force $MainCppBak $MainCpp
     }
+    # Recover from a previous failed build that patched Runner.rc.
+    if (Test-Path "$RunnerRc.buildbak") {
+        Move-Item -Force "$RunnerRc.buildbak" $RunnerRc
+    }
+}
+
+function Clear-WindowsBuildCache {
+    param([string]$Root)
+
+    Write-Info 'Clearing Windows build cache (fixes corrupt vcxproj / LNK1123)...'
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        Push-Location $Root
+        flutter clean 2>&1 | ForEach-Object { Write-Host $_ }
+    } finally {
+        Pop-Location
+        $ErrorActionPreference = $oldEap
+    }
+
+    foreach ($path in @(
+            (Join-Path $Root 'build\windows'),
+            (Join-Path $Root '.dart_tool\flutter_build')
+        )) {
+        if (Test-Path $path) {
+            Remove-Item -Recurse -Force $path -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Set-AsciiFileContent {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
 function Get-ReleaseDir {
@@ -210,6 +243,8 @@ $iconPng = if ($BuildEnv -eq 'production') { 'assets\images\app_icon.png' } else
 
 Set-Location $FrontendDir
 
+Restore-WindowsBranding
+
 Write-Host ''
 Write-Host '==========================================' -ForegroundColor Cyan
 Write-Host " POS Windows build$(if ($Deploy) { ' + deploy' }) ($BuildEnv)" -ForegroundColor Cyan
@@ -228,37 +263,40 @@ $convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
 if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
 
 if ($BuildEnv -eq 'uat') {
-    Write-Info "Setting Windows app title to: $appTitle"
-    $RunnerRcBak = "$RunnerRc.buildbak"
+    Write-Info "Setting Windows window title to: $appTitle"
     $MainCppBak = "$MainCpp.buildbak"
-    Copy-Item $RunnerRc $RunnerRcBak -Force
     Copy-Item $MainCpp $MainCppBak -Force
 
-    $rc = Get-Content $RunnerRc -Raw -Encoding UTF8
-    $rc = $rc -replace '(VALUE "FileDescription", ")[^"]*(")', ('${1}' + $appTitle + '${2}')
-    $rc = $rc -replace '(VALUE "ProductName", ")[^"]*(")', ('${1}' + $appTitle + '${2}')
-    Set-Content $RunnerRc $rc -Encoding UTF8 -NoNewline
-
     $cpp = Get-Content $MainCpp -Raw -Encoding UTF8
-    $cpp = $cpp -replace 'L"\u5FB7\u9748\u6D77\u5473 POS"', 'L"\u5FB7\u9748\u6D77\u5473 POS UAT"'
-    Set-Content $MainCpp $cpp -Encoding UTF8 -NoNewline
+    $cpp = $cpp -replace 'L"\u5FB7\u9748\u6D77\u5473 POS( UAT)?"', 'L"\u5FB7\u9748\u6D77\u5473 POS UAT"'
+    Set-AsciiFileContent -Path $MainCpp -Content $cpp
 }
+
+Clear-WindowsBuildCache -Root $FrontendDir
 
 Write-Info 'Getting dependencies...'
 flutter pub get
 if ($LASTEXITCODE -ne 0) { throw 'flutter pub get failed' }
 
 if ($Clean) {
-    Write-Info 'Cleaning previous builds...'
-    flutter clean
+    Write-Info 'Deep clean requested...'
+    Clear-WindowsBuildCache -Root $FrontendDir
     flutter pub get
 }
 
 Write-Info "Building Windows release ($BuildEnv)..."
+$oldEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 flutter build windows --release `
     --dart-define=ENV=$BuildEnv `
     --dart-define=API_BASE_URL="$backendUrl"
-if ($LASTEXITCODE -ne 0) { throw 'flutter build windows failed' }
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = $oldEap
+if ($buildExit -ne 0) {
+    Write-Warn 'Build failed. For LNK1123 / CVT1103 run: scripts\frontend\repair-windows-build.bat'
+    Write-Warn 'Also use a short path (e.g. C:\dev\ducklin-pos-all) and close antivirus scan on build folder.'
+    throw 'flutter build windows failed'
+}
 
 Restore-WindowsBranding
 
