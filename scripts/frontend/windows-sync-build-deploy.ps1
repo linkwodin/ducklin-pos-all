@@ -27,6 +27,75 @@ function Write-Info([string]$Message) { Write-Host "[INFO] $Message" -Foreground
 function Write-Warn([string]$Message) { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
 function Write-Err([string]$Message) { Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
+# Git writes progress to stderr; under $ErrorActionPreference = 'Stop' that becomes a terminating error.
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+        [string[]]$GitArguments
+    )
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & git @GitArguments 2>&1
+        foreach ($line in @($output)) {
+            if ($null -eq $line) { continue }
+            if ($line -is [System.Management.Automation.ErrorRecord]) {
+                Write-Host $line.ToString()
+            } else {
+                Write-Host $line
+            }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "git $($GitArguments -join ' ') failed (exit code $LASTEXITCODE)"
+        }
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
+function Invoke-GitQuiet {
+    param(
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+        [string[]]$GitArguments
+    )
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & git @GitArguments 2>$null | Out-Null
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
+function Invoke-Gcloud {
+    param(
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+        [string[]]$GcloudArguments
+    )
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & gcloud @GcloudArguments 2>&1
+        foreach ($line in @($output)) {
+            if ($null -eq $line) { continue }
+            if ($line -is [System.Management.Automation.ErrorRecord]) {
+                Write-Host $line.ToString()
+            } else {
+                Write-Host $line
+            }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "gcloud $($GcloudArguments -join ' ') failed (exit code $LASTEXITCODE)"
+        }
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
+}
+
 function Find-RepoRoot([string]$StartDir) {
     $dir = (Resolve-Path $StartDir).Path
     while ($true) {
@@ -59,22 +128,24 @@ function Sync-GitRepo {
     }
 
     Write-Info "Fetching latest code ($Branch)..."
-    git fetch origin $Branch 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) { throw 'git fetch failed' }
+    Invoke-Git fetch origin $Branch
 
-    $branchExists = git rev-parse --verify $Branch 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    if ((Invoke-GitQuiet rev-parse --verify $Branch) -ne 0) {
         Write-Info "Checking out origin/$Branch..."
-        git checkout -B $Branch "origin/$Branch" 2>&1 | ForEach-Object { Write-Host $_ }
+        Invoke-Git checkout -B $Branch "origin/$Branch"
     } else {
-        git checkout $Branch 2>&1 | ForEach-Object { Write-Host $_ }
+        Invoke-Git checkout $Branch
     }
-    if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed" }
 
-    git pull --ff-only origin $Branch 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) { throw 'git pull failed (resolve conflicts manually or delete folder and re-clone)' }
+    Invoke-Git pull --ff-only origin $Branch
 
-    $commit = (git rev-parse --short HEAD).Trim()
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $commit = (git rev-parse --short HEAD 2>$null).Trim()
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
     Write-Info "Repo up to date at $commit"
 }
 
@@ -100,9 +171,10 @@ function Clone-GitRepo {
 
     Write-Info "Cloning $RemoteUrl ..."
     Write-Info "Into: $TargetDir"
-    git clone --branch $Branch --single-branch $RemoteUrl $TargetDir 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) {
-        throw "git clone failed. If the repo is private, run: git config --global credential.helper manager`nthen clone once manually to sign in."
+    try {
+        Invoke-Git clone --branch $Branch --single-branch $RemoteUrl $TargetDir
+    } catch {
+        throw "git clone failed. If the repo is private, run: git config --global credential.helper manager`nthen clone once manually to sign in.`n$($_.Exception.Message)"
     }
 }
 
@@ -168,10 +240,16 @@ Write-Info "Selected: $($selection.Label)"
 Write-Info "GCP project: $($selection.ProjectId)"
 
 if (Get-Command gcloud -ErrorAction SilentlyContinue) {
-    $currentProject = (gcloud config get-value project 2>$null).Trim()
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $currentProject = (gcloud config get-value project 2>$null).Trim()
+    } finally {
+        $ErrorActionPreference = $oldEap
+    }
     if ($currentProject -ne $selection.ProjectId) {
         Write-Info "Setting gcloud project to $($selection.ProjectId)..."
-        gcloud config set project $selection.ProjectId 2>&1 | ForEach-Object { Write-Host $_ }
+        Invoke-Gcloud config set project $selection.ProjectId
     }
 } elseif (-not $BuildOnly) {
     throw 'gcloud CLI is required for deploy. Install Google Cloud SDK or use -BuildOnly.'
