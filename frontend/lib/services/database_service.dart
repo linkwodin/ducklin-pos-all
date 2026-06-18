@@ -33,7 +33,7 @@ class DatabaseService {
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
     final db = await openDatabase(
       dbPath,
-      version: 15, // v15: NULL instead of '' for optional unique barcode/sku fields
+      version: 16, // v16: order_items.unit_type on fresh installs; v15: nullable barcodes
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -109,6 +109,15 @@ class DatabaseService {
       final hasTrackWeight = stockInfo.any((column) => column['name'] == 'track_weight');
       if (!hasTrackWeight) {
         await db.execute('ALTER TABLE stock ADD COLUMN track_weight INTEGER DEFAULT 0');
+      }
+      final orderItemsInfo = await db.rawQuery('PRAGMA table_info(order_items)');
+      final hasUnitType = orderItemsInfo.any((column) => column['name'] == 'unit_type');
+      if (!hasUnitType) {
+        print('DatabaseService: order_items.unit_type missing, adding it...');
+        await db.execute(
+          "ALTER TABLE order_items ADD COLUMN unit_type TEXT NOT NULL DEFAULT 'quantity'",
+        );
+        print('DatabaseService: order_items.unit_type added successfully');
       }
     } catch (e) {
       print('DatabaseService: Error ensuring schema: $e');
@@ -334,6 +343,17 @@ class DatabaseService {
       await _normalizeEmptyUniqueProductCodes(db);
       print('DatabaseService: Database upgrade to v15 (nullable product barcodes) completed');
     }
+
+    if (oldVersion < 16) {
+      try {
+        await db.execute(
+          "ALTER TABLE order_items ADD COLUMN unit_type TEXT NOT NULL DEFAULT 'quantity'",
+        );
+      } catch (e) {
+        print('DatabaseService: Column order_items.unit_type may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v16 (order_items.unit_type) completed');
+    }
     
     try {
       await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
@@ -469,6 +489,7 @@ class DatabaseService {
         order_id INTEGER NOT NULL,
         product_id INTEGER NOT NULL,
         quantity REAL NOT NULL,
+        unit_type TEXT NOT NULL DEFAULT 'quantity',
         unit_price REAL NOT NULL,
         discount_percent REAL DEFAULT 0,
         discount_amount REAL DEFAULT 0,
