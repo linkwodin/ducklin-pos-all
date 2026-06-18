@@ -59,6 +59,17 @@ function Get-GcloudProject {
     }
 }
 
+function Get-PosAppTitle {
+    param([string]$TargetEnv)
+
+    # Build Chinese app name without non-ASCII literals (PowerShell 5.1 encoding safe).
+    $name = -join (@(0x5FB7, 0x9748, 0x6D77, 0x5473) | ForEach-Object { [char]$_ })
+    if ($TargetEnv -eq 'production') {
+        return "$name POS"
+    }
+    return "$name POS UAT"
+}
+
 function Restore-WindowsBranding {
     if ($RunnerRcBak -and (Test-Path $RunnerRcBak)) {
         Move-Item -Force $RunnerRcBak $RunnerRc
@@ -193,7 +204,7 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
 }
 
 $backendUrl = if ($Env -eq 'production') { $ProdBackendUrl } else { $UatBackendUrl }
-$appTitle = if ($Env -eq 'production') { '德靈海味 POS' } else { '德靈海味 POS UAT' }
+$appTitle = Get-PosAppTitle -TargetEnv $Env
 $iconPng = if ($Env -eq 'production') { 'assets\images\app_icon.png' } else { 'assets\images\app_icon_uat.png' }
 
 Set-Location $FrontendDir
@@ -223,8 +234,8 @@ if ($Env -eq 'uat') {
     Copy-Item $MainCpp $MainCppBak -Force
 
     $rc = Get-Content $RunnerRc -Raw -Encoding UTF8
-    $rc = $rc -replace 'VALUE "FileDescription", "德靈海味 POS"', "VALUE `"FileDescription`", `"$appTitle`""
-    $rc = $rc -replace 'VALUE "ProductName", "德靈海味 POS"', "VALUE `"ProductName`", `"$appTitle`""
+    $rc = $rc -replace '(VALUE "FileDescription", ")[^"]*(")', ('${1}' + $appTitle + '${2}')
+    $rc = $rc -replace '(VALUE "ProductName", ")[^"]*(")', ('${1}' + $appTitle + '${2}')
     Set-Content $RunnerRc $rc -Encoding UTF8 -NoNewline
 
     $cpp = Get-Content $MainCpp -Raw -Encoding UTF8

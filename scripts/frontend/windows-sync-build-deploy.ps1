@@ -212,7 +212,7 @@ function Read-EnvironmentChoice {
 
 Write-Host ''
 Write-Host '==========================================' -ForegroundColor Cyan
-Write-Host ' POS Windows — sync, build, deploy' -ForegroundColor Cyan
+Write-Host ' POS Windows - sync, build, deploy' -ForegroundColor Cyan
 Write-Host '==========================================' -ForegroundColor Cyan
 Write-Host ''
 
