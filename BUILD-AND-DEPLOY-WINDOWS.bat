@@ -1,8 +1,17 @@
 @echo off
-REM One-click Windows POS: git pull, pick UAT (1) or Production (2), build + deploy.
-REM Repo always lives at C:\dev\ducklin-pos-all (short path for MSVC builds).
+REM One-click Windows POS: git pull, pick UAT (1) or Production (2), build, install, deploy.
+REM Installs to C:\Program Files\ducklin\POS then uploads to GCS.
 chcp 65001 >nul
 setlocal EnableExtensions
+
+REM Program Files install needs Administrator.
+net session >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [INFO] Requesting Administrator rights ^(install to C:\Program Files\ducklin\POS^)...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b 0
+)
 
 set "GIT_URL=https://github.com/linkwodin/ducklin-pos-all.git"
 set "GIT_BRANCH=main"

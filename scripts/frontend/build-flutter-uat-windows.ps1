@@ -31,6 +31,7 @@ $UatBackendUrl = if ($env:UAT_BACKEND_URL) { $env:UAT_BACKEND_URL } else { 'http
 $ProdBackendUrl = if ($env:PROD_BACKEND_URL) { $env:PROD_BACKEND_URL } else { 'https://pos-backend-vepqiqvcoa-ew.a.run.app/api/v1' }
 $Version = '1.0.0'
 $Region = if ($env:REGION) { $env:REGION } else { 'europe-west1' }
+$DefaultInstallDir = if ($env:POS_INSTALL_DIR) { $env:POS_INSTALL_DIR } else { 'C:\Program Files\ducklin\POS' }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir '..\..')
@@ -131,6 +132,60 @@ function Ensure-GcsBucket {
     }
 }
 
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Install-PosAppLocally {
+    param(
+        [string]$ReleaseDir,
+        [string]$InstallDir = $DefaultInstallDir
+    )
+
+    Write-Info "Installing app to $InstallDir (before GCS upload)..."
+
+    if (-not (Test-IsAdministrator)) {
+        Write-Warn 'Not running as Administrator — copy to Program Files may fail.'
+        Write-Warn 'Right-click BUILD-AND-DEPLOY-WINDOWS.bat -> Run as administrator.'
+    }
+
+    $installParent = Split-Path $InstallDir -Parent
+    if (-not (Test-Path $installParent)) {
+        New-Item -ItemType Directory -Path $installParent -Force | Out-Null
+    }
+    if (-not (Test-Path $InstallDir)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
+
+    Get-Process -Name 'pos_system' -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Warn 'Closing running pos_system.exe before install...'
+        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+    }
+
+    $robocopyLog = Join-Path $env:TEMP 'pos-local-install-robo.log'
+    if (Test-Path $robocopyLog) { Remove-Item $robocopyLog -Force -ErrorAction SilentlyContinue }
+
+    & robocopy $ReleaseDir $InstallDir /E /COPY:DAT /R:2 /W:2 /LOG:$robocopyLog /NP /NFL /NDL
+    $roboExit = $LASTEXITCODE
+    # robocopy: 0-7 = success (0=no copy needed, 1=files copied, etc.)
+    if ($roboExit -gt 7) {
+        if (Test-Path $robocopyLog) {
+            Get-Content $robocopyLog -Tail 15 | ForEach-Object { Write-Host $_ }
+        }
+        throw "Failed to install app to $InstallDir (robocopy exit $roboExit). Run as Administrator and close pos_system.exe."
+    }
+
+    $installedExe = Join-Path $InstallDir 'pos_system.exe'
+    if (-not (Test-Path $installedExe)) {
+        throw "Install folder missing pos_system.exe: $InstallDir"
+    }
+
+    Write-Info "Local install complete: $installedExe"
+}
+
 function Publish-WindowsZip {
     param(
         [string]$ReleaseDir,
@@ -200,6 +255,7 @@ function Publish-WindowsZip {
     Write-Host 'Deploy complete!' -ForegroundColor Green
     Write-Host '==========================================' -ForegroundColor Green
     Write-Host "Latest:  https://storage.googleapis.com/$bucketName/$latestName" -ForegroundColor Cyan
+    Write-Host "Local:   $DefaultInstallDir\pos_system.exe" -ForegroundColor Cyan
     if ($TargetEnv -eq 'uat') {
         Write-Host "Page:    https://storage.googleapis.com/$bucketName/index.html" -ForegroundColor Cyan
     }
@@ -307,6 +363,7 @@ if ($Deploy) {
         Write-Warn "GCP project is $gcpProject (expected ducklin-uk-prod for production downloads)."
     }
     Write-Info "Deploying to project: $gcpProject"
+    Install-PosAppLocally -ReleaseDir $releaseDir
     Publish-WindowsZip -ReleaseDir $releaseDir -GcpProject $gcpProject -TargetEnv $BuildEnv
 } else {
     Write-Host ''
