@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "德靈海味 POS" "\0"
+            VALUE "CompanyName", "Ducklin" "\0"
+            VALUE "FileDescription", "Ducklin POS" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "pos_system" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Ducklin. All rights reserved." "\0"
             VALUE "OriginalFilename", "pos_system.exe" "\0"
-            VALUE "ProductName", "德靈海味 POS" "\0"
+            VALUE "ProductName", "Ducklin POS" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

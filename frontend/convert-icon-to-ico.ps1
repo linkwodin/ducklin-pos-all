@@ -8,115 +8,117 @@ param(
     [string]$IcoPath = "windows\runner\resources\app_icon.ico"
 )
 
-$pngPath = $PngPath
-$icoPath = $IcoPath
+$ErrorActionPreference = 'Stop'
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Converting PNG to ICO for Windows" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
+function Write-Ok([string]$Message) { Write-Host $Message -ForegroundColor Green }
+function Write-Fail([string]$Message) { Write-Host $Message -ForegroundColor Red }
 
-# Check if PNG exists
-if (-not (Test-Path $pngPath)) {
-    Write-Host "ERROR: PNG file not found: $pngPath" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Please make sure the app_icon.png file exists in assets\images\" -ForegroundColor Yellow
+Write-Host 'Converting PNG to ICO for Windows...' -ForegroundColor Cyan
+
+if (-not (Test-Path $PngPath)) {
+    Write-Fail "ERROR: PNG not found: $PngPath"
     exit 1
 }
 
-# Check if resources directory exists
-$resourcesDir = "windows\runner\resources"
+$resourcesDir = Split-Path $IcoPath -Parent
 if (-not (Test-Path $resourcesDir)) {
-    Write-Host "Creating resources directory..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Path $resourcesDir -Force | Out-Null
 }
 
-# Try using ImageMagick if available
-$magickPath = Get-Command magick -ErrorAction SilentlyContinue
-if ($magickPath) {
-    Write-Host "Using ImageMagick to convert icon..." -ForegroundColor Green
-    Write-Host "Command: magick convert $pngPath -define icon:auto-resize=256,128,64,48,32,16 $icoPath" -ForegroundColor Gray
-    
-    & magick convert $pngPath -define icon:auto-resize=256,128,64,48,32,16 $icoPath
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host ""
-        Write-Host "SUCCESS: Icon converted successfully!" -ForegroundColor Green
-        Write-Host "ICO file saved to: $icoPath" -ForegroundColor Green
+if (Get-Command magick -ErrorAction SilentlyContinue) {
+    Write-Host 'Using ImageMagick...' -ForegroundColor Gray
+    & magick convert $PngPath -define icon:auto-resize=256,48,32,16 $IcoPath
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $IcoPath)) {
+        Write-Ok "ICO saved: $IcoPath"
         exit 0
-    } else {
-        Write-Host ""
-        Write-Host "ImageMagick conversion failed. Trying alternative method..." -ForegroundColor Yellow
+    }
+    Write-Host 'ImageMagick failed, using built-in converter...' -ForegroundColor Yellow
+}
+
+function New-IcoFromPng {
+    param(
+        [string]$SourcePng,
+        [string]$DestinationIco,
+        [int[]]$Sizes = @(256, 48, 32, 16)
+    )
+
+    Add-Type -AssemblyName System.Drawing
+
+    $pngBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $SourcePng))
+    $sourceStream = New-Object System.IO.MemoryStream(,$pngBytes)
+    $sourceImage = [System.Drawing.Image]::FromStream($sourceStream)
+
+    $entries = New-Object System.Collections.Generic.List[Object]
+    try {
+        foreach ($size in $Sizes) {
+            $dimension = [Math]::Min($size, 256)
+            $bitmap = New-Object System.Drawing.Bitmap($dimension, $dimension)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $graphics.DrawImage($sourceImage, 0, 0, $dimension, $dimension)
+            $graphics.Dispose()
+
+            $pngStream = New-Object System.IO.MemoryStream
+            $bitmap.Save($pngStream, [System.Drawing.Imaging.ImageFormat]::Png)
+            $data = $pngStream.ToArray()
+            $pngStream.Dispose()
+            $bitmap.Dispose()
+
+            $entries.Add([PSCustomObject]@{
+                Width  = $dimension
+                Height = $dimension
+                Data   = $data
+            })
+        }
+    } finally {
+        $sourceImage.Dispose()
+        $sourceStream.Dispose()
+    }
+
+    $stream = [System.IO.File]::Create($DestinationIco)
+    $writer = New-Object System.IO.BinaryWriter($stream)
+
+    try {
+        $writer.Write([UInt16]0)
+        $writer.Write([UInt16]1)
+        $writer.Write([UInt16]$entries.Count)
+
+        $offset = 6 + (16 * $entries.Count)
+        foreach ($entry in $entries) {
+            $widthByte = [byte][Math]::Min($entry.Width, 255)
+            $heightByte = [byte][Math]::Min($entry.Height, 255)
+            $writer.Write($widthByte)
+            $writer.Write($heightByte)
+            $writer.Write([byte]0)
+            $writer.Write([byte]0)
+            $writer.Write([UInt16]1)
+            $writer.Write([UInt16]32)
+            $writer.Write([UInt32]$entry.Data.Length)
+            $writer.Write([UInt32]$offset)
+            $offset += $entry.Data.Length
+        }
+
+        foreach ($entry in $entries) {
+            $writer.Write($entry.Data)
+        }
+    } finally {
+        $writer.Close()
+        $stream.Close()
     }
 }
 
-# Alternative: Use .NET to create a simple ICO
-Write-Host "Using .NET method to create ICO..." -ForegroundColor Yellow
-Write-Host "Note: This creates a basic ICO. For best results, use ImageMagick or an online converter." -ForegroundColor Yellow
-Write-Host ""
-
 try {
-    Add-Type -AssemblyName System.Drawing
-    
-    # Load the PNG image
-    $pngImage = [System.Drawing.Image]::FromFile((Resolve-Path $pngPath))
-    
-    # Create a bitmap from the PNG
-    $bitmap = New-Object System.Drawing.Bitmap($pngImage)
-    
-    # Create ICO file (simplified - Windows will use the first frame)
-    # Note: This is a basic conversion. For multi-resolution ICO, use ImageMagick or online tool
-    $icoStream = [System.IO.File]::Create($icoPath)
-    
-    # Write ICO header
-    $icoHeader = [byte[]](0x00, 0x00, 0x01, 0x00, 0x01, 0x00)
-    $icoStream.Write($icoHeader, 0, $icoHeader.Length)
-    
-    # Get image dimensions (max 256x256 for ICO)
-    $width = [Math]::Min($bitmap.Width, 256)
-    $height = [Math]::Min($bitmap.Height, 256)
-    
-    # Write directory entry
-    $widthByte = [byte][Math]::Min($width, 255)
-    $heightByte = [byte][Math]::Min($height, 255)
-    $dirEntry = [byte[]]($widthByte, $heightByte, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00)
-    $icoStream.Write($dirEntry, 0, $dirEntry.Length)
-    
-    # Resize and save bitmap data
-    $resizedBitmap = New-Object System.Drawing.Bitmap($bitmap, $width, $height)
-    $memoryStream = New-Object System.IO.MemoryStream
-    $resizedBitmap.Save($memoryStream, [System.Drawing.Imaging.ImageFormat]::Png)
-    $pngData = $memoryStream.ToArray()
-    
-    # Write PNG data
-    $icoStream.Write($pngData, 0, $pngData.Length)
-    
-    $icoStream.Close()
-    $pngImage.Dispose()
-    $bitmap.Dispose()
-    $resizedBitmap.Dispose()
-    $memoryStream.Dispose()
-    
-    Write-Host ""
-    Write-Host "SUCCESS: Basic ICO file created!" -ForegroundColor Green
-    Write-Host "ICO file saved to: $icoPath" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Note: For best results with multiple resolutions, use:" -ForegroundColor Yellow
-    Write-Host "  - ImageMagick: magick convert $pngPath -define icon:auto-resize=256,128,64,48,32,16 $icoPath" -ForegroundColor Yellow
-    Write-Host "  - Online converter: https://convertio.co/png-ico/" -ForegroundColor Yellow
-    
+    New-IcoFromPng -SourcePng $PngPath -DestinationIco $IcoPath
+    if (-not (Test-Path $IcoPath)) {
+        throw 'ICO file was not created'
+    }
+    $length = (Get-Item $IcoPath).Length
+    if ($length -lt 100) {
+        throw "ICO file looks too small ($length bytes)"
+    }
+    Write-Ok "ICO saved: $IcoPath ($length bytes)"
 } catch {
-    Write-Host ""
-    Write-Host "ERROR: Failed to create ICO file" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Please use one of these alternatives:" -ForegroundColor Yellow
-    Write-Host "  1. Install ImageMagick and run:" -ForegroundColor Yellow
-    Write-Host "     magick convert $pngPath -define icon:auto-resize=256,128,64,48,32,16 $icoPath" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  2. Use online converter:" -ForegroundColor Yellow
-    Write-Host "     https://convertio.co/png-ico/" -ForegroundColor Cyan
-    Write-Host "     Then save the downloaded file as: $icoPath" -ForegroundColor Yellow
+    Write-Fail "ERROR: Failed to create ICO: $($_.Exception.Message)"
+    Write-Host 'Install ImageMagick: winget install ImageMagick.ImageMagick' -ForegroundColor Yellow
     exit 1
 }
-

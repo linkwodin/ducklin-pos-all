@@ -37,7 +37,6 @@ $RepoRoot = Resolve-Path (Join-Path $ScriptDir '..\..')
 $FrontendDir = Join-Path $RepoRoot 'frontend'
 $MainCpp = Join-Path $FrontendDir 'windows\runner\main.cpp'
 $RunnerRc = Join-Path $FrontendDir 'windows\runner\Runner.rc'
-$MainCppBak = ''
 
 function Write-Info([string]$Message) { Write-Host "[INFO] $Message" -ForegroundColor Green }
 function Write-Warn([string]$Message) { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
@@ -59,24 +58,12 @@ function Get-GcloudProject {
     }
 }
 
-function Get-PosAppTitle {
-    param([string]$TargetEnv)
-
-    # Build Chinese app name without non-ASCII literals (PowerShell 5.1 encoding safe).
-    $name = -join (@(0x5FB7, 0x9748, 0x6D77, 0x5473) | ForEach-Object { [char]$_ })
-    if ($TargetEnv -eq 'production') {
-        return "$name POS"
-    }
-    return "$name POS UAT"
-}
-
 function Restore-WindowsBranding {
-    if ($MainCppBak -and (Test-Path $MainCppBak)) {
-        Move-Item -Force $MainCppBak $MainCpp
-    }
-    # Recover from a previous failed build that patched Runner.rc.
     if (Test-Path "$RunnerRc.buildbak") {
         Move-Item -Force "$RunnerRc.buildbak" $RunnerRc
+    }
+    if (Test-Path "$MainCpp.buildbak") {
+        Move-Item -Force "$MainCpp.buildbak" $MainCpp
     }
 }
 
@@ -104,14 +91,7 @@ function Clear-WindowsBuildCache {
     }
 }
 
-function Set-AsciiFileContent {
-    param(
-        [string]$Path,
-        [string]$Content
-    )
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
-}
+. (Join-Path $ScriptDir 'import-vs-dev-env.ps1')
 
 function Get-ReleaseDir {
     param([string]$Root)
@@ -238,7 +218,6 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
 }
 
 $backendUrl = if ($BuildEnv -eq 'production') { $ProdBackendUrl } else { $UatBackendUrl }
-$appTitle = Get-PosAppTitle -TargetEnv $BuildEnv
 $iconPng = if ($BuildEnv -eq 'production') { 'assets\images\app_icon.png' } else { 'assets\images\app_icon_uat.png' }
 
 Set-Location $FrontendDir
@@ -259,18 +238,8 @@ if ($BuildEnv -eq 'uat') {
 
 Write-Info 'Converting icon to ICO...'
 $convertScript = Join-Path $FrontendDir 'convert-icon-to-ico.ps1'
-& powershell -ExecutionPolicy Bypass -File $convertScript -PngPath $iconPng
+& $convertScript -PngPath $iconPng
 if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
-
-if ($BuildEnv -eq 'uat') {
-    Write-Info "Setting Windows window title to: $appTitle"
-    $MainCppBak = "$MainCpp.buildbak"
-    Copy-Item $MainCpp $MainCppBak -Force
-
-    $cpp = Get-Content $MainCpp -Raw -Encoding UTF8
-    $cpp = $cpp -replace 'L"\u5FB7\u9748\u6D77\u5473 POS( UAT)?"', 'L"\u5FB7\u9748\u6D77\u5473 POS UAT"'
-    Set-AsciiFileContent -Path $MainCpp -Content $cpp
-}
 
 Clear-WindowsBuildCache -Root $FrontendDir
 
@@ -285,6 +254,7 @@ if ($Clean) {
 }
 
 Write-Info "Building Windows release ($BuildEnv)..."
+Import-VisualStudioDevEnvironment | Out-Null
 $oldEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 flutter build windows --release `
@@ -294,7 +264,7 @@ $buildExit = $LASTEXITCODE
 $ErrorActionPreference = $oldEap
 if ($buildExit -ne 0) {
     Write-Warn 'For LNK1123 / CVT1103 run: scripts\frontend\repair-windows-build.bat'
-    Write-Warn 'Repo should be at C:\dev\ducklin-pos-all (short path). Exclude build folder from antivirus.'
+    Write-Warn 'Common causes: bad app_icon.ico (fixed in latest script), wrong cvtres on PATH, antivirus locking build files.'
     throw 'flutter build windows failed'
 }
 
