@@ -33,7 +33,7 @@ class DatabaseService {
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
     final db = await openDatabase(
       dbPath,
-      version: 14, // v14: product_line_id, variant_label, units_per_pack
+      version: 15, // v15: NULL instead of '' for optional unique barcode/sku fields
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -96,6 +96,7 @@ class DatabaseService {
       if (!hasUnitsPerPack) {
         await db.execute('ALTER TABLE products ADD COLUMN units_per_pack REAL DEFAULT 0');
       }
+      await _normalizeEmptyUniqueProductCodes(db);
       final stockInfo = await db.rawQuery('PRAGMA table_info(stock)');
       final hasWeightQty = stockInfo.any((column) => column['name'] == 'weight_quantity_g');
       if (!hasWeightQty) {
@@ -327,6 +328,11 @@ class DatabaseService {
         }
       }
       print('DatabaseService: Database upgrade to v14 (product lines) completed');
+    }
+
+    if (oldVersion < 15) {
+      await _normalizeEmptyUniqueProductCodes(db);
+      print('DatabaseService: Database upgrade to v15 (nullable product barcodes) completed');
     }
     
     try {
@@ -592,6 +598,24 @@ class DatabaseService {
     );
   }
 
+  Future<void> _normalizeEmptyUniqueProductCodes(Database db) async {
+    // SQLite UNIQUE treats '' as a value — only one weight variant could sync with empty barcode.
+    await db.execute("UPDATE products SET barcode = NULL WHERE barcode IS NULL OR trim(barcode) = ''");
+    await db.execute("UPDATE products SET sku = NULL WHERE sku IS NULL OR trim(sku) = ''");
+    await db.execute(
+      "UPDATE products SET weight_barcode = NULL WHERE weight_barcode IS NULL OR trim(weight_barcode) = ''",
+    );
+    await db.execute(
+      "UPDATE products SET weight_barcode_prefix = NULL WHERE weight_barcode_prefix IS NULL OR trim(weight_barcode_prefix) = ''",
+    );
+  }
+
+  static String? _nullableUniqueText(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
+
   // Product methods
   Future<void> saveProducts(List<Map<String, dynamic>> products) async {
     final db = await database;
@@ -603,12 +627,12 @@ class DatabaseService {
         'id': product['id'],
         'name': product['name'],
         'name_chinese': product['name_chinese'],
-        'barcode': product['barcode'],
-        'sku': product['sku'],
+        'barcode': _nullableUniqueText(product['barcode']),
+        'sku': _nullableUniqueText(product['sku']),
         'category': product['category'],
         'image_url': product['image_url'],
         'unit_type': product['unit_type'],
-        'weight_barcode_prefix': product['weight_barcode_prefix'],
+        'weight_barcode_prefix': _nullableUniqueText(product['weight_barcode_prefix']),
         'price_weight_g': (product['price_weight_g'] as num?)?.toDouble() ?? 0.0,
         'can_sell_by_weight': (product['can_sell_by_weight'] == true || product['can_sell_by_weight'] == 1) ? 1 : 0,
         'prepack_weight_g': (product['prepack_weight_g'] as num?)?.toDouble() ?? 0.0,
@@ -619,7 +643,7 @@ class DatabaseService {
               product['can_sell_by_weight'] == 1 ||
               product['unit_type'] == 'weight',
         ),
-        'weight_barcode': product['weight_barcode']?.toString() ?? '',
+        'weight_barcode': _nullableUniqueText(product['weight_barcode']),
         'product_line_id': (product['product_line_id'] as num?)?.toInt() ?? 0,
         'variant_label': product['variant_label']?.toString() ?? '',
         'units_per_pack': (product['units_per_pack'] as num?)?.toDouble() ?? 0.0,
@@ -683,7 +707,7 @@ class DatabaseService {
   Future<Map<String, dynamic>?> resolveProductScan(String barcode) async {
     final code = barcode.trim();
     if (code.isEmpty) return null;
-    final products = await getProducts();
+    final products = (await getProducts()).map(normalizeProductRow).toList();
     return resolveProductScanFromList(code, products);
   }
 

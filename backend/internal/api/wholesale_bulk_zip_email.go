@@ -61,15 +61,37 @@ func zipEntryLeaf(base string, docKind string, data []byte) string {
 	return base + ".pdf"
 }
 
+// gcsObjectPathFromURL returns the object path inside a *-pos-uploads bucket (strips bucket segment).
+func gcsObjectPathFromURL(fileURL string) (string, error) {
+	if !strings.Contains(fileURL, "storage.googleapis.com") {
+		return "", fmt.Errorf("not a GCS URL")
+	}
+	u, err := url.Parse(fileURL)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimPrefix(u.Path, "/")
+	if slash := strings.Index(path, "/"); slash > 0 {
+		bucket := path[:slash]
+		if strings.HasSuffix(bucket, "-pos-uploads") {
+			object := path[slash+1:]
+			if object == "" {
+				return "", fmt.Errorf("invalid GCS path")
+			}
+			return object, nil
+		}
+	}
+	if path == "" {
+		return "", fmt.Errorf("invalid GCS path")
+	}
+	return path, nil
+}
+
 func (h *WholesaleOrderHandler) readBytesFromFileURL(fileURL string) ([]byte, error) {
 	if strings.Contains(fileURL, "storage.googleapis.com") && h.cfg.GCPBucketName != "" {
-		u, err := url.Parse(fileURL)
+		path, err := gcsObjectPathFromURL(fileURL)
 		if err != nil {
 			return nil, err
-		}
-		path := strings.TrimPrefix(strings.TrimPrefix(u.Path, "/"), h.cfg.GCPBucketName+"/")
-		if path == "" {
-			return nil, fmt.Errorf("invalid GCS path")
 		}
 		ctx := context.Background()
 		client, err := storage.NewClient(ctx)

@@ -7,8 +7,8 @@ import '../providers/order_provider.dart';
 import '../providers/language_provider.dart';
 import '../widgets/cached_product_image.dart';
 import '../utils/weight_pricing.dart';
-import '../utils/product_inventory.dart';
 import '../utils/product_barcode.dart';
+import '../utils/product_inventory.dart';
 import 'barcode_scanner_screen.dart';
 import 'weight_input_dialog.dart';
 
@@ -693,8 +693,9 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
     // Resolve product by qty or weight barcode
     Map<String, dynamic>? product =
         await productProvider.resolveProductScan(barcode.trim());
-    
-      if (product != null && product.isNotEmpty && mounted) {
+
+    if (product != null && product.isNotEmpty && mounted) {
+      product = resolveScannedProductForSale(product, productProvider.products);
       if (product['_sale_mode_blocked'] == true) {
         _searchController.clear();
         setState(() => _searchQuery = '');
@@ -709,6 +710,9 @@ class _ProductSelectionScreenState extends State<ProductSelectionScreen> {
         return;
       }
       var sellAsWeight = scanIsWeightMode(product);
+      if (!sellAsWeight && productSellByWeight(product) && !productSellByQty(product)) {
+        sellAsWeight = true;
+      }
       // Prefix/weight barcode already implies weight; skip qty/weight picker.
       if (productNeedsSaleModePicker(product) && parsedWeightGramsFromScan(product) == null) {
         final pick = await _pickSaleMode(product);

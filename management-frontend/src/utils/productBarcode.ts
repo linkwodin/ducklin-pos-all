@@ -30,20 +30,101 @@ export function barcodesMatchForLookup(stored: string, scanned: string): boolean
   if (a.length === 13 && b.length === 13 && a.substring(0, 12) === b.substring(0, 12)) {
     return true;
   }
-  if (a.length === 12 && b.length === 13 && a === b.substring(0, 12)) return true;
-  if (b.length === 12 && a.length === 13 && b === a.substring(0, 12)) return true;
+  if (a.length === 13 && b.length === 12 && a.startsWith('0') && a.substring(1) === b) {
+    return true;
+  }
+  if (b.length === 13 && a.length === 12 && b.startsWith('0') && b.substring(1) === a) {
+    return true;
+  }
   return false;
 }
 
-function storedBarcodes(product: Product): string[] {
-  return [product.barcode, product.weight_barcode, product.sku]
+function storedQtyBarcodes(product: Product): string[] {
+  return [product.barcode, product.sku]
     .map((v) => v?.trim())
     .filter((v): v is string => !!v);
 }
 
+function storedWeightBarcodes(product: Product): string[] {
+  return [product.weight_barcode, product.weight_barcode_prefix]
+    .map((v) => v?.trim())
+    .filter((v): v is string => !!v);
+}
+
+function shortScanDigits(code: string): string | null {
+  const digits = barcodeDigitsOnly(code);
+  if (digits.length >= 6 && digits.length <= 8) return digits;
+  return null;
+}
+
+function suffixDigitsMatch(storedFull: string, shortDigits: string): boolean {
+  const full = barcodeDigitsOnly(storedFull);
+  if (!full || !shortDigits) return false;
+  return full === shortDigits || full.endsWith(shortDigits);
+}
+
+function oneDigitApart(a: string, b: string): boolean {
+  if (a.length !== b.length || a.length < 6) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      diff++;
+      if (diff > 1) return false;
+    }
+  }
+  return diff === 1;
+}
+
+function shortQtySuffixMatch(shortDigits: string, products: Product[]): ScannedProduct | null {
+  let hit: Product | null = null;
+  for (const product of products) {
+    if (!productSellByQty(product)) continue;
+    const barcode = product.barcode?.trim();
+    if (!barcode || !suffixDigitsMatch(barcode, shortDigits)) continue;
+    if (hit) return null;
+    hit = product;
+  }
+  return hit ? { ...hit, _scan_mode: 'qty' } : null;
+}
+
+function fuzzyShortWeightMatch(shortDigits: string, products: Product[]): ScannedProduct | null {
+  if (shortDigits.length < 6) return null;
+  let hit: Product | null = null;
+  for (const product of products) {
+    if (!productSellByWeight(product)) continue;
+    const productMatched = storedWeightBarcodes(product).some((stored) => {
+      const digits = barcodeDigitsOnly(stored);
+      return (
+        !!digits &&
+        digits.length === shortDigits.length &&
+        oneDigitApart(digits, shortDigits)
+      );
+    });
+    if (!productMatched) continue;
+    if (hit) return null;
+    hit = product;
+  }
+  return hit ? { ...hit, _scan_mode: 'weight' } : null;
+}
+
+function fuzzyShortQtyMatch(shortDigits: string, products: Product[]): ScannedProduct | null {
+  if (shortDigits.length < 7) return null;
+  let hit: Product | null = null;
+  for (const product of products) {
+    if (!productSellByQty(product)) continue;
+    const full = barcodeDigitsOnly(product.barcode);
+    if (full.length < 7) continue;
+    const suffix = full.substring(full.length - 7);
+    if (!oneDigitApart(suffix, shortDigits)) continue;
+    if (hit) return null;
+    hit = product;
+  }
+  return hit ? { ...hit, _scan_mode: 'qty' } : null;
+}
+
 function exactQtyProductMatch(code: string, product: Product): ScannedProduct | null {
   if (!productSellByQty(product)) return null;
-  for (const stored of storedBarcodes(product)) {
+  for (const stored of storedQtyBarcodes(product)) {
     if (barcodesMatchForLookup(stored, code)) {
       return { ...product, _scan_mode: 'qty' };
     }
@@ -53,9 +134,10 @@ function exactQtyProductMatch(code: string, product: Product): ScannedProduct | 
 
 function exactWeightProductMatch(code: string, product: Product): ScannedProduct | null {
   if (!productSellByWeight(product)) return null;
-  const weight = product.weight_barcode?.trim();
-  if (weight && barcodesMatchForLookup(weight, code)) {
-    return { ...product, _scan_mode: 'weight' };
+  for (const stored of storedWeightBarcodes(product)) {
+    if (barcodesMatchForLookup(stored, code)) {
+      return { ...product, _scan_mode: 'weight' };
+    }
   }
   const qty = product.barcode?.trim();
   if (qty && barcodesMatchForLookup(qty, code)) {
@@ -78,16 +160,26 @@ export function resolveProductScanFromList(
   const code = normalizeBarcodeScanInput(barcode);
   if (!code) return null;
 
-  // 1) Quantity products: exact barcode match always wins (even for 13-digit codes).
+  // 1) Quantity products: full EAN / SKU exact match.
   for (const product of products) {
     const hit = exactQtyProductMatch(code, product);
     if (hit) return hit;
   }
 
-  // 2) Weight products: exact barcode / weight_barcode match.
+  // 2) Weight products: weight barcode / prefix exact match.
   for (const product of products) {
     const hit = exactWeightProductMatch(code, product);
     if (hit) return hit;
+  }
+
+  const shortDigits = shortScanDigits(code);
+  if (shortDigits) {
+    const suffixHit = shortQtySuffixMatch(shortDigits, products);
+    if (suffixHit) return suffixHit;
+    const fuzzyWeightHit = fuzzyShortWeightMatch(shortDigits, products);
+    if (fuzzyWeightHit) return fuzzyWeightHit;
+    const fuzzyQtyHit = fuzzyShortQtyMatch(shortDigits, products);
+    if (fuzzyQtyHit) return fuzzyQtyHit;
   }
 
   // 3) Weight-only products blocked from qty sale still resolve for visibility.

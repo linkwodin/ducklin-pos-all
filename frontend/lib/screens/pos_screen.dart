@@ -370,9 +370,11 @@ class _POSScreenState extends State<POSScreen> {
         // Other screens will manage global focus via _shouldMaintainGlobalBarcodeFocus().
       });
     } else {
-      // Already on create order page - clear the global field and let ProductSelectionScreen handle it
+      // Already on create order page — process here (search field may not have focus).
       _globalBarcodeController.clear();
-      // Don't process here, let the ProductSelectionScreen's search field handle it
+      if (productSelectionScreenKey.currentState != null) {
+        productSelectionScreenKey.currentState!.processBarcode(barcode);
+      }
     }
   }
 

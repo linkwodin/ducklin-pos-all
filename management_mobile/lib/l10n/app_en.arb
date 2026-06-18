@@ -1,0 +1,622 @@
+{
+  "@@locale": "en",
+  "appTitle": "POS Management",
+  "loginSubtitle": "Sign in with your management account",
+  "signIn": "Sign in",
+  "username": "Username",
+  "usernameRequired": "Username required",
+  "password": "Password",
+  "passwordRequired": "Password required",
+  "useBiometricNextTime": "Use {label} next time",
+  "@useBiometricNextTime": {
+    "placeholders": {
+      "label": {"type": "String"}
+    }
+  },
+  "biometricUnlockHint": "Unlock the app without typing your password",
+  "unlockWithBiometric": "Unlock with {label}",
+  "@unlockWithBiometric": {
+    "placeholders": {
+      "label": {"type": "String"}
+    }
+  },
+  "unlock": "Unlock",
+  "checking": "Checking…",
+  "usePasswordInstead": "Use password instead",
+  "biometricFailed": "{label} authentication failed",
+  "@biometricFailed": {
+    "placeholders": {
+      "label": {"type": "String"}
+    }
+  },
+  "logout": "Log out",
+  "logoutConfirm": "Log out?",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "retry": "Retry",
+  "save": "Save",
+  "add": "Add",
+  "create": "Create",
+  "none": "None",
+  "all": "All",
+  "status": "Status",
+  "store": "Store",
+  "client": "Client",
+  "created": "Created",
+  "courier": "Courier",
+  "tracking": "Tracking",
+  "items": "Items",
+  "documents": "Documents",
+  "overview": "Overview",
+  "shipments": "Shipments",
+  "process": "Process",
+  "language": "Language",
+  "languageSystem": "System default",
+  "languageEnglish": "English",
+  "languageChineseTraditional": "繁體中文",
+  "languageChineseSimplified": "简体中文",
+  "menuDashboard": "Dashboard",
+  "menuReports": "Reports",
+  "menuProductsGroup": "Products",
+  "menuProducts": "Products",
+  "menuCategories": "Categories",
+  "menuSectors": "Sectors",
+  "menuInventoryGroup": "Inventory",
+  "menuStock": "Stock",
+  "menuRestock": "Restock orders",
+  "menuPosOrders": "POS orders",
+  "menuWholesaleGroup": "Wholesale",
+  "menuWholesaleOrders": "Orders",
+  "menuShipments": "Shipments",
+  "menuWholesaleClients": "Clients",
+  "menuSettingsGroup": "Settings",
+  "menuUsers": "Users",
+  "menuStores": "Stores",
+  "menuDevices": "Devices",
+  "menuCurrency": "Currency rates",
+  "menuCompany": "Company settings",
+  "management": "Management",
+  "roleManagement": "Management",
+  "roleSupervisor": "Supervisor",
+  "roleCashier": "Cashier",
+  "roleStaff": "Staff",
+  "searchOrderPoClient": "Search order, PO, client…",
+  "tabDashboard": "Dashboard",
+  "tabList": "List",
+  "nothingHere": "Nothing here",
+  "shipmentUpdated": "Shipment updated",
+  "shipmentTitle": "Shipment",
+  "shipmentNumber": "Shipment #{id}",
+  "@shipmentNumber": {
+    "placeholders": {
+      "id": {"type": "int"}
+    }
+  },
+  "boxesCount": "{count} boxes",
+  "@boxesCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "monitorPacking": "Packing",
+  "monitorPackedAwaitingCourier": "Packed — awaiting courier",
+  "monitorShipped": "Shipped",
+  "monitorCompletedRecent": "Completed (recent)",
+  "batchPack": "Batch pack",
+  "courierPickup": "Courier pickup",
+  "workflowPickPack": "Pick & pack",
+  "workflowPickPackSub": "Scan items and confirm box counts",
+  "workflowCourier": "Courier details",
+  "workflowCourierSub": "Courier, tracking number, and delivery date",
+  "workflowHandoff": "Delivery handoff",
+  "workflowHandoffUploaded": "Signed delivery note uploaded",
+  "workflowHandoffUploadShipped": "Upload signed delivery note",
+  "workflowHandoffUploadAndShip": "Upload signed delivery note and mark shipped",
+  "saveDetails": "Save details",
+  "batchPacking": "Batch packing",
+  "packingQueueComplete": "Packing queue complete",
+  "noShipmentsInQueue": "No shipments left in queue",
+  "skipThisShipment": "Skip this shipment",
+  "startPacking": "Start packing",
+  "shipmentStatusAssigned": "Assigned",
+  "shipmentStatusPacking": "Packing",
+  "shipmentStatusPacked": "Packed",
+  "shipmentStatusShipped": "Shipped",
+  "shipmentStatusCompleted": "Completed",
+  "filterPendingApproval": "Pending approval",
+  "filterAssignShipment": "Assign shipment",
+  "filterAwaitingPayment": "Awaiting payment",
+  "filterCompleted": "Completed",
+  "filterRejected": "Rejected",
+  "filterDeleted": "Deleted",
+  "wholesaleStatusRejected": "Rejected",
+  "wholesaleStatusDeleted": "Deleted",
+  "wholesaleStatusCompleted": "Completed",
+  "wholesaleStatusPendingOrderConfirmation": "Pending order confirmation",
+  "wholesaleStatusPendingPacking": "Pending packing",
+  "wholesaleStatusInTransit": "In transit",
+  "wholesaleStatusPendingPayment": "Pending payment confirmation",
+  "wholesaleStatusPendingApproval": "Pending approval",
+  "wholesaleStatusAssignShipment": "Assign shipment",
+  "wholesaleStatusApproved": "Approved",
+  "posFilterPending": "Pending",
+  "posFilterPaid": "Paid",
+  "posFilterPickedUp": "Picked up",
+  "posFilterCancelled": "Cancelled",
+  "takePhoto": "Take photo",
+  "chooseFromGallery": "Choose from gallery",
+  "chooseFile": "Choose file",
+  "rejectOrder": "Reject order",
+  "rejectReason": "Reason",
+  "reject": "Reject",
+  "noDocumentsYet": "No documents yet",
+  "uploadPoAttachment": "Upload PO attachment",
+  "assigned": "Assigned",
+  "move": "Move",
+  "remove": "Remove",
+  "skip": "Skip",
+  "emailSkipped": "Email skipped",
+  "emailSent": "Email sent",
+  "resubmit": "Resubmit",
+  "selectStore": "Select store",
+  "assignByDefaults": "Assign by defaults",
+  "changeAssignment": "Change assignment",
+  "regenerateOrderConfirmationPdf": "Regenerate order confirmation PDF",
+  "linesCount": "{count} lines",
+  "@linesCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "generateInvoice": "Generate invoice",
+  "orderTotal": "Order total: {amount}",
+  "@orderTotal": {
+    "placeholders": {
+      "amount": {"type": "String"}
+    }
+  },
+  "proofTotal": "Proof total: {amount}",
+  "@proofTotal": {
+    "placeholders": {
+      "amount": {"type": "String"}
+    }
+  },
+  "uploadPaymentProof": "Upload payment proof",
+  "confirmPaymentReceived": "Confirm payment received",
+  "paymentConfirmed": "Payment confirmed",
+  "moveReassign": "Move / reassign",
+  "moveFrom": "From {store}",
+  "@moveFrom": {
+    "placeholders": {
+      "store": {"type": "String"}
+    }
+  },
+  "skipEmail": "Skip email",
+  "loadReport": "Load report",
+  "posRevenue": "POS revenue",
+  "posOrdersCount": "POS orders: {count}",
+  "@posOrdersCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "allStores": "All stores",
+  "settingsSaved": "Settings saved",
+  "saveSettings": "Save settings",
+  "createWholesaleOrder": "Create wholesale order",
+  "addAtLeastOneProduct": "Add at least one product",
+  "companyAddress": "Company address",
+  "sourceClientPo": "Client PO",
+  "sourceWhatsapp": "WhatsApp",
+  "sourceEmail": "Email",
+  "sourceNa": "N/A",
+  "lineItems": "Line items",
+  "unitPrice": "Unit price: {amount}",
+  "@unitPrice": {
+    "placeholders": {
+      "amount": {"type": "String"}
+    }
+  },
+  "poAttachments": "PO attachments ({count})",
+  "@poAttachments": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "createOrder": "Create order",
+  "deliveryLocations": "Delivery locations",
+  "auditLog": "Audit log",
+  "registerDevice": "Register device",
+  "register": "Register",
+  "newCategory": "New category",
+  "newSector": "New sector",
+  "newStore": "New store",
+  "warehouse": "Warehouse",
+  "receive": "Receive",
+  "markPaid": "Mark paid",
+  "markComplete": "Mark complete",
+  "cancelOrder": "Cancel order?",
+  "cancelOrderAction": "Cancel order",
+  "courierDetails": "Courier details",
+  "courierDetailsHint": "Enter courier and tracking details. Suggestions appear as you type.",
+  "courierHint": "Type or pick from suggestions",
+  "trackingNumber": "Tracking number",
+  "deliveryProofLocked": "Delivery proof uploaded — courier details are locked.",
+  "shipmentProgress": "Shipment {current} of {total}",
+  "@shipmentProgress": {
+    "placeholders": {
+      "current": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "markShipped": "Mark shipped",
+  "deliveryHandoffHint": "When the courier collects the shipment, upload the signed delivery note and mark it shipped.",
+  "name": "Name",
+  "back": "Back",
+  "no": "No",
+  "product": "Product",
+  "quantity": "Quantity",
+  "notes": "Notes",
+  "phone": "Phone",
+  "contact": "Contact",
+  "sector": "Sector",
+  "qtyTimes": "Qty {qty} × {price}",
+  "@qtyTimes": {
+    "placeholders": {
+      "qty": {"type": "String"},
+      "price": {"type": "String"}
+    }
+  },
+  "packShipment": "Pack shipment",
+  "packOrder": "Pack {order}",
+  "@packOrder": {
+    "placeholders": {
+      "order": {"type": "String"}
+    }
+  },
+  "manualBarcode": "Manual barcode",
+  "nextConfirmBoxes": "Next — confirm boxes",
+  "confirmBoxes": "Confirm boxes",
+  "finishPacking": "Finish packing",
+  "products": "Products",
+  "boxes": "Boxes",
+  "expectedBoxes": "Qty {qty} · Expected boxes {count}",
+  "@expectedBoxes": {
+    "placeholders": {
+      "qty": {"type": "String"},
+      "count": {"type": "int"}
+    }
+  },
+  "deliveryLocation": "Delivery location",
+  "orderChannel": "Order channel",
+  "poNumber": "PO number",
+  "poDate": "PO date (YYYY-MM-DD)",
+  "paymentTerms": "Payment terms",
+  "shippingFee": "Shipping fee",
+  "paymentProofDetails": "Payment proof details",
+  "amount": "Amount",
+  "transferDate": "Transfer date",
+  "transferredToAccount": "Transferred to account",
+  "saveAndUploadProof": "Save & upload proof",
+  "orderConfirmation": "Order confirmation",
+  "rejectedSection": "Rejected",
+  "deliveryCompleteEmail": "Delivery complete email",
+  "invoice": "Invoice",
+  "assignLinesHint": "Assign all lines to stores, then confirm allocation to approve this order.",
+  "assignLinesHintStaged": "Assign lines to stores. Green store chips can fully fulfill pending quantities; orange can fulfill some.",
+  "stageForStore": "Stage for store",
+  "assignPendingQty": "Assign pending qty",
+  "sendDeliveryCompleteEmail": "Send delivery complete email",
+  "resendDeliveryCompleteEmail": "Resend delivery complete email",
+  "sendInvoiceEmail": "Send invoice email",
+  "resendInvoiceEmail": "Resend invoice email",
+  "skipReasonRequired": "A reason is required to skip this email",
+  "shipmentsAfterAssignment": "Shipments will appear here after store assignment.",
+  "todayPosRevenue": "Today POS revenue",
+  "lowStockItems": "Low stock items",
+  "pendingRestocks": "Pending restocks",
+  "pendingWholesaleOrders": "Pending wholesale orders",
+  "companyName": "Company name",
+  "address": "Address",
+  "city": "City",
+  "postcode": "Postcode",
+  "telephone": "Telephone",
+  "email": "Email",
+  "paymentInfo": "Payment info",
+  "shipmentCouriersField": "Shipment couriers",
+  "deviceCode": "Device code",
+  "deviceName": "Device name",
+  "currencyCode": "Currency code",
+  "rateToGbp": "Rate to GBP",
+  "addCurrencyRate": "Add currency rate",
+  "rateLabel": "Rate: {rate}",
+  "@rateLabel": {
+    "placeholders": {
+      "rate": {"type": "String"}
+    }
+  },
+  "adjustStock": "Adjust stock",
+  "adjustStockTitle": "Adjust {name}",
+  "@adjustStockTitle": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "reason": "Reason",
+  "searchProducts": "Search products",
+  "firstName": "First name",
+  "lastName": "Last name",
+  "newPasswordOptional": "New password (optional)",
+  "rolePosUser": "POS user",
+  "locationsCount": "{count} locations",
+  "@locationsCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "storeNumber": "Store #{id}",
+  "@storeNumber": {
+    "placeholders": {
+      "id": {"type": "int"}
+    }
+  },
+  "restockNumber": "Restock #{id}",
+  "@restockNumber": {
+    "placeholders": {
+      "id": {"type": "int"}
+    }
+  },
+  "selectCourier": "Select a courier",
+  "selectAtLeastOneShipment": "Select at least one shipment",
+  "noCouriersConfigured": "No couriers configured in company settings.",
+  "selectOrders": "Select orders",
+  "scanDeliveryNote": "Scan delivery note",
+  "confirmStep": "Confirm",
+  "noMatchingShipment": "No matching shipment for: {code}",
+  "@noMatchingShipment": {
+    "placeholders": {
+      "code": {"type": "String"}
+    }
+  },
+  "markedShippedVia": "Marked {count} shipment(s) shipped via {courier}",
+  "@markedShippedVia": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "courier": {"type": "String"}
+    }
+  },
+  "courierLabel": "Courier: {name}",
+  "@courierLabel": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "shipmentsCountLabel": "Shipments: {count}",
+  "@shipmentsCountLabel": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "more": "More",
+  "apiServer": "API server",
+  "environment": "Environment",
+  "biometricUnlock": "Biometric unlock",
+  "biometricUnlockSubtitle": "Require Face ID / fingerprint on app open",
+  "startDate": "Start date (YYYY-MM-DD)",
+  "endDate": "End date (YYYY-MM-DD)",
+  "toStore": "To store",
+  "stepCreated": "Created",
+  "stepOrderConfirmation": "Order confirmation",
+  "stepStartShipment": "Start shipment",
+  "stepFinishShipment": "Finish shipment",
+  "stepInvoiceEmail": "Invoice email",
+  "stepPaymentConfirmation": "Payment confirmation",
+  "stepComplete": "Complete",
+  "total": "Total",
+  "ref": "Ref",
+  "channel": "Channel",
+  "rejection": "Rejection",
+  "unassigned": "Unassigned",
+  "qtyAssigned": "Qty {qty} · Assigned {assigned}",
+  "@qtyAssigned": {
+    "placeholders": {
+      "qty": {"type": "String"},
+      "assigned": {"type": "String"}
+    }
+  },
+  "staged": "staged",
+  "newUser": "New user",
+  "editUser": "Edit user",
+  "staff": "Staff",
+  "subtotal": "Subtotal",
+  "discount": "Discount",
+  "posOrder": "POS order",
+  "confirmAllocationApprove": "Confirm allocation & approve",
+  "confirmAllocation": "Confirm allocation",
+  "allLinesAssigned": "All lines are assigned to stores.",
+  "changeAssignmentWhilePacking": "You can change assignments while shipments are still in assign/pack stage.",
+  "orderConfirmationEmail": "Order confirmation email",
+  "sendOrderConfirmationEmail": "Send order confirmation email",
+  "resendOrderConfirmationEmail": "Resend order confirmation email",
+  "paymentConfirmationSection": "Payment confirmation",
+  "actionNeeded": "Action needed",
+  "forceComplete": "Force complete",
+  "next": "Next",
+  "confirmPickup": "Confirm pickup",
+  "scanHint": "Order #, PO, ref…",
+  "selectedOrder": "Selected {order}",
+  "@selectedOrder": {
+    "placeholders": {
+      "order": {"type": "String"}
+    }
+  },
+  "totalBoxes": "Total boxes: {count}",
+  "@totalBoxes": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "saveChanges": "Save changes",
+  "createUser": "Create user",
+  "required": "Required",
+  "send": "Send",
+  "toField": "To",
+  "ccField": "Cc",
+  "bccField": "Bcc",
+  "subjectField": "Subject",
+  "messageField": "Message",
+  "attachments": "Attachments",
+  "focusMode": "Focus",
+  "focusModeTooltip": "Focus mode — screen stays on while scanning",
+  "scanStep": "1/2 Scan",
+  "boxesStep": "2/2 Boxes",
+  "needQtyBoxes": "Need {qty} · Boxes {boxes}",
+  "@needQtyBoxes": {
+    "placeholders": {
+      "qty": {"type": "String"},
+      "boxes": {"type": "String"}
+    }
+  },
+  "turnPhoneNext": "Turn or move phone to the next product",
+  "phoneTurnedNext": "Phone turned toward next item",
+  "pauseComplete": "Pause complete",
+  "pauseForSeconds": "Pause for {seconds}s while you move",
+  "@pauseForSeconds": {
+    "placeholders": {
+      "seconds": {"type": "int"}
+    }
+  },
+  "reasonPrefix": "Reason: {reason}",
+  "@reasonPrefix": {
+    "placeholders": {
+      "reason": {"type": "String"}
+    }
+  },
+  "skippedAt": "Skipped at {date}",
+  "@skippedAt": {
+    "placeholders": {
+      "date": {"type": "String"}
+    }
+  },
+  "skippedBy": "Skipped by {name}",
+  "@skippedBy": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "previouslySentAt": "Previously sent at {date}",
+  "@previouslySentAt": {
+    "placeholders": {
+      "date": {"type": "String"}
+    }
+  },
+  "noPaymentProof": "No payment proof",
+  "forceConfirmPayment": "Force confirm payment",
+  "noPaymentProofWarning": "No payment proof has been uploaded. Are you sure you want to confirm without proof?",
+  "forceConfirmWarning": "This will mark payment as received without matching the uploaded proof total. Only use if you are certain payment is complete.",
+  "confirmPaymentQuestion": "Confirm that payment has been received for this order?",
+  "proofShortfallHint": "Proof total is below order total. No further uploads are allowed once payment is confirmed.",
+  "snackSelectStore": "Select a store",
+  "snackShipmentPacked": "That store shipment is already packed or shipped",
+  "snackLineStaged": "Line staged for assignment",
+  "snackDefaultStaged": "Default allocation staged — confirm when ready",
+  "snackAssignAllLines": "Assign all lines before confirming",
+  "snackOrderApproved": "Order approved and assigned",
+  "snackAllocationConfirmedContinue": "Allocation confirmed — send order confirmation email or skip to continue",
+  "snackAssignmentRemoved": "Assignment removed",
+  "snackAssignmentMoved": "Assignment moved",
+  "snackPaymentProofUploaded": "Payment proof uploaded",
+  "snackPaymentProofAutoConfirmed": "Payment proof uploaded. Payment was automatically confirmed.",
+  "lineAssigned": "Line assigned",
+  "assignedByDefaults": "Assigned by defaults",
+  "orderResubmitted": "Order resubmitted",
+  "orderConfirmationRegenerated": "Order confirmation regenerated",
+  "invoiceGenerated": "Invoice generated",
+  "qtyLabel": "Qty {qty}",
+  "@qtyLabel": {
+    "placeholders": {
+      "qty": {"type": "String"}
+    }
+  },
+  "filesSelected": "{count} file(s) selected",
+  "@filesSelected": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "enterValidAmount": "Enter a valid amount",
+  "selectTransferDate": "Select a transfer date",
+  "selectDestinationAccount": "Select the destination account",
+  "role": "Role",
+  "newClient": "New client",
+  "editClient": "Edit client",
+  "findNextItemToScan": "Find the next item to scan",
+  "active": "Active",
+  "inactive": "Inactive",
+  "po": "PO",
+  "resend": "Resend",
+  "resendEmail": "Resend email",
+  "sendOrderConfirmationEmailDescription": "Send the order confirmation email with attachments to the client.",
+  "sendDeliveryCompleteEmailDescription": "Send the delivery complete email with signed delivery notes.",
+  "sendInvoiceEmailDescription": "Send the invoice email with invoice and optional delivery documents.",
+  "emailRecipientsRequired": "At least one recipient email is required",
+  "invalidEmailAddress": "Invalid email: {email}",
+  "@invalidEmailAddress": {
+    "placeholders": {
+      "email": {"type": "String"}
+    }
+  },
+  "selectAtLeastOneAttachment": "Select at least one attachment",
+  "sendSkippedEmailNow": "You can send this email now even though it was skipped before.",
+  "attachmentsList": "Attachments: {list}",
+  "@attachmentsList": {
+    "placeholders": {
+      "list": {"type": "String"}
+    }
+  },
+  "filesList": "Files: {list}",
+  "@filesList": {
+    "placeholders": {
+      "list": {"type": "String"}
+    }
+  },
+  "invoiceDeliveryDocsOptional": "Delivery note and delivery proof are optional for invoice emails.",
+  "emailRecipientsHint": "email@example.com, another@example.com",
+  "paymentProofNumber": "Payment proof #{id}",
+  "@paymentProofNumber": {
+    "placeholders": {
+      "id": {"type": "int"}
+    }
+  },
+  "productNotFound": "Product not found",
+  "productNotFoundDetail": "Barcode \"{code}\" does not match any item on this shipment.",
+  "@productNotFoundDetail": {
+    "placeholders": {
+      "code": {"type": "String"}
+    }
+  },
+  "quantityAlreadyComplete": "Quantity already complete",
+  "quantityAlreadyCompleteDetail": "{product} is fully scanned ({scanned}/{expected}). Scan a different item.",
+  "@quantityAlreadyCompleteDetail": {
+    "placeholders": {
+      "product": {"type": "String"},
+      "scanned": {"type": "String"},
+      "expected": {"type": "String"}
+    }
+  },
+  "scanProgress": "{product}: {scanned} / {expected}",
+  "@scanProgress": {
+    "placeholders": {
+      "product": {"type": "String"},
+      "scanned": {"type": "String"},
+      "expected": {"type": "String"}
+    }
+  },
+  "biometricEnableReason": "Enable biometric unlock for POS Management",
+  "biometricUnlockReason": "Unlock POS Management",
+  "restockStatusInitiated": "Initiated",
+  "restockStatusInTransit": "In transit",
+  "restockStatusReceived": "Received",
+  "markedShippedSnack": "Marked shipped",
+  "shipmentMarkedAwaitProof": "Shipment is marked shipped. Upload the signed delivery note when you receive it."
+}

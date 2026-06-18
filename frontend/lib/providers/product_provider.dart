@@ -61,7 +61,8 @@ class ProductProvider with ChangeNotifier {
 
   Future<void> loadProducts() async {
     try {
-      _products = await DatabaseService.instance.getProducts();
+      final rows = await DatabaseService.instance.getProducts();
+      _products = rows.map(normalizeProductRow).toList();
       _categories = _products
           .map((p) => p['category'] as String?)
           .where((c) => c != null && c.isNotEmpty)
@@ -79,9 +80,11 @@ class ProductProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> resolveProductScan(String barcode) async {
-    final fromMemory = resolveProductScanFromList(barcode, _products);
-    if (fromMemory != null) return fromMemory;
-    return await DatabaseService.instance.resolveProductScan(barcode);
+    // Always resolve from DB so scans see every variant (qty + weight SKUs).
+    final dbRows = await DatabaseService.instance.getProducts();
+    final catalog = dbRows.map(normalizeProductRow).toList();
+    _products = catalog;
+    return resolveProductScanFromList(barcode, catalog);
   }
 
   List<Map<String, dynamic>> getProductsByCategory(String? category) {
@@ -98,8 +101,10 @@ class ProductProvider with ChangeNotifier {
       final barcode = (p['barcode'] ?? '').toString().toLowerCase();
       final weightBarcode = (p['weight_barcode'] ?? '').toString().toLowerCase();
       final sku = (p['sku'] ?? '').toString().toLowerCase();
+      final variantLabel = (p['variant_label'] ?? '').toString().toLowerCase();
       return name.contains(lowerQuery) ||
           nameChinese.contains(lowerQuery) ||
+          variantLabel.contains(lowerQuery) ||
           barcode.contains(lowerQuery) ||
           weightBarcode.contains(lowerQuery) ||
           sku.contains(lowerQuery);

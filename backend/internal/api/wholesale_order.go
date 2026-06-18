@@ -668,13 +668,8 @@ func (h *WholesaleOrderHandler) DownloadDocument(c *gin.Context) {
 
 	var reader io.Reader
 	if strings.Contains(doc.FileURL, "storage.googleapis.com") && h.cfg.GCPBucketName != "" {
-		u, err := url.Parse(doc.FileURL)
+		path, err := gcsObjectPathFromURL(doc.FileURL)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid file URL"})
-			return
-		}
-		path := strings.TrimPrefix(strings.TrimPrefix(u.Path, "/"), h.cfg.GCPBucketName+"/")
-		if path == "" {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid GCS path"})
 			return
 		}
@@ -770,8 +765,8 @@ func (h *WholesaleOrderHandler) DownloadLegacyPaymentProof(c *gin.Context) {
 
 	var reader io.Reader
 	if strings.Contains(fileURL, "storage.googleapis.com") && h.cfg.GCPBucketName != "" {
-		path := strings.TrimPrefix(strings.TrimPrefix(u.Path, "/"), h.cfg.GCPBucketName+"/")
-		if path == "" {
+		path, err := gcsObjectPathFromURL(fileURL)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid GCS path"})
 			return
 		}

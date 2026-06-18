@@ -3,18 +3,15 @@ import 'package:pos_system/services/receipt_printer_helpers.dart';
 
 void main() {
   group('formatWeightReceiptQuantity', () {
-    test('shows exact grams under 1 kg', () {
-      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(345), '345g');
-      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(500), '500g');
+    test('always shows kg with three decimal places', () {
+      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(500), '0.500kg');
+      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(1200), '1.200kg');
+      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(2333), '2.333kg');
     });
 
-    test('shows kg at or above 1 kg without barcode rounding', () {
-      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(1200), '1.2kg');
-      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(1210), '1.21kg');
-    });
-
-    test('preserves decimal grams', () {
-      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(345.5), '345.5g');
+    test('rounds grams to match barcode thousandths', () {
+      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(2333.4), '2.333kg');
+      expect(ReceiptPrinterHelpers.formatWeightReceiptQuantity(2333.6), '2.334kg');
     });
   });
 
@@ -22,10 +19,10 @@ void main() {
     test('uses item unit_type when product is missing', () {
       expect(
         ReceiptPrinterHelpers.formatReceiptQuantity({
-          'quantity': 345,
+          'quantity': 2333,
           'unit_type': 'weight',
         }),
-        '345g',
+        '2.333kg',
       );
     });
 

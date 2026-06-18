@@ -10,14 +10,21 @@ scripts/
 ├── setup-gcp.sh                 # Initial GCP setup
 ├── clone-uat-to-dev.sh          # Clone UAT DB (and optional uploads) to local dev
 ├── clone-uat-db-to-local.sh     # DB-only clone wrapper (simpler usage)
+├── clone-uat-to-prod.sh         # Clone UAT DB + uploads into prod GCP project
+├── setup-prod-from-uat.sh       # Create prod project, infra, clone UAT, deploy backend
 ├── deploy-firebase.sh           # Firebase deployment
 ├── init-firebase.sh             # Firebase initialization
 └── frontend/
-    ├── deploy-flutter-uat-macos.sh  # Flutter macOS UAT deployment
-    ├── setup-icon.sh             # General icon setup
-    ├── setup-macos-icon.sh       # macOS icon setup
-    ├── setup-windows-icon.sh     # Windows icon setup
-    └── clear-macos-icon-cache.sh # Clear macOS icon cache
+    ├── build-flutter-uat-macos.sh     # Flutter macOS UAT build
+    ├── build-and-deploy-flutter-uat-windows.bat  # One-click build + GCS upload (Windows)
+    ├── build-flutter-uat-windows.bat  # Build only (Windows)
+    ├── build-flutter-uat-windows.ps1
+    ├── deploy-flutter-uat-macos.sh    # Flutter macOS UAT deployment
+    ├── upload-flutter-uat-windows.sh  # Upload Windows zip to GCS (from Mac)
+    ├── setup-icon.sh                  # General icon setup
+    ├── setup-macos-icon.sh            # macOS icon setup
+    ├── setup-windows-icon.sh          # Windows icon setup (Mac + ImageMagick)
+    └── clear-macos-icon-cache.sh      # Clear macOS icon cache
 ```
 
 ## Usage
@@ -37,14 +44,24 @@ All scripts should be run from the project root directory:
 ./scripts/deploy-firebase.sh uat
 
 # Flutter frontend
+./scripts/frontend/build-flutter-uat-macos.sh
 ./scripts/frontend/deploy-flutter-uat-macos.sh
 ./scripts/frontend/setup-icon.sh
+
+# Flutter Windows (run on a Windows PC — double-click BUILD-AND-DEPLOY-WINDOWS.bat)
+BUILD-AND-DEPLOY-WINDOWS.bat                 # git pull/clone → pick 1=UAT / 2=Prod → build + upload
+scripts\frontend\build-flutter-uat-windows.bat  # build only (no git, no menu)
 
 # Clone UAT data to local dev (DB + optional uploads)
 ./scripts/clone-uat-to-dev.sh
 ./scripts/clone-uat-to-dev.sh --db-only   # database only
 ./scripts/clone-uat-db-to-local.sh        # database only (easy command)
 ./scripts/clone-uat-db-to-local.sh --schema ducklin_pos_local --replace
+
+# Production (new GCP project ducklin-uk-prod) — see PRODUCTION_CLONE.md
+./scripts/setup-prod-from-uat.sh
+./scripts/clone-uat-to-prod.sh
+PROD_PROJECT_ID=ducklin-uk-prod ./scripts/deploy-firebase.sh production
 ```
 
 ## Notes

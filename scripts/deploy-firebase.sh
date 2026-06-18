@@ -51,14 +51,20 @@ if [ ! -f "firebase.json" ]; then
     exit 1
 fi
 
-# Firebase project (for success message)
+# Firebase project from .firebaserc (uat / production aliases)
 FIREBASE_PROJECT="ducklin-uk-uat"
 if [ -f ".firebaserc" ]; then
-    EXTRACTED=$(grep '"default"' .firebaserc | sed -E 's/.*"default"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' 2>/dev/null || echo "")
-    if [ -n "$EXTRACTED" ]; then
-        FIREBASE_PROJECT="$EXTRACTED"
-    fi
+  if [ "$ENV" == "production" ] || [ "$ENV" == "prod" ]; then
+    EXTRACTED=$(python3 -c "import json; d=json.load(open('.firebaserc')); print(d.get('projects',{}).get('production',''))" 2>/dev/null || echo "")
+  else
+    EXTRACTED=$(python3 -c "import json; d=json.load(open('.firebaserc')); print(d.get('projects',{}).get('uat', d.get('projects',{}).get('default','')))" 2>/dev/null || echo "")
+  fi
+  if [ -n "$EXTRACTED" ]; then
+    FIREBASE_PROJECT="$EXTRACTED"
+  fi
 fi
+print_info "Firebase project: $FIREBASE_PROJECT"
+firebase use "$FIREBASE_PROJECT"
 
 # Optional: bake AI playbook URL into the bundle (see management-frontend/functions/README.md).
 if [ -n "${VITE_AI_PLAYBOOK_URL:-}" ]; then

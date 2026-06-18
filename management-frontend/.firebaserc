@@ -1,11 +1,20 @@
 {
   "projects": {
-    "default": "ducklin-uk-uat"
+    "default": "ducklin-uk-uat",
+    "uat": "ducklin-uk-uat",
+    "production": "ducklin-uk-prod"
   },
   "targets": {
     "ducklin-uk-uat": {
       "hosting": {
         "uat": [
+          "default"
+        ]
+      }
+    },
+    "ducklin-uk-prod": {
+      "hosting": {
+        "production": [
           "default"
         ]
       }

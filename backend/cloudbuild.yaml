@@ -80,14 +80,16 @@ steps:
           exit 1
         fi
         
-        # Construct Cloud SQL connection name
+        # Construct DATABASE_URL for UAT inline deploy; prod uses Secret Manager.
         CONNECTION_NAME="$$PROJ_ID:europe-west1:pos-database"
-        
-        # Construct DATABASE_URL with URL-encoded password
-        # Password: BDcm]R1bGe<DrNq0
-        # ] = %5D, < = %3C
-        DATABASE_URL="mysql://pos_user:BDcm%5DR1bGe%3CDrNq0@/pos_system?unix_socket=/cloudsql/$$CONNECTION_NAME"
-        
+        if echo "$$PROJ_ID" | grep -qi "uat"; then
+          # Password URL-encoded: ] = %5D, < = %3C
+          DATABASE_URL="mysql://pos_user:BDcm%5DR1bGe%3CDrNq0@/pos_system?unix_socket=/cloudsql/$$CONNECTION_NAME"
+        else
+          echo "Using Secret Manager db-connection for non-UAT deploy"
+          DATABASE_URL=""
+        fi
+
         # Always deploy to pos-backend service
         SERVICE_NAME="pos-backend"
         
@@ -98,8 +100,12 @@ steps:
           echo "✅ Detected UAT project - deploying to pos-backend with ENVIRONMENT=uat"
         else
           ENVIRONMENT="production"
-          # Get the actual service URL for production
-          BASE_URL="https://$$SERVICE_NAME-$$(echo $$PROJ_ID | cut -c1-11).europe-west1.run.app"
+          BASE_URL="https://$$SERVICE_NAME-$$(gcloud run services describe $$SERVICE_NAME --region=europe-west1 --format='value(status.url)' 2>/dev/null | sed 's|https://||')"
+          if [ -z "$$BASE_URL" ] || [ "$$BASE_URL" = "https://" ]; then
+            BASE_URL="https://$$SERVICE_NAME-$$PROJ_ID.europe-west1.run.app"
+          else
+            BASE_URL="https://$$BASE_URL"
+          fi
           echo "✅ Detected production project - deploying to pos-backend with ENVIRONMENT=production"
         fi
         
@@ -113,20 +119,39 @@ steps:
         # the ENTIRE env block on every deploy, so SMTP / secrets added in Console vanish
         # after the next Cloud Build. --update-env-vars only changes these keys and keeps
         # the rest (e.g. SMTP_*, Secret Manager–backed env on the service).
-        gcloud run deploy $$SERVICE_NAME \
-          --image=$$IMAGE_TAG \
-          --region=europe-west1 \
-          --platform=managed \
-          --allow-unauthenticated \
-          --memory=512Mi \
-          --cpu=1 \
-          --timeout=300 \
-          --max-instances=10 \
-          --cpu-boost \
-          --no-cpu-throttling \
-          --update-env-vars="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL,DATABASE_URL=$$DATABASE_URL" \
-          --add-cloudsql-instances=$$CONNECTION_NAME \
-          --project=$$PROJ_ID
+        BASE_ENV="STORAGE_PROVIDER=gcp,GCP_BUCKET_NAME=$$PROJ_ID-pos-uploads,ENVIRONMENT=$$ENVIRONMENT,BASE_URL=$$BASE_URL"
+        if [ -n "$$DATABASE_URL" ]; then
+          gcloud run deploy $$SERVICE_NAME \
+            --image=$$IMAGE_TAG \
+            --region=europe-west1 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=300 \
+            --max-instances=10 \
+            --cpu-boost \
+            --no-cpu-throttling \
+            --update-env-vars="$$BASE_ENV,DATABASE_URL=$$DATABASE_URL" \
+            --add-cloudsql-instances=$$CONNECTION_NAME \
+            --project=$$PROJ_ID
+        else
+          gcloud run deploy $$SERVICE_NAME \
+            --image=$$IMAGE_TAG \
+            --region=europe-west1 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=300 \
+            --max-instances=10 \
+            --cpu-boost \
+            --no-cpu-throttling \
+            --update-env-vars="$$BASE_ENV" \
+            --update-secrets="DATABASE_URL=db-connection:latest,JWT_SECRET=jwt-secret:latest" \
+            --add-cloudsql-instances=$$CONNECTION_NAME \
+            --project=$$PROJ_ID
+        fi
         
         echo "✅ Deployment completed"
 

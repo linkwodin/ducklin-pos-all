@@ -661,7 +661,7 @@ class BarcodeReceiptPrinter {
       // Calculate dimensions
       final maxBarHeight = bars.map((b) => b['height'] ?? 0).reduce((a, b) => a > b ? a : b);
       final barHeight = maxBarHeight > 0 ? maxBarHeight.toInt() : (maxWidth * 0.25).toInt();
-      final textHeight = 20.0; // Height for barcode text
+      const textHeight = 30.0; // Height for barcode text
       final totalHeight = (barHeight + textHeight).toInt();
       final width = maxWidth.toInt();
 
@@ -697,7 +697,8 @@ class BarcodeReceiptPrinter {
         text: TextSpan(
           text: barcode,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
             color: Colors.black,
             fontFamily: 'monospace',
           ),

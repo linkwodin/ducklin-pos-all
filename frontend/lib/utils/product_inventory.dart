@@ -1,7 +1,11 @@
 /// Product variant helpers — each SKU is either quantity or weight (unit_type).
 
 bool productIsWeight(Map<String, dynamic> product) {
-  return (product['unit_type'] ?? 'quantity').toString().toLowerCase() == 'weight';
+  final unitType = (product['unit_type'] ?? '').toString().toLowerCase();
+  if (unitType == 'weight') return true;
+  if (unitType == 'quantity') return false;
+  final sellByWeight = product['sell_by_weight'];
+  return sellByWeight == true || sellByWeight == 1;
 }
 
 bool productIsQuantity(Map<String, dynamic> product) {

@@ -1,8 +1,15 @@
 # PowerShell script to convert PNG icon to ICO format for Windows
-# Run this from the frontend directory
+# Run from the frontend directory:
+#   powershell -ExecutionPolicy Bypass -File convert-icon-to-ico.ps1
+#   powershell -ExecutionPolicy Bypass -File convert-icon-to-ico.ps1 -PngPath assets\images\app_icon_uat.png
 
-$pngPath = "assets\images\app_icon.png"
-$icoPath = "windows\runner\resources\app_icon.ico"
+param(
+    [string]$PngPath = "assets\images\app_icon.png",
+    [string]$IcoPath = "windows\runner\resources\app_icon.ico"
+)
+
+$pngPath = $PngPath
+$icoPath = $IcoPath
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Converting PNG to ICO for Windows" -ForegroundColor Cyan

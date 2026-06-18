@@ -30,7 +30,8 @@ export function normalizePrefixScan(scanned: string): string | null {
 
 export function parseReceiptBarcode(scanned: string): { prefix: string; weightGrams: number } | null {
   const digits = scanned.replace(/\D/g, '');
-  if (digits.length < 13) return null;
+  // Format: 8-digit prefix + 4-digit weight (0.01 kg) + check digit 0.
+  if (digits.length !== 13 || digits[12] !== '0') return null;
   const prefix = digits.substring(0, 8);
   const weightPart = digits.substring(8, 12);
   const weightHundredthsKg = parseInt(weightPart, 10);

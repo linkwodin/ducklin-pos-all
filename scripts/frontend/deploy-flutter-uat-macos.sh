@@ -69,11 +69,17 @@ fi
 
 # Check if icon needs to be generated
 if [ -f "assets/images/app_icon.png" ]; then
-    echo -e "${GREEN}[INFO]${NC} Icon source found, generating macOS icons..."
+    echo -e "${GREEN}[INFO]${NC} Generating UAT-branded macOS icons..."
+    dart run tool/generate_uat_icon.dart
     if [ -f "$SCRIPT_DIR/setup-macos-icon.sh" ]; then
-        "$SCRIPT_DIR/setup-macos-icon.sh" > /dev/null 2>&1 || echo -e "${YELLOW}[WARN]${NC} Icon generation skipped or failed (continuing anyway)"
+        "$SCRIPT_DIR/setup-macos-icon.sh" assets/images/app_icon_uat.png || echo -e "${YELLOW}[WARN]${NC} Icon generation skipped or failed (continuing anyway)"
     else
         echo -e "${YELLOW}[WARN]${NC} Icon setup script not found, skipping icon generation"
+    fi
+    APP_INFO="macos/Runner/Configs/AppInfo.xcconfig"
+    if [ -f "$APP_INFO" ]; then
+        cp "$APP_INFO" "${APP_INFO}.deploybak"
+        sed -i '' 's/^PRODUCT_NAME = .*/PRODUCT_NAME = 德靈海味 POS UAT/' "$APP_INFO"
     fi
     echo ""
 fi
@@ -170,6 +176,14 @@ INDEX_HTML="$SCRIPT_DIR/uat-downloads-index.html"
 if [ -f "$INDEX_HTML" ]; then
     echo -e "${GREEN}[INFO]${NC} Updating index.html..."
     gsutil -h "Content-Type:text/html" cp "$INDEX_HTML" "gs://$BUCKET_NAME/index.html"
+fi
+
+# Restore prod icon / app name in working tree after UAT build
+if [ -f "${APP_INFO}.deploybak" ]; then
+    mv "${APP_INFO}.deploybak" "$APP_INFO"
+fi
+if [ -f "$SCRIPT_DIR/setup-macos-icon.sh" ]; then
+    "$SCRIPT_DIR/setup-macos-icon.sh" assets/images/app_icon.png > /dev/null 2>&1 || true
 fi
 
 echo ""

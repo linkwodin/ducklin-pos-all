@@ -921,21 +921,11 @@ Add-Type -AssemblyName System.Drawing
         : '${qty.toStringAsFixed(2)} ';
   }
 
-  /// Formats sold weight for receipts (exact grams/kg entered at POS, no barcode rounding).
+  /// Formats sold weight for receipts as kg with 3 dp (e.g. 2.333kg), aligned with barcode encoding.
   static String formatWeightReceiptQuantity(double grams) {
-    if (grams >= 1000) {
-      var s = (grams / 1000.0).toStringAsFixed(3);
-      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-      return '${s}kg';
-    }
-    if (grams == grams.roundToDouble()) {
-      return '${grams.round()}g';
-    }
-    final oneDec = (grams * 10).roundToDouble() / 10;
-    if ((grams - oneDec).abs() < 0.001) {
-      return '${oneDec.toStringAsFixed(1)}g';
-    }
-    return '${grams.toStringAsFixed(2)}g';
+    final thousandthsKg = grams.round().clamp(0, 999999);
+    final kg = thousandthsKg / 1000.0;
+    return '${kg.toStringAsFixed(3)}kg';
   }
 
   /// Merge local product fields (barcode prefix, unit_type, etc.) into order items before printing.

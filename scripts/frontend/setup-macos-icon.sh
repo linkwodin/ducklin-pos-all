@@ -2,10 +2,14 @@
 
 # Manual macOS Icon Setup Script
 # This script manually copies and resizes the icon for macOS
+#
+# Usage:
+#   ./scripts/frontend/setup-macos-icon.sh
+#   ./scripts/frontend/setup-macos-icon.sh assets/images/app_icon_uat.png
 
 set -e
 
-ICON_SOURCE="assets/images/app_icon.png"
+ICON_SOURCE="${1:-assets/images/app_icon.png}"
 ICON_DIR="macos/Runner/Assets.xcassets/AppIcon.appiconset"
 
 echo "=== Setting up macOS app icon ==="
