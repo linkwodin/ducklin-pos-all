@@ -4,6 +4,7 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { SnackbarProvider } from 'notistack';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BrandingProvider } from './context/BrandingContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import ProductsPage from './pages/ProductsPage';
@@ -32,16 +33,20 @@ import WholesaleClientFormPage from './pages/WholesaleClientFormPage';
 import ProductCostEditorPage from './pages/ProductCostEditorPage';
 import ProductCostEditorV2Page from './pages/ProductCostEditorV2Page';
 import UserProfilePage from './pages/UserProfilePage';
+import UserWorkSettingsPage from './pages/UserWorkSettingsPage';
 import StocktakeTimetablePage from './pages/StocktakeTimetablePage';
 import TimetablePage from './pages/TimetablePage';
 import StockReportPage from './pages/StockReportPage';
 import ReportsPage from './pages/ReportsPage';
 import CompanySettingsPage from './pages/CompanySettingsPage';
+import SystemInfoPage from './pages/SystemInfoPage';
 import AiPlaybookPage from './pages/AiPlaybookPage';
 import ProductBarcodeReferencePage from './pages/ProductBarcodeReferencePage';
 import ProductLinesPage from './pages/ProductLinesPage';
 import ProductLineDetailPage from './pages/ProductLineDetailPage';
 import Layout from './components/Layout';
+import RoleAccessGuard, { RoleHomeRedirect } from './components/RoleAccessGuard';
+import WholesaleEnabledGuard from './components/WholesaleEnabledGuard';
 
 const theme = createTheme({
   palette: {
@@ -181,43 +186,49 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Dashboard />} />
-        <Route path="products" element={<ProductsPage />} />
-        <Route path="product-lines" element={<ProductLinesPage />} />
-        <Route path="product-lines/:id" element={<ProductLineDetailPage />} />
-        <Route path="product-barcode-reference" element={<ProductBarcodeReferencePage />} />
-        <Route path="products/:id" element={<ProductDetailPage />} />
-        <Route path="product-cost-editor" element={<ProductCostEditorPage />} />
-        <Route path="product-cost-editor-v2" element={<ProductCostEditorV2Page />} />
-        <Route path="sectors" element={<SectorsPage />} />
-        <Route path="categories" element={<CategoriesPage />} />
-        <Route path="stock" element={<StockPage />} />
-        <Route path="assign-product-to-store" element={<AssignProductToStorePage />} />
-        <Route path="restock-orders" element={<RestockOrdersPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="stores" element={<StoresPage />} />
-        <Route path="stores/:id" element={<StoreDetailPage />} />
-        <Route path="devices" element={<DevicesPage />} />
-        <Route path="orders" element={<OrdersPage />} />
-        <Route path="wholesale-orders" element={<WholesaleOrdersPage />} />
-        <Route path="wholesale-orders/new" element={<WholesaleOrderCreatePage />} />
-        <Route path="wholesale-orders/:id" element={<WholesaleOrderDetailPage />} />
-        <Route path="wholesale-orders/:id/audit-log" element={<WholesaleOrderAuditLogPage />} />
-        <Route path="wholesale-shipments" element={<WholesaleShipmentsPage />} />
-        <Route path="wholesale-shipments/:id" element={<WholesaleShipmentDetailPage />} />
-        <Route path="wholesale-clients" element={<WholesaleClientsPage />} />
-        <Route path="wholesale-clients/new" element={<WholesaleClientFormPage />} />
-        <Route path="wholesale-clients/:id" element={<WholesaleClientDetailPage />} />
-        <Route path="wholesale-clients/:id/edit" element={<WholesaleClientFormPage />} />
-        <Route path="catalogs" element={<CatalogPage />} />
-        <Route path="currency-rates" element={<CurrencyRatesPage />} />
-        <Route path="company-settings" element={<CompanySettingsPage />} />
-        <Route path="internal-ai-playbook" element={<AiPlaybookPage />} />
-        <Route path="stocktake" element={<StocktakeTimetablePage />} />
-        <Route path="stock-report" element={<StockReportPage />} />
-        <Route path="timetable" element={<TimetablePage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="profile" element={<UserProfilePage />} />
+        <Route index element={<RoleHomeRedirect />} />
+        <Route element={<RoleAccessGuard />}>
+          <Route path="products" element={<ProductsPage />} />
+          <Route path="product-lines" element={<ProductLinesPage />} />
+          <Route path="product-lines/:id" element={<ProductLineDetailPage />} />
+          <Route path="product-barcode-reference" element={<ProductBarcodeReferencePage />} />
+          <Route path="products/:id" element={<ProductDetailPage />} />
+          <Route path="product-cost-editor" element={<ProductCostEditorPage />} />
+          <Route path="product-cost-editor-v2" element={<ProductCostEditorV2Page />} />
+          <Route path="sectors" element={<SectorsPage />} />
+          <Route path="categories" element={<CategoriesPage />} />
+          <Route path="stock" element={<StockPage />} />
+          <Route path="assign-product-to-store" element={<AssignProductToStorePage />} />
+          <Route path="restock-orders" element={<RestockOrdersPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="stores" element={<StoresPage />} />
+          <Route path="stores/:id" element={<StoreDetailPage />} />
+          <Route path="devices" element={<DevicesPage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route element={<WholesaleEnabledGuard />}>
+            <Route path="wholesale-orders" element={<WholesaleOrdersPage />} />
+            <Route path="wholesale-orders/new" element={<WholesaleOrderCreatePage />} />
+            <Route path="wholesale-orders/:id" element={<WholesaleOrderDetailPage />} />
+            <Route path="wholesale-orders/:id/audit-log" element={<WholesaleOrderAuditLogPage />} />
+            <Route path="wholesale-shipments" element={<WholesaleShipmentsPage />} />
+            <Route path="wholesale-shipments/:id" element={<WholesaleShipmentDetailPage />} />
+            <Route path="wholesale-clients" element={<WholesaleClientsPage />} />
+            <Route path="wholesale-clients/new" element={<WholesaleClientFormPage />} />
+            <Route path="wholesale-clients/:id" element={<WholesaleClientDetailPage />} />
+            <Route path="wholesale-clients/:id/edit" element={<WholesaleClientFormPage />} />
+          </Route>
+          <Route path="catalogs" element={<CatalogPage />} />
+          <Route path="currency-rates" element={<CurrencyRatesPage />} />
+          <Route path="company-settings" element={<CompanySettingsPage />} />
+          <Route path="system-info" element={<SystemInfoPage />} />
+          <Route path="internal-ai-playbook" element={<AiPlaybookPage />} />
+          <Route path="stocktake" element={<StocktakeTimetablePage />} />
+          <Route path="stock-report" element={<StockReportPage />} />
+          <Route path="timetable" element={<TimetablePage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="profile" element={<UserProfilePage />} />
+          <Route path="work-settings" element={<UserWorkSettingsPage />} />
+        </Route>
       </Route>
     </Routes>
   );
@@ -237,9 +248,11 @@ function App() {
         <CssBaseline />
         <SnackbarProvider maxSnack={3}>
           <AuthProvider>
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
+            <BrandingProvider>
+              <BrowserRouter>
+                <AppRoutes />
+              </BrowserRouter>
+            </BrandingProvider>
           </AuthProvider>
         </SnackbarProvider>
       </ThemeProvider>

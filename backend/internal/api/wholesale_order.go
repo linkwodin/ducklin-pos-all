@@ -70,7 +70,7 @@ func (h *WholesaleOrderHandler) audit(c *gin.Context, action string, orderID uin
 }
 
 func wholesaleMgmtRolesOk(r string) bool {
-	return r == "management" || r == "supervisor" || r == "admin" || r == "system_admin"
+	return r == "management" || r == "supervisor" || r == "admin" || r == "system_admin" || r == RoleHQStaff
 }
 
 // requireManagementOrSupervisor aborts with 403 unless role is management, supervisor, admin, or system_admin.
@@ -1134,7 +1134,8 @@ func (h *WholesaleOrderHandler) List(c *gin.Context) {
 				c.JSON(http.StatusOK, []models.WholesaleOrder{})
 				return
 			}
-			listQuery := h.db.Where("id IN ? AND status = ?", orderIDs, models.WholesaleOrderStatusApproved).
+			listQuery := h.db.Where("id IN ? AND status = ?", orderIDs, models.WholesaleOrderStatusApproved)
+			listQuery = applyPosUserWholesaleOrderScope(h.db, listQuery, userID).
 				Preload("WholesaleClient").Preload("WholesaleClientStore").Preload("Store").Preload("User").Preload("Sector").
 				Preload("Items.Product").Preload("Items.AssignedStore").Preload("Documents").Preload("Shipments").Preload("Shipments.Items")
 			if deliveryLocationFilter != "" {
@@ -1156,7 +1157,8 @@ func (h *WholesaleOrderHandler) List(c *gin.Context) {
 			return
 		}
 
-		query := h.db.Model(&models.WholesaleOrder{}).Where("user_id = ?", userID).
+		query := h.db.Model(&models.WholesaleOrder{})
+		query = applyPosUserWholesaleOrderScope(h.db, query, userID).
 			Preload("WholesaleClient").Preload("WholesaleClientStore").Preload("Store").Preload("User").Preload("Sector").
 			Preload("Items.Product").Preload("Documents").Preload("Shipments").Preload("Shipments.Items")
 		if status != "" {
@@ -1307,7 +1309,7 @@ func (h *WholesaleOrderHandler) Get(c *gin.Context) {
 	r, _ := role.(string)
 	userIDInterface, _ := c.Get("user_id")
 	userID := userIDInterface.(uint)
-	if r == "pos_user" && wo.UserID != userID {
+	if r == "pos_user" && !posUserCanViewWholesaleOrder(h.db, userID, &wo) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Not allowed to view this order"})
 		return
 	}
@@ -2294,30 +2296,7 @@ func (h *WholesaleOrderHandler) generateWholesaleOrderPDF(wo *models.WholesaleOr
 
 	// Repeating page header: logo, ORDER CONFIRMATION bar, company, client/delivery, Account table
 	pdf.SetHeaderFunc(func() {
-		logoPath := strings.TrimSpace(h.cfg.PDFLogoPath)
-		if logoPath == "" {
-			logoPath = filepath.Join(uploadDir, "assets", "images", "pdf_logo.png")
-		}
-		if !filepath.IsAbs(logoPath) {
-			if abs, err := filepath.Abs(logoPath); err == nil {
-				logoPath = abs
-			}
-		}
-		logoW, logoH := 50.0, 0.0
-		if logoPath != "" {
-			if _, err := os.Stat(logoPath); err == nil {
-				if info := pdf.RegisterImage(logoPath, "PNG"); info != nil {
-					wd, ht := info.Width(), info.Height()
-					if wd > 0 && ht > 0 {
-						logoH = logoW * (ht / wd)
-						if logoH > 28 {
-							logoH = 28
-						}
-						pdf.Image(logoPath, margin, 15, logoW, logoH, false, "PNG", 0, "")
-					}
-				}
-			}
-		}
+		logoH := drawCompanyLogoOnPDF(pdf, company, h.cfg, uploadDir, margin, margin, 15, 50, 28)
 		barW := 75.0
 		barX := pageW - margin - barW
 		barY := 15.0
@@ -3745,30 +3724,7 @@ func (h *WholesaleOrderHandler) generateDeliveryNotePDF(s *models.Shipment) (str
 	}
 
 	pdf.SetHeaderFunc(func() {
-		logoPath := strings.TrimSpace(h.cfg.PDFLogoPath)
-		if logoPath == "" {
-			logoPath = filepath.Join(uploadDir, "assets", "images", "pdf_logo.png")
-		}
-		if !filepath.IsAbs(logoPath) {
-			if abs, err := filepath.Abs(logoPath); err == nil {
-				logoPath = abs
-			}
-		}
-		logoW, logoH := 50.0, 0.0
-		if logoPath != "" {
-			if _, err := os.Stat(logoPath); err == nil {
-				if info := pdf.RegisterImage(logoPath, "PNG"); info != nil {
-					wd, ht := info.Width(), info.Height()
-					if wd > 0 && ht > 0 {
-						logoH = logoW * (ht / wd)
-						if logoH > 28 {
-							logoH = 28
-						}
-						pdf.Image(logoPath, margin, 15, logoW, logoH, false, "PNG", 0, "")
-					}
-				}
-			}
-		}
+		logoH := drawCompanyLogoOnPDF(pdf, company, h.cfg, uploadDir, margin, margin, 15, 50, 28)
 		barW := 75.0
 		barX := pageW - margin - barW
 		barY := 15.0

@@ -223,6 +223,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	h.db.Preload("Store").Preload("User").Preload("Sector").Preload("Items.Product").First(&order, order.ID)
+	order.Store = withStoreReceiptDefaults(order.Store)
 
 	c.JSON(http.StatusCreated, order)
 }

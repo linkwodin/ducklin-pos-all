@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -33,10 +34,14 @@ export default defineConfig(({ mode }) => {
   const viteDeployTarget = process.env.VITE_DEPLOY_TARGET
   const isFirebase = mode === 'firebase' || viteDeployTarget === 'firebase' || deployTarget === 'firebase'
   const base = isFirebase ? '/' : './'
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8')) as { version?: string }
   
   return {
     plugins: [react()],
     base: base,
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version ?? '0.0.0'),
+    },
     resolve: {
       alias: {
         '@repoDocs': path.resolve(__dirname, '../docs'),
@@ -46,6 +51,10 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       proxy: {
         '/api': {
+          target: 'http://localhost:8868',
+          changeOrigin: true,
+        },
+        '/uploads': {
           target: 'http://localhost:8868',
           changeOrigin: true,
         },

@@ -120,11 +120,15 @@ import {
   parseWholesaleOrderEmailAuditBase,
   isWholesaleOrderEmailSkippedAudit,
   isWholesaleOrderEmailSentAudit,
+  isWholesaleOrderOrderConfirmEmailDone,
+  isWholesaleOrderShipmentsDeliveredEmailDone,
+  isWholesaleOrderInvoiceEmailDone,
   wholesaleOrderEmailSkipRemark,
   WHOLESALE_ORDER_EMAIL_ATTACHMENT_KINDS,
   WHOLESALE_ORDER_EMAIL_REQUIRED_ATTACHMENTS,
   isWholesaleOrderEmailAttachmentRequired,
   wholesaleOrderDefaultEmailCcList,
+  wholesaleOrderDefaultEmailBccList,
   parseEmailListFromRaw,
   type EmailContentLanguage,
   type WholesaleEmailResendSummary,
@@ -2204,7 +2208,11 @@ export default function WholesaleOrderDetailPage() {
         ? parseEmailInput(options.cc)
         : wholesaleOrderDefaultEmailCcList(companySettings),
     );
-    setEmailBcc(parseEmailInput(options?.bcc ?? ''));
+    setEmailBcc(
+      options?.bcc != null && options.bcc !== ''
+        ? parseEmailInput(options.bcc)
+        : wholesaleOrderDefaultEmailBccList(companySettings),
+    );
     setEmailContentLangs(initialLangs);
     const attachmentKindsFromOptions = Object.entries(options?.attachments ?? {})
       .filter(([, checked]) => checked)
@@ -2913,7 +2921,7 @@ export default function WholesaleOrderDetailPage() {
   const orderConfirmEmailSkipped = orderConfirmAuditChanges
     ? isWholesaleOrderEmailSkippedAudit(orderConfirmAuditChanges)
     : false;
-  const orderConfirmEmailDone = orderConfirmEmailSent || orderConfirmEmailSkipped;
+  const orderConfirmEmailDone = isWholesaleOrderOrderConfirmEmailDone(order, auditLogs);
   const orderConfirmSentAtDisplay = wholesaleOrderEmailSentAtDisplay(
     orderConfirmAuditChanges,
     emailAudits.order_confirm,
@@ -2972,7 +2980,7 @@ export default function WholesaleOrderDetailPage() {
   const shipmentsDeliveredEmailSkipped = shipmentsDeliveredAuditChanges
     ? isWholesaleOrderEmailSkippedAudit(shipmentsDeliveredAuditChanges)
     : false;
-  const shipmentsDeliveredEmailDone = shipmentsDeliveredEmailSent || shipmentsDeliveredEmailSkipped;
+  const shipmentsDeliveredEmailDone = isWholesaleOrderShipmentsDeliveredEmailDone(order, auditLogs);
   const shipmentsDeliveredSentAtDisplay = wholesaleOrderEmailSentAtDisplay(
     shipmentsDeliveredAuditChanges,
     emailAudits.shipments_delivered,
@@ -3030,7 +3038,7 @@ export default function WholesaleOrderDetailPage() {
     ? isWholesaleOrderEmailSkippedAudit(invoiceAuditChanges)
     : false;
   const invoiceEmailSent = invoiceEmailSentFromAudit;
-  const invoiceEmailDone = invoiceEmailSent || invoiceEmailSkipped;
+  const invoiceEmailDone = isWholesaleOrderInvoiceEmailDone(order, auditLogs);
   const invoiceSentAtDisplay = wholesaleOrderEmailSentAtDisplay(
     invoiceAuditChanges,
     emailAudits.invoice,

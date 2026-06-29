@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/auth_provider.dart';
+import '../services/company_branding_service.dart';
+import '../widgets/logo.dart';
 import 'pin_login_screen.dart';
 import 'username_login_screen.dart';
 
@@ -20,6 +22,32 @@ class UserSelectionScreen extends StatefulWidget {
 
 class _UserSelectionScreenState extends State<UserSelectionScreen> {
   int _refreshKey = 0;
+  String _companyLogoUrl = '';
+  String _companyName = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCompanyBranding();
+  }
+
+  Future<void> _loadCompanyBranding() async {
+    await CompanyBrandingService.instance.refreshFromApi();
+    final branding = await CompanyBrandingService.instance.getCached();
+    if (!mounted) return;
+    setState(() {
+      _companyName = branding['company_name'] ?? '';
+      _companyLogoUrl = branding['logo_url'] ?? '';
+    });
+  }
+
+  @override
+  void didUpdateWidget(UserSelectionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.key != widget.key) {
+      _loadCompanyBranding();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -238,31 +266,12 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
   }
 
   Widget _buildLogo() {
-    // Try PNG first, then AVIF, then fallback to text
-    return Image.asset(
-      'assets/images/logo.png',
+    return Logo(
       height: 40,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) {
-        // Try AVIF if PNG fails
-        return Image.asset(
-          'assets/images/logo.avif',
-          height: 40,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            // Fallback to text if both images fail to load
-            return Text(
-              '德靈公司',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.lightBlue[300],
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            );
-          },
-        );
-      },
+      fontSize: 16,
+      textColor: Colors.lightBlue[300] ?? Colors.lightBlue,
+      imageUrl: _companyLogoUrl.isNotEmpty ? _companyLogoUrl : null,
+      fallbackText: _companyName.isNotEmpty ? _companyName : null,
     );
   }
 

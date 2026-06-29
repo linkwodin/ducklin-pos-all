@@ -15,6 +15,7 @@ import '../services/receipt_printer.dart';
 import '../services/receipt_printer_helpers.dart';
 import '../services/database_service.dart';
 import '../services/offline_sync_service.dart';
+import '../services/store_receipt_config_service.dart';
 import '../widgets/cached_product_image.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -344,37 +345,69 @@ class ReceiptScreen extends StatefulWidget {
 }
 
 class _ReceiptScreenState extends State<ReceiptScreen> {
+  Map<String, dynamic>? _receiptConfig;
+  List<ReceiptType> _enabledTypes = ReceiptPrinter.getEnabledTypes(null);
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (widget.order['offline'] == true && context.mounted) {
         final syncStatus = Provider.of<SyncStatusProvider>(context, listen: false);
         syncStatus.refreshPendingCount();
         OfflineSyncService.start(() => syncStatus.refreshPendingCount());
       }
-      _autoPrintOrderReceipts(context, widget.order);
+      await _loadReceiptConfig();
+      if (context.mounted) {
+        await _autoPrintOrderReceipts(context, widget.order);
+      }
+    });
+  }
+
+  Future<void> _loadReceiptConfig() async {
+    final storeId = widget.order['store_id'] as int?;
+    final config = await StoreReceiptConfigService.instance.resolveConfig(
+      storeId: storeId,
+      forceRefresh: true,
+      order: widget.order,
+    );
+    if (!mounted) return;
+    setState(() {
+      _receiptConfig = config;
+      _enabledTypes = ReceiptPrinter.getEnabledTypes(config);
     });
   }
 
   Future<void> _autoPrintOrderReceipts(BuildContext context, Map<String, dynamic> order) async {
     final l10n = AppLocalizations.of(context)!;
-    // Do not print invoice/audit note — only order clips and 貨品細明
-    const sequence = [
-      ReceiptType.noPriceWithBarcode,   // 下單紙 (龍鳳存根)
-      ReceiptType.customerCounterfoil, // 下單紙 (客戶存根)
-      ReceiptType.noPriceNoBarcode,    // 貨品細明
-    ];
+    final config = _receiptConfig ??
+        await StoreReceiptConfigService.instance.resolveConfig(
+          storeId: order['store_id'] as int?,
+          order: order,
+        );
+    final sequence = ReceiptPrinter.getAutoPrintTypes(config);
+    if (sequence.isEmpty) return;
+
+    int printed = 0;
     for (final receiptType in sequence) {
       try {
-        await ReceiptPrinter.printReceipt(order: order, l10n: l10n, receiptType: receiptType);
+        await ReceiptPrinter.printReceipt(
+          order: order,
+          l10n: l10n,
+          receiptType: receiptType,
+          enabledTypes: ReceiptPrinter.getEnabledTypes(config),
+        );
+        printed++;
         await Future.delayed(const Duration(milliseconds: 500));
       } catch (e) {
         debugPrint('Auto-print failed for ${receiptType.name}: $e');
       }
     }
-    if (context.mounted) {
-      context.showNotification('3 documents sent to printer.', isSuccess: true);
+    if (context.mounted && printed > 0) {
+      context.showNotification(
+        '$printed document${printed == 1 ? '' : 's'} sent to printer.',
+        isSuccess: true,
+      );
     }
   }
 
@@ -502,48 +535,53 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                     runSpacing: 12,
                     alignment: WrapAlignment.center,
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.auditNote),
-                        icon: const Icon(Icons.print),
-                        label: Text(l10n.printInternalAuditNote),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      if (_enabledTypes.contains(ReceiptType.auditNote))
+                        ElevatedButton.icon(
+                          onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.auditNote),
+                          icon: const Icon(Icons.print),
+                          label: Text(l10n.printInternalAuditNote),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
                         ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.noPriceWithBarcode),
-                        icon: const Icon(Icons.receipt),
-                        label: Text(l10n.printInvoice),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      if (_enabledTypes.contains(ReceiptType.noPriceWithBarcode))
+                        ElevatedButton.icon(
+                          onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.noPriceWithBarcode),
+                          icon: const Icon(Icons.receipt),
+                          label: Text(l10n.printInvoice),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
                         ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.customerCounterfoil),
-                        icon: const Icon(Icons.receipt),
-                        label: Text(l10n.printCustomerCounterfoil),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      if (_enabledTypes.contains(ReceiptType.customerCounterfoil))
+                        ElevatedButton.icon(
+                          onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.customerCounterfoil),
+                          icon: const Icon(Icons.receipt),
+                          label: Text(l10n.printCustomerCounterfoil),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
                         ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.noPriceNoBarcode),
-                        icon: const Icon(Icons.receipt_long),
-                        label: Text(l10n.printCustomerReceipt),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      if (_enabledTypes.contains(ReceiptType.noPriceNoBarcode))
+                        ElevatedButton.icon(
+                          onPressed: () => _printReceipt(context, order, receiptType: ReceiptType.noPriceNoBarcode),
+                          icon: const Icon(Icons.receipt_long),
+                          label: Text(l10n.printCustomerReceipt),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
                         ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: () => _printAllReceipts(context, order),
-                        icon: const Icon(Icons.print_outlined),
-                        label: Text(l10n.printAll),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
+                      if (_enabledTypes.isNotEmpty)
+                        ElevatedButton.icon(
+                          onPressed: () => _printAllReceipts(context, order),
+                          icon: const Icon(Icons.print_outlined),
+                          label: Text(l10n.printAll),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ],
@@ -574,6 +612,12 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
 
   Future<void> _printReceipt(BuildContext buildContext, Map<String, dynamic> order, {ReceiptType receiptType = ReceiptType.auditNote}) async {
     final l10n = AppLocalizations.of(buildContext)!;
+    final config = _receiptConfig ??
+        await StoreReceiptConfigService.instance.resolveConfig(
+          storeId: order['store_id'] as int?,
+          order: order,
+        );
+    final enabledTypes = ReceiptPrinter.getEnabledTypes(config);
 
     // Try direct printing
     try {
@@ -581,6 +625,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         order: order,
         l10n: l10n,
         receiptType: receiptType,
+        enabledTypes: enabledTypes,
       );
       if (buildContext.mounted) {
         buildContext.showNotification('${l10n.print} successful', isSuccess: true);
@@ -596,18 +641,16 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
 
   Future<void> _printAllReceipts(BuildContext buildContext, Map<String, dynamic> order) async {
     final l10n = AppLocalizations.of(buildContext)!;
+    final config = _receiptConfig ??
+        await StoreReceiptConfigService.instance.resolveConfig(
+          storeId: order['store_id'] as int?,
+          order: order,
+        );
+    final receiptTypes = ReceiptPrinter.getEnabledTypes(config);
 
     if (buildContext.mounted) {
       buildContext.showNotification('Printing all receipts...');
     }
-
-    // Print all four receipt types sequentially (audit note, 龍鳳存根, 客戶存根, pickup receipt)
-    final receiptTypes = [
-      ReceiptType.auditNote,
-      ReceiptType.noPriceWithBarcode,
-      ReceiptType.customerCounterfoil,
-      ReceiptType.noPriceNoBarcode,
-    ];
 
     int successCount = 0;
     int failCount = 0;
@@ -618,6 +661,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
           order: order,
           l10n: l10n,
           receiptType: receiptType,
+          enabledTypes: receiptTypes,
         );
         successCount++;
         // Small delay between prints

@@ -65,6 +65,9 @@ func (h *ProductLineHandler) Get(c *gin.Context) {
 }
 
 func (h *ProductLineHandler) Create(c *gin.Context) {
+	if rejectIfPosUserWrite(c) {
+		return
+	}
 	var req CreateProductLineRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -89,6 +92,9 @@ func (h *ProductLineHandler) Create(c *gin.Context) {
 }
 
 func (h *ProductLineHandler) Update(c *gin.Context) {
+	if rejectIfPosUserWrite(c) {
+		return
+	}
 	var line models.ProductLine
 	if err := h.db.First(&line, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product line not found"})
@@ -169,6 +175,9 @@ func (h *ProductLineHandler) Update(c *gin.Context) {
 }
 
 func (h *ProductLineHandler) Delete(c *gin.Context) {
+	if rejectIfPosUserWrite(c) {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})

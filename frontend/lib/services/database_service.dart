@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
@@ -33,7 +34,7 @@ class DatabaseService {
     // For now, using unencrypted database. Encryption can be added later with SQLCipher
     final db = await openDatabase(
       dbPath,
-      version: 16, // v16: order_items.unit_type on fresh installs; v15: nullable barcodes
+      version: 18, // v18: store_cache.pos_receipt_settings_configured
       onCreate: _createDatabase,
       onUpgrade: _upgradeDatabase,
     );
@@ -354,6 +355,29 @@ class DatabaseService {
       }
       print('DatabaseService: Database upgrade to v16 (order_items.unit_type) completed');
     }
+
+    if (oldVersion < 17) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS store_cache (
+          store_id INTEGER PRIMARY KEY,
+          pos_receipt_types TEXT,
+          pos_auto_print_receipt_types TEXT,
+          updated_at INTEGER
+        )
+      ''');
+      print('DatabaseService: Database upgrade to v17 (store_cache) completed');
+    }
+
+    if (oldVersion < 18) {
+      try {
+        await db.execute(
+          'ALTER TABLE store_cache ADD COLUMN pos_receipt_settings_configured INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (e) {
+        print('DatabaseService: store_cache.pos_receipt_settings_configured may already exist: $e');
+      }
+      print('DatabaseService: Database upgrade to v18 (store_cache configured flag) completed');
+    }
     
     try {
       await db.execute('ALTER TABLE products ADD COLUMN pos_price REAL DEFAULT 0');
@@ -551,6 +575,16 @@ class DatabaseService {
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pending_user_activity_events_synced ON pending_user_activity_events(synced)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_pending_user_activity_events_user ON pending_user_activity_events(user_id)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS store_cache (
+        store_id INTEGER PRIMARY KEY,
+        pos_receipt_types TEXT,
+        pos_auto_print_receipt_types TEXT,
+        pos_receipt_settings_configured INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER
+      )
+    ''');
   }
 
   // User methods
@@ -1148,6 +1182,67 @@ class DatabaseService {
     final db = await database;
     final results = await db.query('device_info', limit: 1);
     return results.isNotEmpty ? results.first : null;
+  }
+
+  Future<void> saveStoreReceiptConfig(int storeId, Map<String, dynamic> config) async {
+    final db = await database;
+    await db.insert(
+      'store_cache',
+      {
+        'store_id': storeId,
+        'pos_receipt_types': _encodeJsonList(config['pos_receipt_types']),
+        'pos_auto_print_receipt_types': _encodeJsonList(config['pos_auto_print_receipt_types']),
+        'pos_receipt_settings_configured':
+            config['pos_receipt_settings_configured'] == true ? 1 : 0,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getStoreReceiptConfig(int storeId) async {
+    final db = await database;
+    final results = await db.query(
+      'store_cache',
+      where: 'store_id = ?',
+      whereArgs: [storeId],
+      limit: 1,
+    );
+    if (results.isEmpty) return null;
+    final row = results.first;
+    final out = <String, dynamic>{};
+    if ((row['pos_receipt_settings_configured'] as int? ?? 0) == 1) {
+      out['pos_receipt_settings_configured'] = true;
+    }
+    final receiptTypes = _decodeJsonList(row['pos_receipt_types'] as String?);
+    if (receiptTypes is List) {
+      out['pos_receipt_types'] = receiptTypes;
+    }
+    final autoPrint = _decodeJsonList(row['pos_auto_print_receipt_types'] as String?);
+    if (autoPrint is List) {
+      out['pos_auto_print_receipt_types'] = autoPrint;
+    }
+    return out.isEmpty ? null : out;
+  }
+
+  String? _encodeJsonList(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is List) {
+      return jsonEncode(value.map((e) => e.toString()).toList());
+    }
+    return null;
+  }
+
+  List<dynamic>? _decodeJsonList(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) return decoded;
+    } catch (_) {
+      // fall through
+    }
+    return null;
   }
 
   Future<void> close() async {

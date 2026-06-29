@@ -201,6 +201,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get roleManagement => '管理';
 
   @override
+  String get roleHQStaff => '总部员工';
+
+  @override
   String get roleSupervisor => '主管';
 
   @override
@@ -347,6 +350,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get wholesaleStatusInTransit => '运送中';
+
+  @override
+  String get wholesaleStatusPendingInvoice => '待发送发票';
 
   @override
   String get wholesaleStatusPendingPayment => '待收款确认';
@@ -1478,6 +1484,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get roleManagement => '管理';
 
   @override
+  String get roleHQStaff => '總部員工';
+
+  @override
   String get roleSupervisor => '主管';
 
   @override
@@ -1624,6 +1633,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get wholesaleStatusInTransit => '運送中';
+
+  @override
+  String get wholesaleStatusPendingInvoice => '待發送發票';
 
   @override
   String get wholesaleStatusPendingPayment => '待收款確認';

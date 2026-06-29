@@ -28,6 +28,7 @@ const PAGE_NAMESPACES = [
   'devicesPage',
   'currencyRates',
   'companySettings',
+  'systemInfo',
   'wholesaleOrderDetail',
   'wholesaleOrderAudit',
   'wholesaleOrdersPage',

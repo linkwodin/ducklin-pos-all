@@ -5,6 +5,8 @@ import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/database_service.dart';
+import '../services/store_receipt_config_service.dart';
+import '../services/company_branding_service.dart';
 
 /// Admin-only screen to configure this device: copy device ID, add/update device to a store.
 class DeviceConfigScreen extends StatefulWidget {
@@ -94,6 +96,8 @@ class _DeviceConfigScreenState extends State<DeviceConfigScreen> {
     try {
       await ApiService.instance.configureDevice(code, storeId);
       await DatabaseService.instance.saveDeviceInfo(code, storeId);
+      await StoreReceiptConfigService.instance.refreshFromApi(storeId);
+      await CompanyBrandingService.instance.refreshFromApi();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -13,28 +13,34 @@ type User struct {
 	FirstName     string    `gorm:"not null" json:"first_name"`
 	LastName      string    `gorm:"not null" json:"last_name"`
 	Email         string    `json:"email"`
-	Role          string    `gorm:"type:enum('management','pos_user','supervisor');not null" json:"role"`
+	Role          string `gorm:"type:enum('management','pos_user','supervisor','hq_staff');not null" json:"role"`
 	IconURL       string    `json:"icon_url"`
 	IconColor     string    `json:"icon_color"`
 	IconBgColor   string    `json:"icon_bg_color"`   // Last selected background color for icon generation
 	IconTextColor string    `json:"icon_text_color"` // Last selected text color for icon generation
 	IsActive      bool      `gorm:"default:true" json:"is_active"`
+	DefaultStoreID              *uint `gorm:"index" json:"default_store_id,omitempty"`
+	DefaultWholesaleClientID    *uint `gorm:"index" json:"default_wholesale_client_id,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Relationships
-	Stores []Store `gorm:"many2many:user_stores;" json:"stores,omitempty"`
+	Stores           []Store           `gorm:"many2many:user_stores;" json:"stores,omitempty"`
+	WholesaleClients []WholesaleClient `gorm:"many2many:user_wholesale_clients;" json:"wholesale_clients,omitempty"`
 }
 
 // Store represents a physical store location
 type Store struct {
-	ID              uint      `gorm:"primaryKey" json:"id"`
-	Name            string    `gorm:"not null" json:"name"`
-	Address         string    `json:"address"`
-	IsWarehouseOnly bool      `gorm:"default:false" json:"is_warehouse_only"`
-	IsActive        bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                       uint      `gorm:"primaryKey" json:"id"`
+	Name                     string    `gorm:"not null" json:"name"`
+	Address                  string    `json:"address"`
+	IsWarehouseOnly          bool      `gorm:"default:false" json:"is_warehouse_only"`
+	IsActive                 bool      `gorm:"default:true" json:"is_active"`
+	PosReceiptTypes              []string  `gorm:"serializer:json;type:text" json:"pos_receipt_types"`
+	PosAutoPrintReceiptTypes     []string  `gorm:"serializer:json;type:text" json:"pos_auto_print_receipt_types"`
+	PosReceiptSettingsConfigured bool      `gorm:"default:false" json:"pos_receipt_settings_configured"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
 
 	// Relationships
 	Users      []User      `gorm:"many2many:user_stores;" json:"users,omitempty"`
@@ -554,6 +560,10 @@ type ShipmentItem struct {
 type CompanySettings struct {
 	ID                    uint      `gorm:"primaryKey" json:"id"`
 	CompanyName           string    `gorm:"type:varchar(255)" json:"company_name"`
+	LogoURL               string    `gorm:"type:text" json:"logo_url"` // legacy; use pdf/web/pos fields
+	PdfLogoURL            string    `gorm:"type:text" json:"pdf_logo_url"`
+	WebLogoURL            string    `gorm:"type:text" json:"web_logo_url"`
+	PosLogoURL            string    `gorm:"type:text" json:"pos_logo_url"`
 	AddressLine1          string    `gorm:"type:varchar(255)" json:"address_line1"`
 	AddressLine2          string    `gorm:"type:varchar(255)" json:"address_line2"`
 	City                  string    `gorm:"type:varchar(100)" json:"city"`
@@ -572,5 +582,13 @@ type CompanySettings struct {
 	WholesaleOrderEmailSubjectTemplate string `gorm:"type:varchar(500)" json:"wholesale_order_email_subject_template"`
 	// Default Cc when sending wholesale order emails from management UI. Empty = company email.
 	WholesaleOrderEmailDefaultCC string `gorm:"type:text" json:"wholesale_order_email_default_cc"` // One email per line; empty = no default Cc on wholesale order emails
+	// Default Bcc when sending wholesale order emails from management UI.
+	WholesaleOrderEmailDefaultBCC string `gorm:"type:text" json:"wholesale_order_email_default_bcc"`
+	WholesaleOrderEnabled    bool   `gorm:"default:true" json:"wholesale_order_enabled"`
+	WholesaleSerialActivated bool   `gorm:"default:false" json:"wholesale_serial_activated"`
+	PosModuleEnabled         bool   `gorm:"default:true" json:"pos_module_enabled"`
+	PosDlcActivated          bool   `gorm:"default:false" json:"pos_dlc_activated"`
+	InstallationID             string `gorm:"type:varchar(64)" json:"installation_id"`
+	SystemFingerprint          string `gorm:"type:varchar(128)" json:"-"` // legacy; migrated to installation_id
 	UpdatedAt                    time.Time `json:"updated_at"`
 }

@@ -5,6 +5,8 @@ vendor/
 # Build outputs
 build/
 dist/
+bin/
+.local-dev.pids
 *.exe
 *.dll
 *.so

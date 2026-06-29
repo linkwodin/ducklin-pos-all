@@ -87,13 +87,13 @@ type CreateUserRequest struct {
 	FirstName string `json:"first_name" binding:"required"`
 	LastName  string `json:"last_name" binding:"required"`
 	Email     string `json:"email"`
-	Role      string `json:"role" binding:"required,oneof=management pos_user supervisor"`
+	Role      string `json:"role" binding:"required"`
 	StoreIDs  []uint `json:"store_ids"`
 }
 
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	var users []models.User
-	if err := h.db.Preload("Stores").Find(&users).Error; err != nil {
+	if err := h.db.Preload("Stores").Preload("WholesaleClients").Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -109,7 +109,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 
 func (h *UserHandler) GetUser(c *gin.Context) {
 	var user models.User
-	if err := h.db.Preload("Stores").First(&user, c.Param("id")).Error; err != nil {
+	if err := h.db.Preload("Stores").Preload("WholesaleClients").First(&user, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
@@ -125,6 +125,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !isValidUserRole(req.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role"})
 		return
 	}
 
@@ -172,7 +176,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		}
 	}
 
-	h.db.Preload("Stores").First(&user, user.ID)
+	h.db.Preload("Stores").Preload("WholesaleClients").First(&user, user.ID)
 
 	// Clear sensitive data
 	user.PasswordHash = ""
@@ -212,6 +216,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		updateData["email"] = *req.Email
 	}
 	if req.Role != nil {
+		if !isValidUserRole(*req.Role) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role"})
+			return
+		}
 		updateData["role"] = *req.Role
 	}
 	if req.IsActive != nil {
@@ -271,12 +279,135 @@ func (h *UserHandler) UpdateUserStores(c *gin.Context) {
 	}
 
 	// Reload user with stores
-	h.db.Preload("Stores").First(&user, userID)
+	h.db.Preload("Stores").Preload("WholesaleClients").First(&user, userID)
 
 	// Clear sensitive data
 	user.PasswordHash = ""
 	user.PINHash = ""
 
+	c.JSON(http.StatusOK, user)
+}
+
+func canManageUserWorkAssignments(role string) bool {
+	return role == RoleManagement || role == RoleSupervisor
+}
+
+func uintSliceContains(ids []uint, id uint) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateUserWorkSettings updates store/client assignments (management) and per-user defaults.
+func (h *UserHandler) UpdateUserWorkSettings(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	currentUserIDInterface, _ := c.Get("user_id")
+	currentUserID := currentUserIDInterface.(uint)
+	role := currentRole(c)
+	isSelf := uint(userID) == currentUserID
+	canManageAssignments := canManageUserWorkAssignments(role)
+
+	if !isSelf && !canManageAssignments {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized"})
+		return
+	}
+
+	var req struct {
+		StoreIDs                 []uint `json:"store_ids"`
+		WholesaleClientIDs       []uint `json:"wholesale_client_ids"`
+		DefaultStoreID           *uint  `json:"default_store_id"`
+		DefaultWholesaleClientID *uint  `json:"default_wholesale_client_id"`
+		ClearDefaultStore        bool   `json:"clear_default_store"`
+		ClearDefaultClient       bool   `json:"clear_default_wholesale_client"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var user models.User
+	if err := h.db.Preload("Stores").Preload("WholesaleClients").First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	if canManageAssignments {
+		if req.StoreIDs != nil {
+			h.db.Exec("DELETE FROM user_stores WHERE user_id = ?", userID)
+			for _, storeID := range req.StoreIDs {
+				h.db.Exec("INSERT INTO user_stores (user_id, store_id) VALUES (?, ?)", userID, storeID)
+			}
+		}
+		if req.WholesaleClientIDs != nil {
+			h.db.Exec("DELETE FROM user_wholesale_clients WHERE user_id = ?", userID)
+			for _, clientID := range req.WholesaleClientIDs {
+				h.db.Exec("INSERT INTO user_wholesale_clients (user_id, wholesale_client_id) VALUES (?, ?)", userID, clientID)
+			}
+		}
+		_ = h.db.Preload("Stores").Preload("WholesaleClients").First(&user, userID)
+	} else if req.StoreIDs != nil || req.WholesaleClientIDs != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only management can change store and client assignments"})
+		return
+	}
+
+	assignedStoreIDs := make([]uint, 0, len(user.Stores))
+	for _, s := range user.Stores {
+		assignedStoreIDs = append(assignedStoreIDs, s.ID)
+	}
+	assignedClientIDs := make([]uint, 0, len(user.WholesaleClients))
+	for _, cl := range user.WholesaleClients {
+		assignedClientIDs = append(assignedClientIDs, cl.ID)
+	}
+
+	updates := map[string]interface{}{}
+
+	if req.ClearDefaultStore {
+		updates["default_store_id"] = nil
+	} else if req.DefaultStoreID != nil {
+		if len(assignedStoreIDs) > 0 && !uintSliceContains(assignedStoreIDs, *req.DefaultStoreID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Default store must be one of the user's assigned stores"})
+			return
+		}
+		updates["default_store_id"] = *req.DefaultStoreID
+	}
+
+	if req.ClearDefaultClient {
+		updates["default_wholesale_client_id"] = nil
+	} else if req.DefaultWholesaleClientID != nil {
+		if len(assignedClientIDs) > 0 && !uintSliceContains(assignedClientIDs, *req.DefaultWholesaleClientID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Default client must be one of the user's assigned wholesale clients"})
+			return
+		}
+		var client models.WholesaleClient
+		if err := h.db.First(&client, *req.DefaultWholesaleClientID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Wholesale client not found"})
+			return
+		}
+		updates["default_wholesale_client_id"] = *req.DefaultWholesaleClientID
+	}
+
+	if len(updates) > 0 {
+		if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	if err := h.db.Preload("Stores").Preload("WholesaleClients").First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	user.PasswordHash = ""
+	user.PINHash = ""
 	c.JSON(http.StatusOK, user)
 }
 

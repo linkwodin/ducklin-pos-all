@@ -706,6 +706,7 @@ class _WholesaleOrderProcessTabState extends State<WholesaleOrderProcessTab> {
     return wholesaleOrderEmailStepDone(
       type,
       widget.auditLogs,
+      order: order,
       workflowInvoiceEmailDone: type == WholesaleOrderEmailType.invoice && order.workflowInvoiceEmailDone,
     );
   }

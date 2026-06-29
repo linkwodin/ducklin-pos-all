@@ -6,6 +6,10 @@ This directory contains all deployment and utility scripts for the POS system.
 
 ```
 scripts/
+├── install-local.sh             # One-click local install (MySQL + backend + management UI)
+├── install-local.bat            # Windows local install
+├── start-local.sh               # Start local dev stack
+├── start-local.bat              # Windows local dev stack
 ├── deploy.sh                    # Main deployment script
 ├── setup-gcp.sh                 # Initial GCP setup
 ├── clone-uat-to-dev.sh          # Clone UAT DB (and optional uploads) to local dev
@@ -32,9 +36,18 @@ scripts/
 All scripts should be run from the project root directory:
 
 ```bash
+# Local one-click install (MySQL via Docker, no GCP)
+./INSTALL-LOCAL.sh              # macOS/Linux — or double-click INSTALL-LOCAL.bat on Windows
+./INSTALL-LOCAL.sh --start      # Install then start backend + management UI
+./START-LOCAL.sh                # Start after install
+
+# See docs/LOCAL_INSTALL.md for full local setup guide.
+
 # Main deployment
-./scripts/deploy.sh backend
-./scripts/deploy.sh frontend
+./scripts/deploy.sh all uat          # UAT backend + Firebase
+./scripts/deploy.sh all prod         # Production backend + Firebase
+./scripts/deploy.sh backend prod     # Production backend only
+./scripts/deploy.sh firebase production
 
 # GCP setup
 ./scripts/setup-gcp.sh

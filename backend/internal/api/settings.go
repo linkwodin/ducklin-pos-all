@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	"pos-system/backend/internal/config"
 	"pos-system/backend/internal/models"
+	"pos-system/backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -32,32 +34,56 @@ var defaultCompanySettings = models.CompanySettings{
 
 // SettingsHandler handles company/settings API.
 type SettingsHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cfg *config.Config
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(db *gorm.DB) *SettingsHandler {
-	return &SettingsHandler{db: db}
+func NewSettingsHandler(db *gorm.DB, cfg *config.Config) *SettingsHandler {
+	return &SettingsHandler{db: db, cfg: cfg}
+}
+
+func (h *SettingsHandler) loadOrCreateCompanySettings() (models.CompanySettings, error) {
+	var s models.CompanySettings
+	err := h.db.First(&s, companySettingsID).Error
+	if err == nil {
+		if saveErr := h.ensureInstallationID(&s); saveErr != nil {
+			return s, saveErr
+		}
+		return s, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return s, err
+	}
+	s = defaultCompanySettings
+	if createErr := h.db.Create(&s).Error; createErr != nil {
+		return s, createErr
+	}
+	if saveErr := h.ensureInstallationID(&s); saveErr != nil {
+		return s, saveErr
+	}
+	return s, nil
+}
+
+func (h *SettingsHandler) ensureInstallationID(s *models.CompanySettings) error {
+	id, generated := utils.EnsureInstallationID(s.InstallationID, s.SystemFingerprint)
+	if id == s.InstallationID && !generated {
+		return nil
+	}
+	s.InstallationID = id
+	return h.db.Model(s).Select("installation_id").Updates(map[string]interface{}{
+		"installation_id": id,
+	}).Error
 }
 
 // GetCompanySettings returns the company settings (singleton ID=1). Creates with defaults if not present.
 func (h *SettingsHandler) GetCompanySettings(c *gin.Context) {
-	var s models.CompanySettings
-	err := h.db.First(&s, companySettingsID).Error
+	s, err := h.loadOrCreateCompanySettings()
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			// Create default row
-			s = defaultCompanySettings
-			if createErr := h.db.Create(&s).Error; createErr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create default company settings"})
-				return
-			}
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	c.JSON(http.StatusOK, s)
+	c.JSON(http.StatusOK, h.companySettingsResponse(s))
 }
 
 // UpdateCompanySettings updates the company settings (singleton ID=1).
@@ -79,6 +105,7 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 		PaymentTransferToInfo              *string `json:"payment_transfer_to_info"`
 		WholesaleOrderEmailSubjectTemplate *string `json:"wholesale_order_email_subject_template"`
 		WholesaleOrderEmailDefaultCC       *string `json:"wholesale_order_email_default_cc"`
+		WholesaleOrderEmailDefaultBCC      *string `json:"wholesale_order_email_default_bcc"`
 		ShipmentCouriers                   *string `json:"shipment_couriers"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -169,6 +196,9 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 	if body.WholesaleOrderEmailDefaultCC != nil {
 		s.WholesaleOrderEmailDefaultCC = strings.TrimSpace(*body.WholesaleOrderEmailDefaultCC)
 	}
+	if body.WholesaleOrderEmailDefaultBCC != nil {
+		s.WholesaleOrderEmailDefaultBCC = strings.TrimSpace(*body.WholesaleOrderEmailDefaultBCC)
+	}
 	if body.ShipmentCouriers != nil {
 		s.ShipmentCouriers = *body.ShipmentCouriers
 	}
@@ -176,5 +206,180 @@ func (h *SettingsHandler) UpdateCompanySettings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, s)
+	c.JSON(http.StatusOK, h.companySettingsResponse(s))
+}
+
+func (h *SettingsHandler) companySettingsResponse(s models.CompanySettings) gin.H {
+	s.LogoURL = normalizeLogoURL(s.LogoURL)
+	pdfLogo := normalizeLogoURL(s.PdfLogoURL)
+	webLogo := normalizeLogoURL(s.WebLogoURL)
+	posLogo := normalizeLogoURL(s.PosLogoURL)
+	return gin.H{
+		"id":                                      s.ID,
+		"company_name":                            s.CompanyName,
+		"logo_url":                                s.LogoURL,
+		"pdf_logo_url":                            pdfLogo,
+		"web_logo_url":                            webLogo,
+		"pos_logo_url":                            posLogo,
+		"address_line1":                           s.AddressLine1,
+		"address_line2":                           s.AddressLine2,
+		"city":                                    s.City,
+		"postcode":                                s.Postcode,
+		"telephone":                               s.Telephone,
+		"email":                                   s.Email,
+		"bank_account_name":                       s.BankAccountName,
+		"bank_account_number":                     s.BankAccountNumber,
+		"bank_sort_code":                          s.BankSortCode,
+		"bank_address":                            s.BankAddress,
+		"bank_iban":                               s.BankIBAN,
+		"payment_info":                            s.PaymentInfo,
+		"payment_transfer_to_info":                s.PaymentTransferToInfo,
+		"shipment_couriers":                       s.ShipmentCouriers,
+		"wholesale_order_email_subject_template":  s.WholesaleOrderEmailSubjectTemplate,
+		"wholesale_order_email_default_cc":        s.WholesaleOrderEmailDefaultCC,
+		"wholesale_order_email_default_bcc":       s.WholesaleOrderEmailDefaultBCC,
+		"wholesale_order_enabled":                 s.WholesaleOrderEnabled,
+		"wholesale_serial_activated":              s.WholesaleSerialActivated,
+		"pos_module_enabled":                      s.PosModuleEnabled,
+		"pos_dlc_activated":                       s.PosDlcActivated,
+		"updated_at":                              s.UpdatedAt,
+	}
+}
+// UploadCompanyLogo accepts a multipart logo image and stores its URL on company settings (legacy; sets logo_url).
+func (h *SettingsHandler) UploadCompanyLogo(c *gin.Context) {
+	h.uploadCompanyLogoByType(c, LogoTypePDF, func(s *models.CompanySettings, url string) {
+		s.LogoURL = url
+		s.PdfLogoURL = url
+	})
+}
+
+// UploadCompanyLogoByType uploads a logo for pdf, web, or pos.
+func (h *SettingsHandler) UploadCompanyLogoByType(c *gin.Context) {
+	logoType, ok := parseLogoType(c.Param("type"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid logo type; use pdf, web, or pos"})
+		return
+	}
+	h.uploadCompanyLogoByType(c, logoType, func(s *models.CompanySettings, url string) {
+		setLogoURLForType(s, logoType, url)
+	})
+}
+
+func (h *SettingsHandler) uploadCompanyLogoByType(c *gin.Context, logoType string, apply func(*models.CompanySettings, string)) {
+	file, err := c.FormFile("logo")
+	if err != nil || file == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "logo file required"})
+		return
+	}
+	productHandler := NewProductHandler(h.db, h.cfg)
+	uploadedURL, uploadErr := productHandler.uploadBrandingLogoForType(file, logoType)
+	if uploadErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": uploadErr.Error()})
+		return
+	}
+	s, err := h.loadOrCreateCompanySettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	apply(&s, uploadedURL)
+	if err := h.db.Save(&s).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, h.companySettingsResponse(s))
+}
+
+// UploadCompanyLogoAll uploads one image and updates pdf, web, and pos icons.
+func (h *SettingsHandler) UploadCompanyLogoAll(c *gin.Context) {
+	file, err := c.FormFile("logo")
+	if err != nil || file == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "logo file required"})
+		return
+	}
+	productHandler := NewProductHandler(h.db, h.cfg)
+	urls, uploadErr := productHandler.uploadBrandingLogoForAllTypes(file)
+	if uploadErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": uploadErr.Error()})
+		return
+	}
+	s, err := h.loadOrCreateCompanySettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.LogoURL = urls.PdfURL
+	s.PdfLogoURL = urls.PdfURL
+	s.WebLogoURL = urls.WebURL
+	s.PosLogoURL = urls.PosURL
+	if err := h.db.Save(&s).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, h.companySettingsResponse(s))
+}
+
+type copyCompanyLogoBody struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// CopyCompanyLogo copies and reprocesses one logo type to another.
+func (h *SettingsHandler) CopyCompanyLogo(c *gin.Context) {
+	var body copyCompanyLogoBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	from, okFrom := parseLogoType(body.From)
+	to, okTo := parseLogoType(body.To)
+	if !okFrom || !okTo {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid logo type; use pdf, web, or pos"})
+		return
+	}
+	if from == to {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must differ"})
+		return
+	}
+	s, err := h.loadOrCreateCompanySettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sourceURL := logoURLForType(s, from)
+	if sourceURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source logo is empty"})
+		return
+	}
+	productHandler := NewProductHandler(h.db, h.cfg)
+	uploadedURL, copyErr := productHandler.copyBrandingLogoFromURL(sourceURL, to)
+	if copyErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": copyErr.Error()})
+		return
+	}
+	setLogoURLForType(&s, to, uploadedURL)
+	if err := h.db.Save(&s).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, h.companySettingsResponse(s))
+}
+
+// GetPublicCompanyBranding returns company name and logos for unauthenticated clients (POS login screen).
+func (h *SettingsHandler) GetPublicCompanyBranding(c *gin.Context) {
+	s, err := h.loadOrCreateCompanySettings()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	webLogo := EffectiveWebLogoURL(s)
+	posLogo := EffectivePosLogoURL(s)
+	pdfLogo := EffectivePdfLogoURL(s)
+	c.JSON(http.StatusOK, gin.H{
+		"company_name": s.CompanyName,
+		"logo_url":     webLogo,
+		"web_logo_url": webLogo,
+		"pos_logo_url": posLogo,
+		"pdf_logo_url": pdfLogo,
+	})
 }

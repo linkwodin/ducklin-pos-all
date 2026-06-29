@@ -1,11 +1,11 @@
 import type { TFunction } from 'i18next';
 import type { AuditLog, WholesaleOrder } from '../types';
-import { allOrderLinesFullyAssigned } from './wholesaleOrderAssignment';
+import { allOrderLinesFullyAssigned, shipmentStatusAllowsAssignmentChange } from './wholesaleOrderAssignment';
 import {
   getWholesaleOrderEmailAudits,
-  isWholesaleOrderEmailDoneAudit,
   isWholesaleOrderEmailSkippedAudit,
   isWholesaleOrderEmailSentAudit,
+  isWholesaleOrderInvoiceEmailDone,
   orderHasInvoiceDocument,
   parseWholesaleOrderEmailAuditBase,
 } from './wholesaleOrderEmail';
@@ -56,23 +56,6 @@ function hasPaymentProofDocument(order: WholesaleOrder): boolean {
     !!order.payment_proof_url?.trim() ||
     (order.documents?.some((d) => d.type === 'payment_proof') ?? false)
   );
-}
-
-function invoiceEmailDone(order: WholesaleOrder, auditLogs?: AuditLog[]): boolean {
-  if (!orderHasInvoiceDocument(order)) return true;
-
-  if (auditLogs?.length) {
-    const emailAudits = getWholesaleOrderEmailAudits(auditLogs);
-    const changes = emailAudits.invoice
-      ? parseWholesaleOrderEmailAuditBase(emailAudits.invoice.changes)
-      : null;
-    if (changes) return isWholesaleOrderEmailDoneAudit(changes);
-  }
-
-  if (order.workflow_invoice_email_done) return true;
-  if (order.invoice_sent_at?.trim()) return true;
-
-  return false;
 }
 
 export function wholesaleOrderGrandTotal(order: WholesaleOrder): number {
@@ -178,7 +161,8 @@ export function isPaymentConfirmationStepComplete(
   order: WholesaleOrder,
   ctx: WholesaleOrderWorkflowContext,
 ): boolean {
-  if (!order.payment_confirmed_at) return false;
+  // Order complete date (payment confirmed) always completes this step.
+  if (order.payment_confirmed_at) return true;
 
   const orderTotal = ctx.orderTotal ?? wholesaleOrderGrandTotal(order);
   const totalProofAmount = resolveTotalProofAmount(order, ctx);
@@ -190,7 +174,22 @@ export function isPaymentConfirmationStepComplete(
   if (hasPaymentProofDocument(order)) {
     return false;
   }
-  return true;
+  return false;
+}
+
+/** True when payment is fully received (confirmed date or proof totals cover order total). */
+export function isWholesaleOrderPaymentSettled(
+  order: WholesaleOrder,
+  ctx: WholesaleOrderWorkflowContext = {},
+): boolean {
+  if (order.payment_confirmed_at) return true;
+
+  const orderTotal = ctx.orderTotal ?? wholesaleOrderGrandTotal(order);
+  const totalProofAmount = resolveTotalProofAmount(order, ctx);
+  if (totalProofAmount != null) {
+    return Math.max(0, orderTotal - totalProofAmount) < 0.01;
+  }
+  return false;
 }
 
 function orderLinesHaveAssignedStore(order: WholesaleOrder): boolean {
@@ -200,23 +199,33 @@ function orderLinesHaveAssignedStore(order: WholesaleOrder): boolean {
   );
 }
 
-/** Works on list payloads that omit shipment line items. */
-function isAssignmentComplete(order: WholesaleOrder): boolean {
+/** Works on list payloads that omit shipment line items or nested wholesale_order_item qty. */
+function isAssignmentComplete(order: WholesaleOrder, auditLogs?: AuditLog[]): boolean {
   if (allOrderLinesFullyAssigned(order)) return true;
+  if (auditLogs?.some((l) => l.action === 'wholesale_order_complete_assignment')) {
+    return true;
+  }
   const shipments = order.shipments ?? [];
   if (shipments.length === 0) return false;
   const shipmentLinesLoaded = shipments.some((s) => (s.items?.length ?? 0) > 0);
   if (!shipmentLinesLoaded) {
     return orderLinesHaveAssignedStore(order);
   }
+  // List payloads may omit nested shipment line qty while detail loads full rows.
+  // Once stores are assigned and shipments have started or finished, treat allocation as done.
+  if (orderLinesHaveAssignedStore(order)) {
+    if (shipments.some((s) => !shipmentStatusAllowsAssignmentChange(s.status))) {
+      return true;
+    }
+  }
   return false;
 }
 
-function isOrderConfirmationComplete(order: WholesaleOrder): boolean {
+function isOrderConfirmationComplete(order: WholesaleOrder, auditLogs?: AuditLog[]): boolean {
   if (order.status === 'pending_approval' || order.status === 'rejected' || order.status === 'deleted') {
     return false;
   }
-  return isAssignmentComplete(order);
+  return isAssignmentComplete(order, auditLogs);
 }
 
 /** Shared step list for the detail stepper and list/detail status chips. */
@@ -228,10 +237,10 @@ export function computeWholesaleOrderProcessSteps(
   const hasInvoice = orderHasInvoiceDocument(order);
 
   const stepCreated = true;
-  const stepOrderConfirmation = isOrderConfirmationComplete(order);
+  const stepOrderConfirmation = isOrderConfirmationComplete(order, ctx.auditLogs);
   const stepStartShipment = allShipmentsStarted;
   const stepFinishShipment = allShipmentsCompleted;
-  const stepSendInvoiceEmail = invoiceEmailDone(order, ctx.auditLogs);
+  const stepSendInvoiceEmail = isWholesaleOrderInvoiceEmailDone(order, ctx.auditLogs);
   const stepPaymentConfirmation = isPaymentConfirmationStepComplete(order, ctx);
   const stepComplete =
     stepOrderConfirmation &&
@@ -291,6 +300,13 @@ export function wholesaleOrderStatusLabel(
   if (order.status === 'rejected') return t('wholesaleOrdersPage:statusRejected');
   if (order.status === 'deleted') return t('wholesaleOrdersPage:statusDeleted');
 
+  if (isWholesaleOrderPaymentSettled(order, ctx)) {
+    return t('wholesaleOrderDetail:statusCompleted');
+  }
+  if (hasPaymentProofDocument(order)) {
+    return t('wholesaleOrderDetail:orderStatusPendingPaymentConfirmation');
+  }
+
   const steps = computeWholesaleOrderProcessSteps(order, ctx);
   if (steps.every((s) => s.done)) return t('wholesaleOrderDetail:statusCompleted');
 
@@ -303,6 +319,7 @@ export function wholesaleOrderStatusLabel(
     case 'stepFinishShipment':
       return t('wholesaleOrderDetail:orderStatusInTransit');
     case 'stepSendInvoiceEmail':
+      return t('wholesaleOrderDetail:orderStatusPendingInvoiceEmail');
     case 'stepPaymentConfirmation':
       return t('wholesaleOrderDetail:orderStatusPendingPaymentConfirmation');
     case 'stepComplete':
@@ -320,6 +337,9 @@ export function wholesaleOrderStatusColor(
   if (order.status === 'rejected') return 'error';
   if (order.status === 'deleted') return 'default';
 
+  if (isWholesaleOrderPaymentSettled(order, ctx)) return 'success';
+  if (hasPaymentProofDocument(order)) return 'secondary';
+
   const steps = computeWholesaleOrderProcessSteps(order, ctx);
   if (steps.every((s) => s.done)) return 'success';
 
@@ -332,6 +352,7 @@ export function wholesaleOrderStatusColor(
     case 'stepFinishShipment':
       return 'info';
     case 'stepSendInvoiceEmail':
+      return 'warning';
     case 'stepPaymentConfirmation':
       return 'secondary';
     default:

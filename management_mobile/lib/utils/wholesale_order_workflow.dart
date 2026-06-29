@@ -76,6 +76,7 @@ bool _invoiceEmailDone(WholesaleOrder order, List<AuditLogEntry> auditLogs) {
   }
   if (order.workflowInvoiceEmailDone) return true;
   if (order.invoiceSentAt?.trim().isNotEmpty ?? false) return true;
+  if (order.paymentConfirmedAt?.trim().isNotEmpty ?? false) return true;
   return false;
 }
 
@@ -129,14 +130,30 @@ WholesaleWorkflowContext buildWholesaleWorkflowContext(
 }
 
 bool isPaymentConfirmationStepComplete(WholesaleOrder order, WholesaleWorkflowContext ctx) {
-  if (order.paymentConfirmedAt == null) return false;
+  // Order complete date (payment confirmed) always completes this step.
+  if (order.paymentConfirmedAt != null && order.paymentConfirmedAt!.trim().isNotEmpty) {
+    return true;
+  }
+
   final orderTotal = wholesaleOrderGrandTotal(order);
   final totalProof = ctx.totalProofAmount;
   if (totalProof != null) {
     return orderTotal - totalProof < 0.01;
   }
   if (hasPaymentProofDocument(order)) return false;
-  return true;
+  return false;
+}
+
+bool isWholesaleOrderPaymentSettled(WholesaleOrder order, WholesaleWorkflowContext ctx) {
+  if (order.paymentConfirmedAt != null && order.paymentConfirmedAt!.trim().isNotEmpty) {
+    return true;
+  }
+  final orderTotal = wholesaleOrderGrandTotal(order);
+  final totalProof = ctx.totalProofAmount ?? order.workflowPaymentProofTotal;
+  if (totalProof != null) {
+    return orderTotal - totalProof < 0.01;
+  }
+  return false;
 }
 
 List<String> _completedAssignmentActions(List<AuditLogEntry> auditLogs) {
@@ -292,6 +309,9 @@ String wholesaleOrderWorkflowStatusLabel(WholesaleOrder order, WholesaleWorkflow
   if (order.status == 'rejected') return 'Rejected';
   if (order.status == 'deleted') return 'Deleted';
 
+  if (isWholesaleOrderPaymentSettled(order, ctx)) return 'Completed';
+  if (hasPaymentProofDocument(order)) return 'Pending payment confirmation';
+
   final steps = computeWholesaleOrderProcessSteps(order, ctx);
   if (steps.every((s) => s.done)) return 'Completed';
 
@@ -303,6 +323,7 @@ String wholesaleOrderWorkflowStatusLabel(WholesaleOrder order, WholesaleWorkflow
     case WholesaleProcessStepKey.stepFinishShipment:
       return 'In transit';
     case WholesaleProcessStepKey.stepSendInvoiceEmail:
+      return 'Pending invoice email';
     case WholesaleProcessStepKey.stepPaymentConfirmation:
       return 'Pending payment confirmation';
     case WholesaleProcessStepKey.stepComplete:
@@ -316,6 +337,9 @@ StatusChipColor wholesaleOrderStatusColor(WholesaleOrder order, WholesaleWorkflo
   if (order.status == 'rejected') return StatusChipColor.error;
   if (order.status == 'deleted') return StatusChipColor.defaultColor;
 
+  if (isWholesaleOrderPaymentSettled(order, ctx)) return StatusChipColor.success;
+  if (hasPaymentProofDocument(order)) return StatusChipColor.secondary;
+
   final steps = computeWholesaleOrderProcessSteps(order, ctx);
   if (steps.every((s) => s.done)) return StatusChipColor.success;
 
@@ -327,6 +351,7 @@ StatusChipColor wholesaleOrderStatusColor(WholesaleOrder order, WholesaleWorkflo
     case WholesaleProcessStepKey.stepFinishShipment:
       return StatusChipColor.info;
     case WholesaleProcessStepKey.stepSendInvoiceEmail:
+      return StatusChipColor.warning;
     case WholesaleProcessStepKey.stepPaymentConfirmation:
       return StatusChipColor.secondary;
     default:

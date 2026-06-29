@@ -8,6 +8,7 @@ import (
 	"image"
 	_ "image/gif" // Register GIF decoder
 	"image/jpeg"
+	"image/png"
 	_ "image/png" // Register PNG decoder
 	"mime/multipart"
 	"net/http"
@@ -330,6 +331,9 @@ func fillProductLineRequestFields(c *gin.Context, req *CreateProductRequest) {
 }
 
 func (h *ProductHandler) CreateProduct(c *gin.Context) {
+	if rejectIfPosUserWrite(c) {
+		return
+	}
 	var req CreateProductRequest
 
 	// Check if it's multipart form data (file upload)
@@ -470,6 +474,9 @@ func (h *ProductHandler) CreateProduct(c *gin.Context) {
 }
 
 func (h *ProductHandler) UpdateProduct(c *gin.Context) {
+	if rejectIfPosUserWrite(c) {
+		return
+	}
 	var product models.Product
 	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
@@ -601,6 +608,9 @@ func (h *ProductHandler) UpdateProduct(c *gin.Context) {
 }
 
 func (h *ProductHandler) DeleteProduct(c *gin.Context) {
+	if rejectIfHQStaffProductDelete(c) {
+		return
+	}
 	var product models.Product
 	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
@@ -878,6 +888,9 @@ func (h *ProductHandler) ImportProductsFromExcel(c *gin.Context) {
 }
 
 func (h *ProductHandler) SetProductCost(c *gin.Context) {
+	if rejectIfHQStaffProductCostEdit(c) {
+		return
+	}
 	var product models.Product
 	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
@@ -950,6 +963,9 @@ func (h *ProductHandler) SetProductCost(c *gin.Context) {
 
 // UpdateProductCostSimple allows updating just wholesale cost and retail price without full recalculation
 func (h *ProductHandler) UpdateProductCostSimple(c *gin.Context) {
+	if rejectIfHQStaffProductCostEdit(c) {
+		return
+	}
 	var product models.Product
 	if err := h.db.First(&product, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
@@ -1358,6 +1374,120 @@ func (h *ProductHandler) uploadImage(file *multipart.FileHeader, c *gin.Context)
 
 	// Default: Save locally
 	return h.saveLocally(filename, imgBuf.Bytes())
+}
+
+// uploadBrandingLogo stores a company logo resized to 500×150 (same as pdf_logo.png).
+func (h *ProductHandler) uploadBrandingLogo(file *multipart.FileHeader) (string, error) {
+	return h.uploadBrandingLogoForType(file, LogoTypePDF)
+}
+
+func (h *ProductHandler) uploadBrandingLogoForType(file *multipart.FileHeader, logoType string) (string, error) {
+	img, err := h.decodeBrandingLogoFile(file)
+	if err != nil {
+		return "", err
+	}
+	return h.saveBrandingLogoImage(img, logoType)
+}
+
+type brandingLogoURLs struct {
+	PdfURL string
+	WebURL string
+	PosURL string
+}
+
+func (h *ProductHandler) uploadBrandingLogoForAllTypes(file *multipart.FileHeader) (brandingLogoURLs, error) {
+	img, err := h.decodeBrandingLogoFile(file)
+	if err != nil {
+		return brandingLogoURLs{}, err
+	}
+	base := time.Now().UnixNano()
+	pdfURL, err := h.saveBrandingLogoImageSeq(img, LogoTypePDF, base)
+	if err != nil {
+		return brandingLogoURLs{}, err
+	}
+	webURL, err := h.saveBrandingLogoImageSeq(img, LogoTypeWeb, base+1)
+	if err != nil {
+		return brandingLogoURLs{}, err
+	}
+	posURL, err := h.saveBrandingLogoImageSeq(img, LogoTypePOS, base+2)
+	if err != nil {
+		return brandingLogoURLs{}, err
+	}
+	return brandingLogoURLs{PdfURL: pdfURL, WebURL: webURL, PosURL: posURL}, nil
+}
+
+func (h *ProductHandler) decodeBrandingLogoFile(file *multipart.FileHeader) (image.Image, error) {
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif"}
+	allowed := false
+	for _, allowedExt := range allowedExts {
+		if ext == allowedExt {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return nil, fmt.Errorf("invalid file type. Allowed: %v", allowedExts)
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open uploaded file: %w", err)
+	}
+	defer src.Close()
+
+	img, _, err := image.Decode(src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image (supported: JPEG, PNG, GIF): %w", err)
+	}
+	return img, nil
+}
+
+func (h *ProductHandler) copyBrandingLogoFromURL(sourceURL, logoType string) (string, error) {
+	data, err := readStoredFileBytes(sourceURL, h.cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to read source logo: %w", err)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("failed to decode source logo: %w", err)
+	}
+	trimmed := trimNearWhiteBorder(img)
+	return h.saveBrandingLogoImage(trimmed, logoType)
+}
+
+func (h *ProductHandler) saveBrandingLogoImage(img image.Image, logoType string) (string, error) {
+	return h.saveBrandingLogoImageSeq(img, logoType, time.Now().UnixNano())
+}
+
+func (h *ProductHandler) saveBrandingLogoImageSeq(img image.Image, logoType string, seq int64) (string, error) {
+	resizedImg := ResizeImageForLogoType(img, logoType)
+
+	var imgBuf bytes.Buffer
+	if err := png.Encode(&imgBuf, resizedImg); err != nil {
+		return "", fmt.Errorf("failed to encode image: %w", err)
+	}
+
+	prefix := "company_pdf_logo"
+	switch logoType {
+	case LogoTypeWeb:
+		prefix = "company_web_logo"
+	case LogoTypePOS:
+		prefix = "company_pos_logo"
+	}
+	filename := fmt.Sprintf("%s_%d.png", prefix, seq)
+	if h.cfg.StorageProvider == "gcp" && h.cfg.GCPBucketName != "" {
+		fullURL, err := h.uploadToGCP(filename, imgBuf.Bytes())
+		if err != nil {
+			return "", err
+		}
+		return normalizeLogoURL(fullURL), nil
+	}
+
+	if _, err := h.saveLocally(filename, imgBuf.Bytes()); err != nil {
+		return "", err
+	}
+	return "/uploads/" + filename, nil
 }
 
 // uploadToGCP uploads image to GCP Cloud Storage bucket

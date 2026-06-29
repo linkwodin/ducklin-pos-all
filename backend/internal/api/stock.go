@@ -759,7 +759,103 @@ func (h *StockHandler) ListStores(c *gin.Context) {
 		return
 	}
 
+	for i := range stores {
+		stores[i] = withStoreReceiptDefaults(stores[i])
+	}
+
 	c.JSON(http.StatusOK, stores)
+}
+
+func (h *StockHandler) GetStore(c *gin.Context) {
+	var store models.Store
+	if err := h.db.First(&store, c.Param("store_id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Store not found"})
+		return
+	}
+	c.JSON(http.StatusOK, withStoreReceiptDefaults(store))
+}
+
+func (h *StockHandler) UpdateStore(c *gin.Context) {
+	if !requireManagementOrSupervisor(c) {
+		return
+	}
+
+	var store models.Store
+	if err := h.db.First(&store, c.Param("store_id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Store not found"})
+		return
+	}
+
+	var req struct {
+		Name                     *string  `json:"name"`
+		Address                  *string  `json:"address"`
+		IsWarehouseOnly          *bool    `json:"is_warehouse_only"`
+		IsActive                 *bool    `json:"is_active"`
+		PosReceiptTypes          []string `json:"pos_receipt_types"`
+		PosAutoPrintReceiptTypes []string `json:"pos_auto_print_receipt_types"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name cannot be empty"})
+			return
+		}
+		store.Name = name
+	}
+	if req.Address != nil {
+		store.Address = strings.TrimSpace(*req.Address)
+	}
+	if req.IsWarehouseOnly != nil {
+		store.IsWarehouseOnly = *req.IsWarehouseOnly
+	}
+	if req.IsActive != nil {
+		store.IsActive = *req.IsActive
+	}
+	if req.PosReceiptTypes != nil {
+		enabled := normalizePosReceiptTypeList(req.PosReceiptTypes)
+		autoPrint := effectivePosAutoPrintReceiptTypes(&store)
+		if req.PosAutoPrintReceiptTypes != nil {
+			autoPrint = normalizePosReceiptTypeList(req.PosAutoPrintReceiptTypes)
+		} else {
+			filtered := make([]string, 0, len(autoPrint))
+			enabledSet := make(map[string]bool, len(enabled))
+			for _, t := range enabled {
+				enabledSet[t] = true
+			}
+			for _, t := range autoPrint {
+				if enabledSet[t] {
+					filtered = append(filtered, t)
+				}
+			}
+			autoPrint = filtered
+		}
+		if err := validatePosReceiptConfig(enabled, autoPrint); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		markStoreReceiptSettingsConfigured(&store, enabled, autoPrint)
+	} else if req.PosAutoPrintReceiptTypes != nil {
+		enabled := effectivePosReceiptTypes(&store)
+		autoPrint := normalizePosReceiptTypeList(req.PosAutoPrintReceiptTypes)
+		if err := validatePosReceiptConfig(enabled, autoPrint); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		store.PosAutoPrintReceiptTypes = autoPrint
+		store.PosReceiptSettingsConfigured = true
+	}
+
+	if err := h.db.Save(&store).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, withStoreReceiptDefaults(store))
 }
 
 func (h *StockHandler) CreateStore(c *gin.Context) {
@@ -785,7 +881,7 @@ func (h *StockHandler) CreateStore(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, store)
+	c.JSON(http.StatusCreated, withStoreReceiptDefaults(store))
 }
 
 // ConvertStockInventory moves inventory between prepacked units and loose weight (grams).

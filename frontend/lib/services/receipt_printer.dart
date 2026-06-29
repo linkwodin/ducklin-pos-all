@@ -4,6 +4,7 @@ import 'full_receipt_printer.dart';
 import 'barcode_receipt_printer.dart';
 import 'simple_receipt_printer.dart';
 import 'receipt_printer_helpers.dart';
+import '../utils/pos_receipt_config.dart';
 
 enum ReceiptType {
   full, // With price, with QR code
@@ -89,23 +90,18 @@ class ReceiptPrinter {
   /// Get enabled receipt types from order or backend config
   /// This can be called to check which receipt types are available
   static List<ReceiptType> getEnabledTypes(Map<String, dynamic>? orderConfig) {
-    // If order config has receipt_types, use that
     if (orderConfig != null && orderConfig['receipt_types'] != null) {
-      final types = orderConfig['receipt_types'] as List<dynamic>?;
-      if (types != null) {
-        return types.map((t) {
-          final typeStr = t.toString().toLowerCase();
-          if (typeStr == 'full') return ReceiptType.full;
-          if (typeStr == 'auditnote' || typeStr == 'audit_note') return ReceiptType.auditNote;
-          if (typeStr == 'nopricewithbarcode' || typeStr == 'no_price_with_barcode') return ReceiptType.noPriceWithBarcode;
-          if (typeStr == 'customercounterfoil' || typeStr == 'customer_counterfoil') return ReceiptType.customerCounterfoil;
-          if (typeStr == 'nopricenobarcode' || typeStr == 'no_price_no_barcode') return ReceiptType.noPriceNoBarcode;
-          return null;
-        }).whereType<ReceiptType>().toList();
-      }
+      return receiptTypesFromKeys(orderConfig['receipt_types'] as List<dynamic>?);
     }
-    
-    // Default: all types enabled
-    return ReceiptType.values;
+    if (orderConfig != null &&
+        (orderConfig['pos_receipt_types'] != null ||
+            orderConfig['pos_auto_print_receipt_types'] != null)) {
+      return enabledReceiptTypesFromConfig(orderConfig);
+    }
+    return receiptTypesFromKeys(null);
+  }
+
+  static List<ReceiptType> getAutoPrintTypes(Map<String, dynamic>? config) {
+    return autoPrintReceiptTypesFromConfig(config);
   }
 }

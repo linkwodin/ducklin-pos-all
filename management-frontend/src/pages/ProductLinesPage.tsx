@@ -36,6 +36,8 @@ import {
 import { productLinesAPI, productsAPI, categoriesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
+import { isPosUser } from '../utils/permissions';
 import type { Product, ProductLine } from '../types';
 import { displayVariantLabel } from '../utils/productInventory';
 import {
@@ -47,6 +49,8 @@ import {
 
 export default function ProductLinesPage() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const readOnly = isPosUser(user?.role);
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [lines, setLines] = useState<ProductLine[]>([]);
@@ -162,9 +166,11 @@ export default function ProductLinesPage() {
             {t('productLines.subtitle')}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => openLineDialog()}>
-          {t('productLines.addLine')}
-        </Button>
+        {!readOnly && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => openLineDialog()}>
+            {t('productLines.addLine')}
+          </Button>
+        )}
       </Box>
 
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
@@ -313,12 +319,16 @@ export default function ProductLinesPage() {
                             </TableCell>
                             <TableCell sx={productLineVariantCellSx}>{variant.sku || '—'}</TableCell>
                             <TableCell align="right" sx={productLineVariantActionsCellSx}>
-                              <IconButton size="small" onClick={() => navigate(`/products/${variant.id}`)}>
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton size="small" color="error" onClick={() => deactivateVariant(variant)}>
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
+                              {!readOnly && (
+                                <>
+                                  <IconButton size="small" onClick={() => navigate(`/products/${variant.id}`)}>
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                  <IconButton size="small" color="error" onClick={() => deactivateVariant(variant)}>
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))

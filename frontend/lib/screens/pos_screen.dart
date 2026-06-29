@@ -16,6 +16,7 @@ import '../services/image_cache_service.dart';
 import '../services/offline_sync_service.dart';
 import '../services/api_service.dart';
 import '../services/stocktake_prompt_service.dart';
+import '../services/company_branding_service.dart';
 import '../widgets/logo.dart';
 import 'stocktake_skip_reason_screen.dart';
 import 'product_selection_screen.dart';
@@ -45,6 +46,8 @@ class _POSScreenState extends State<POSScreen> {
   int _selectedIndex = 0;
   String? _userRole;
   int _pendingShipmentsCount = 0;
+  String _companyLogoUrl = '';
+  String _companyName = '';
 
   // Global keys to access state of screens that need refreshing
   final GlobalKey<OrderHistoryScreenState> _orderHistoryKey = GlobalKey<OrderHistoryScreenState>();
@@ -133,6 +136,7 @@ class _POSScreenState extends State<POSScreen> {
     super.initState();
     _initializeData();
     _loadUserRole();
+    _loadCompanyBranding();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final syncStatus = Provider.of<SyncStatusProvider>(context, listen: false);
@@ -294,6 +298,16 @@ class _POSScreenState extends State<POSScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _userRole = prefs.getString('user_role');
+    });
+  }
+
+  Future<void> _loadCompanyBranding() async {
+    await CompanyBrandingService.instance.refreshFromApi();
+    final branding = await CompanyBrandingService.instance.getCached();
+    if (!mounted) return;
+    setState(() {
+      _companyName = branding['company_name'] ?? '';
+      _companyLogoUrl = branding['logo_url'] ?? '';
     });
   }
 
@@ -482,9 +496,15 @@ class _POSScreenState extends State<POSScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.all(8),
-                child: Logo(fontSize: 12, textColor: Colors.black),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Logo(
+                  height: 12,
+                  fontSize: 12,
+                  textColor: Colors.black,
+                  imageUrl: _companyLogoUrl.isNotEmpty ? _companyLogoUrl : null,
+                  fallbackText: _companyName.isNotEmpty ? _companyName : null,
+                ),
               ),
               _buildNavRailItem(
                 index: 0,

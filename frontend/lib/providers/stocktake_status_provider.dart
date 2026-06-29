@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
+import '../services/store_receipt_config_service.dart';
+import '../services/company_branding_service.dart';
 
 /// Server-driven day-start stocktake reminder.
 /// Flag is set from login response (last_stocktake_at): if null or date before today → show icon/dialog.
@@ -49,6 +51,12 @@ class StocktakeStatusProvider with ChangeNotifier {
       return;
     }
     final lastAt = info['last_stocktake_at'];
+    await StoreReceiptConfigService.instance.cacheFromDeviceInfo(info);
+    final storeId = info['store_id'] as int?;
+    if (storeId != null) {
+      await StoreReceiptConfigService.instance.refreshFromApi(storeId);
+    }
+    await CompanyBrandingService.instance.refreshFromApi();
     final pending = _isPendingFromLastStocktakeAt(lastAt);
     _hasPendingDayStartToday = pending;
     notifyListeners();

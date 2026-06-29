@@ -4,13 +4,16 @@ export interface User {
   first_name: string;
   last_name: string;
   email?: string;
-  role: 'management' | 'pos_user' | 'supervisor';
+  role: 'management' | 'pos_user' | 'supervisor' | 'hq_staff';
   icon_url?: string;
   icon_color?: string;
   icon_bg_color?: string;
   icon_text_color?: string;
   is_active: boolean;
   stores?: Store[];
+  wholesale_clients?: WholesaleClient[];
+  default_store_id?: number | null;
+  default_wholesale_client_id?: number | null;
 }
 
 export interface Store {
@@ -19,6 +22,9 @@ export interface Store {
   address?: string;
   is_warehouse_only?: boolean;
   is_active: boolean;
+  pos_receipt_types?: string[];
+  pos_auto_print_receipt_types?: string[];
+  pos_receipt_settings_configured?: boolean;
 }
 
 export interface POSDevice {
@@ -437,6 +443,10 @@ export interface WholesaleOrderDocument {
 export interface CompanySettings {
   id: number;
   company_name: string;
+  logo_url?: string;
+  pdf_logo_url?: string;
+  web_logo_url?: string;
+  pos_logo_url?: string;
   address_line1: string;
   address_line2: string;
   city: string;
@@ -453,6 +463,11 @@ export interface CompanySettings {
   shipment_couriers?: string;
   wholesale_order_email_subject_template?: string;
   wholesale_order_email_default_cc?: string;
+  wholesale_order_email_default_bcc?: string;
+  wholesale_order_enabled?: boolean;
+  wholesale_serial_activated?: boolean;
+  pos_module_enabled?: boolean;
+  pos_dlc_activated?: boolean;
   updated_at: string;
 }
 

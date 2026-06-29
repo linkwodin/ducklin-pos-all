@@ -194,10 +194,14 @@ func (h *DeviceHandler) GetDeviceInfo(c *gin.Context) {
 	}
 
 	deviceCodeDisplay := normalizeDeviceCodeForLookup(device.DeviceCode)
+	store := withStoreReceiptDefaults(device.Store)
 	resp := gin.H{
 		"device_code": deviceCodeDisplay,
 		"store_id":    device.StoreID,
 		"device_name": device.DeviceName,
+		"pos_receipt_settings_configured": store.PosReceiptSettingsConfigured,
+		"pos_receipt_types":               store.PosReceiptTypes,
+		"pos_auto_print_receipt_types":    store.PosAutoPrintReceiptTypes,
 	}
 	if lastAt != nil {
 		resp["last_stocktake_at"] = lastAt.Format(time.RFC3339)

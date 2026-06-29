@@ -33,6 +33,8 @@ import {
 import { stockAPI, restockAPI, ordersAPI, storesAPI, wholesaleOrdersAPI } from '../services/api';
 import type { Store, WholesaleOrder } from '../types';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
+import { canViewDashboardSalesAndCharts } from '../utils/permissions';
 
 interface RevenueStat {
   date: string;
@@ -61,6 +63,8 @@ const defaultStart = () => {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const showSalesAndCharts = canViewDashboardSalesAndCharts(user?.role);
   const [dateRangeStart, setDateRangeStart] = useState(formatDate(defaultStart()));
   const [dateRangeEnd, setDateRangeEnd] = useState(formatDate(defaultEnd()));
   const [stores, setStores] = useState<Store[]>([]);
@@ -96,30 +100,41 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        setLoading(true);
-        const [lowStock, restocks, revenue, productSales] = await Promise.all([
-          stockAPI.getLowStock(),
-          restockAPI.list(undefined, 'initiated'),
-          ordersAPI.getDailyRevenueStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
-          ordersAPI.getDailyProductSalesStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
-        ]);
-
-        setStats((prev) => ({
-          ...prev,
-          lowStockItems: lowStock?.length || 0,
-          pendingRestocks: restocks?.length || 0,
-        }));
-        setRevenueStats(revenue || []);
-        setProductSalesStats(productSales || []);
+        if (showSalesAndCharts) setLoading(true);
+        if (showSalesAndCharts) {
+          const [lowStock, restocks, revenue, productSales] = await Promise.all([
+            stockAPI.getLowStock(),
+            restockAPI.list(undefined, 'initiated'),
+            ordersAPI.getDailyRevenueStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
+            ordersAPI.getDailyProductSalesStats({ start_date: dateRangeStart, end_date: dateRangeEnd, store_id: storeIdParam }),
+          ]);
+          setStats((prev) => ({
+            ...prev,
+            lowStockItems: lowStock?.length || 0,
+            pendingRestocks: restocks?.length || 0,
+          }));
+          setRevenueStats(revenue || []);
+          setProductSalesStats(productSales || []);
+        } else {
+          const [lowStock, restocks] = await Promise.all([
+            stockAPI.getLowStock(),
+            restockAPI.list(undefined, 'initiated'),
+          ]);
+          setStats((prev) => ({
+            ...prev,
+            lowStockItems: lowStock?.length || 0,
+            pendingRestocks: restocks?.length || 0,
+          }));
+        }
       } catch (error) {
         console.error('Failed to fetch stats:', error);
       } finally {
-        setLoading(false);
+        if (showSalesAndCharts) setLoading(false);
       }
     };
 
     fetchStats();
-  }, [storeIdParam, dateRangeStart, dateRangeEnd]);
+  }, [storeIdParam, dateRangeStart, dateRangeEnd, showSalesAndCharts]);
 
   // Pending wholesale orders (pending_approval + assign_shipment) and wholesale sales for graph
   useEffect(() => {
@@ -130,13 +145,14 @@ export default function Dashboard() {
         const [pendingApproval, assignShipment, allOrders] = await Promise.all([
           wholesaleOrdersAPI.list({ status: 'pending_approval' }),
           wholesaleOrdersAPI.list({ status: 'assign_shipment' }),
-          wholesaleOrdersAPI.list(),
+          showSalesAndCharts ? wholesaleOrdersAPI.list() : Promise.resolve([] as WholesaleOrder[]),
         ]);
         if (cancelled) return;
         setStats((prev) => ({
           ...prev,
           pendingWholesaleOrders: (pendingApproval?.length || 0) + (assignShipment?.length || 0),
         }));
+        if (!showSalesAndCharts) return;
         const totalForOrder = (o: WholesaleOrder) =>
           o.items?.reduce((sum, it) => sum + (it.line_total ?? 0), 0) ?? 0;
         const start = new Date(dateRangeStart);
@@ -164,9 +180,10 @@ export default function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, [dateRangeStart, dateRangeEnd]);
+  }, [dateRangeStart, dateRangeEnd, showSalesAndCharts]);
 
   useEffect(() => {
+    if (!showSalesAndCharts) return;
     const fetchToday = async () => {
       try {
         const all = await ordersAPI.getDailyRevenueStats({ days: 1 });
@@ -178,10 +195,10 @@ export default function Dashboard() {
       }
     };
     fetchToday();
-  }, []);
+  }, [showSalesAndCharts]);
 
   useEffect(() => {
-    if (stores.length === 0) return;
+    if (!showSalesAndCharts || stores.length === 0) return;
     const fetchRevenueByStore = async () => {
       try {
         setLoadingByStore(true);
@@ -199,7 +216,7 @@ export default function Dashboard() {
       }
     };
     fetchRevenueByStore();
-  }, [stores.length, dateRangeStart, dateRangeEnd]);
+  }, [stores.length, dateRangeStart, dateRangeEnd, showSalesAndCharts]);
 
   // Aggregate product sales by date and product
   const productSalesByDate = (productSalesStats || []).reduce((acc, stat) => {
@@ -314,6 +331,8 @@ export default function Dashboard() {
       </Typography>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+        {showSalesAndCharts && (
+          <>
         <TextField
           size="small"
           label={t('dashboard.dateFrom')}
@@ -377,6 +396,8 @@ export default function Dashboard() {
             ))}
           </Select>
         </FormControl>
+          </>
+        )}
       </Box>
 
       <Grid container spacing={3} sx={{ mt: 2 }}>
@@ -398,6 +419,8 @@ export default function Dashboard() {
           </Grid>
         ))}
 
+        {showSalesAndCharts && (
+          <>
         {/* Today's sales (total) */}
         <Grid item xs={12} sm={6} md={3}>
           <Card>
@@ -564,6 +587,8 @@ export default function Dashboard() {
             )}
           </Paper>
         </Grid>
+          </>
+        )}
       </Grid>
     </Box>
   );

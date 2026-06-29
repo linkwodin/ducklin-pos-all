@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import { format } from 'date-fns';
 import type { AuditLog, WholesaleOrder } from '../types';
 import i18n from '../i18n/config';
+import { shipmentHasDeliveryNoteStarted } from './shipmentStatus';
 
 export type WholesaleOrderEmailType = 'order_confirm' | 'shipments_delivered' | 'invoice';
 
@@ -240,6 +241,12 @@ export function wholesaleOrderDefaultEmailCcList(
   return parseEmailListFromRaw(settings?.wholesale_order_email_default_cc);
 }
 
+export function wholesaleOrderDefaultEmailBccList(
+  settings?: { wholesale_order_email_default_bcc?: string } | null,
+): string[] {
+  return parseEmailListFromRaw(settings?.wholesale_order_email_default_bcc);
+}
+
 /** @deprecated Use wholesaleOrderDefaultEmailCcList */
 export function wholesaleOrderDefaultEmailCc(settings?: {
   wholesale_order_email_default_cc?: string;
@@ -423,6 +430,65 @@ export function isWholesaleOrderEmailSentAudit(changes: Record<string, unknown>)
 
 export function isWholesaleOrderEmailDoneAudit(changes: Record<string, unknown>): boolean {
   return isWholesaleOrderEmailSkippedAudit(changes) || isWholesaleOrderEmailSentAudit(changes);
+}
+
+/** Historical orders may lack structured email audits once payment is confirmed. */
+export function isWholesaleOrderLegacyWorkflowClosed(order: WholesaleOrder): boolean {
+  return !!order.payment_confirmed_at?.trim();
+}
+
+function allShipmentsCompleted(order: WholesaleOrder): boolean {
+  const shipments = order.shipments ?? [];
+  return shipments.length > 0 && shipments.every((s) => s.status === 'completed');
+}
+
+export function isWholesaleOrderOrderConfirmEmailDone(
+  order: WholesaleOrder,
+  auditLogs?: AuditLog[],
+): boolean {
+  const emailAudits = getWholesaleOrderEmailAudits(auditLogs ?? []);
+  const changes = emailAudits.order_confirm
+    ? parseWholesaleOrderEmailAuditBase(emailAudits.order_confirm.changes)
+    : null;
+  if (changes && isWholesaleOrderEmailDoneAudit(changes)) return true;
+
+  const shipments = order.shipments ?? [];
+  if (shipments.some((s) => shipmentHasDeliveryNoteStarted(s))) return true;
+  if (isWholesaleOrderLegacyWorkflowClosed(order) && shipments.length > 0) return true;
+  return false;
+}
+
+export function isWholesaleOrderShipmentsDeliveredEmailDone(
+  order: WholesaleOrder,
+  auditLogs?: AuditLog[],
+): boolean {
+  const emailAudits = getWholesaleOrderEmailAudits(auditLogs ?? []);
+  const changes = emailAudits.shipments_delivered
+    ? parseWholesaleOrderEmailAuditBase(emailAudits.shipments_delivered.changes)
+    : null;
+  if (changes && isWholesaleOrderEmailDoneAudit(changes)) return true;
+
+  if (isWholesaleOrderLegacyWorkflowClosed(order) && allShipmentsCompleted(order)) {
+    return true;
+  }
+  return false;
+}
+
+export function isWholesaleOrderInvoiceEmailDone(
+  order: WholesaleOrder,
+  auditLogs?: AuditLog[],
+): boolean {
+  if (!orderHasInvoiceDocument(order)) return true;
+
+  const emailAudits = getWholesaleOrderEmailAudits(auditLogs ?? []);
+  const changes = emailAudits.invoice
+    ? parseWholesaleOrderEmailAuditBase(emailAudits.invoice.changes)
+    : null;
+  if (changes && isWholesaleOrderEmailDoneAudit(changes)) return true;
+  if (order.workflow_invoice_email_done) return true;
+  if (order.invoice_sent_at?.trim()) return true;
+  if (isWholesaleOrderLegacyWorkflowClosed(order)) return true;
+  return false;
 }
 
 export function classifyWholesaleOrderEmailAudit(changes: Record<string, unknown>): WholesaleOrderEmailType | null {

@@ -14,8 +14,11 @@ NC='\033[0m' # No Color
 # Configuration
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 REGION=${REGION:-europe-west1}
+UAT_PROJECT_ID="${UAT_PROJECT_ID:-ducklin-uk-uat}"
+PROD_PROJECT_ID="${PROD_PROJECT_ID:-ducklin-uk-prod}"
 BACKEND_DIR="backend"
 FRONTEND_DIR="management-frontend"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Functions
 print_info() {
@@ -52,7 +55,13 @@ check_prerequisites() {
 }
 
 deploy_backend() {
-    print_info "Deploying backend to Cloud Run..."
+    local GCP_PROJECT="${1:-$PROJECT_ID}"
+    if [ -z "$GCP_PROJECT" ]; then
+        print_error "No GCP project. Pass project id or run: gcloud config set project YOUR_PROJECT_ID"
+        exit 1
+    fi
+
+    print_info "Deploying backend to Cloud Run (project: $GCP_PROJECT)..."
     
     # Ensure PDF fonts (Arial/Liberation Sans, Noto) are present so the Docker image includes them
     FONTS_DIR="$BACKEND_DIR/pdf-assets/fonts"
@@ -80,10 +89,36 @@ deploy_backend() {
     # Note: Cloud SQL connection is managed separately via fix scripts
     # (see cloudbuild.yaml comment for details)
     # Note: Region is hardcoded to europe-west1 in cloudbuild.yaml
-    gcloud builds submit --config=cloudbuild.yaml
+    gcloud builds submit --config=cloudbuild.yaml --project="$GCP_PROJECT"
     
     print_info "Backend deployed successfully!"
+    local backend_url
+    backend_url="$(gcloud run services describe pos-backend --region="$REGION" --project="$GCP_PROJECT" --format='value(status.url)' 2>/dev/null || true)"
+    if [ -n "$backend_url" ]; then
+        print_info "Backend URL: $backend_url"
+    fi
     cd ..
+}
+
+deploy_firebase() {
+    local ENV="${1:-uat}"
+    if [ ! -f "$SCRIPT_DIR/deploy-firebase.sh" ]; then
+        print_error "deploy-firebase.sh not found"
+        exit 1
+    fi
+    "$SCRIPT_DIR/deploy-firebase.sh" "$ENV"
+}
+
+deploy_all_uat() {
+    print_info "Deploying all UAT: backend ($UAT_PROJECT_ID) + Firebase Hosting..."
+    deploy_backend "$UAT_PROJECT_ID"
+    deploy_firebase "uat"
+}
+
+deploy_all_prod() {
+    print_info "Deploying all PRODUCTION: backend ($PROD_PROJECT_ID) + Firebase Hosting..."
+    deploy_backend "$PROD_PROJECT_ID"
+    deploy_firebase "production"
 }
 
 deploy_frontend() {
@@ -246,46 +281,52 @@ main() {
     
     # Ask what to deploy
     if [ "$1" == "backend" ]; then
-        deploy_backend
+        if [ "$2" == "prod" ] || [ "$2" == "production" ]; then
+            deploy_backend "$PROD_PROJECT_ID"
+        elif [ "$2" == "uat" ]; then
+            deploy_backend "$UAT_PROJECT_ID"
+        else
+            deploy_backend "$PROJECT_ID"
+        fi
+    elif [ "$1" == "backend-prod" ] || [ "$1" == "backend-production" ]; then
+        deploy_backend "$PROD_PROJECT_ID"
+    elif [ "$1" == "backend-uat" ]; then
+        deploy_backend "$UAT_PROJECT_ID"
     elif [ "$1" == "frontend" ]; then
         deploy_frontend "${2:-production}"  # Second argument is environment (uat or production)
     elif [ "$1" == "frontend-uat" ]; then
         deploy_frontend "uat"
     elif [ "$1" == "frontend-firebase" ] || [ "$1" == "firebase" ]; then
-        # Deploy to Firebase Hosting
-        ENV="${2:-uat}"
-        # Get the directory where this script is located
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [ -f "$SCRIPT_DIR/deploy-firebase.sh" ]; then
-            "$SCRIPT_DIR/deploy-firebase.sh" "$ENV"
-        else
-            print_error "deploy-firebase.sh not found"
-            exit 1
-        fi
-    elif [ "$1" == "all" ] && [ "$2" == "uat" ]; then
-        # Deploy backend to GCP (Cloud Run) and management portal to Firebase (UAT)
-        print_info "Deploying all UAT: backend (GCP) + frontend (Firebase)..."
-        deploy_backend
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [ -f "$SCRIPT_DIR/deploy-firebase.sh" ]; then
-            "$SCRIPT_DIR/deploy-firebase.sh" "uat"
-        else
-            print_error "deploy-firebase.sh not found"
-            exit 1
-        fi
+        deploy_firebase "${2:-uat}"
+    elif [ "$1" == "all" ] && { [ "$2" == "uat" ]; }; then
+        deploy_all_uat
+    elif [ "$1" == "all" ] && { [ "$2" == "prod" ] || [ "$2" == "production" ]; }; then
+        deploy_all_prod
+    elif [ "$1" == "all-prod" ] || [ "$1" == "all-production" ]; then
+        deploy_all_prod
+    elif [ "$1" == "all-uat" ]; then
+        deploy_all_uat
     elif [ "$1" == "all" ] || [ -z "$1" ]; then
         deploy_backend
         deploy_frontend "production"
     else
         print_error "Invalid argument: $1"
-        print_info "Usage: ./scripts/deploy.sh [backend|frontend|frontend-uat|frontend-firebase|all] [uat|production]"
-        print_info "  Examples:"
-        print_info "    ./scripts/deploy.sh all uat               # Backend to GCP + frontend to Firebase UAT"
-        print_info "    ./scripts/deploy.sh frontend              # Deploy to Cloud Storage (production)"
-        print_info "    ./scripts/deploy.sh frontend-uat          # Deploy to Cloud Storage (UAT)"
-        print_info "    ./scripts/deploy.sh frontend-firebase     # Deploy to Firebase Hosting (UAT)"
-        print_info "    ./scripts/deploy.sh frontend-firebase production  # Deploy to Firebase Hosting (production)"
-        print_info "    ./scripts/deploy.sh firebase uat          # Deploy to Firebase Hosting (UAT, shorthand)"
+        print_info "Usage: ./scripts/deploy.sh [target] [uat|prod|production]"
+        print_info "  UAT:"
+        print_info "    ./scripts/deploy.sh all uat               # Backend ($UAT_PROJECT_ID) + Firebase UAT"
+        print_info "    ./scripts/deploy.sh all-uat                 # Same as all uat"
+        print_info "    ./scripts/deploy.sh backend uat             # Backend only (UAT project)"
+        print_info "    ./scripts/deploy.sh frontend-uat            # GCS frontend (UAT)"
+        print_info "    ./scripts/deploy.sh firebase uat            # Firebase Hosting (UAT)"
+        print_info "  Production:"
+        print_info "    ./scripts/deploy.sh all prod                # Backend ($PROD_PROJECT_ID) + Firebase prod"
+        print_info "    ./scripts/deploy.sh all-prod                # Same as all prod"
+        print_info "    ./scripts/deploy.sh backend prod              # Backend only (prod project)"
+        print_info "    ./scripts/deploy.sh firebase production       # Firebase Hosting (prod)"
+        print_info "  Other:"
+        print_info "    ./scripts/deploy.sh backend                 # Backend (current gcloud project)"
+        print_info "    ./scripts/deploy.sh frontend                  # GCS frontend (current project)"
+        print_info "    ./scripts/deploy.sh all                       # Backend + GCS (current project)"
         exit 1
     fi
     

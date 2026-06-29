@@ -202,6 +202,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get roleManagement => 'Management';
 
   @override
+  String get roleHQStaff => 'HQ staff';
+
+  @override
   String get roleSupervisor => 'Supervisor';
 
   @override
@@ -351,6 +354,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get wholesaleStatusInTransit => 'In transit';
+
+  @override
+  String get wholesaleStatusPendingInvoice => 'Pending invoice email';
 
   @override
   String get wholesaleStatusPendingPayment => 'Pending payment confirmation';

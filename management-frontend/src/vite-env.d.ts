@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string
   readonly VITE_AI_PLAYBOOK_URL?: string
+  readonly VITE_APP_VERSION?: string
 }
 
 declare module '*?raw' {

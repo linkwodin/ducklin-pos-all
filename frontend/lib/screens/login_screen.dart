@@ -4,6 +4,7 @@ import 'package:pos_system/l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/database_service.dart';
 import '../services/api_service.dart';
+import '../services/company_branding_service.dart';
 import 'user_selection_screen.dart';
 import 'pin_login_screen.dart';
 import 'username_login_screen.dart';
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isSyncing = false;
   List<Map<String, dynamic>> _users = [];
   String? _syncMessage;
+  int _userSelectionKey = 0;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _restoreSessionAndLoadUsers() async {
     if (!mounted) return;
+    await CompanyBrandingService.instance.refreshFromApi();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.checkAuth();
     if (!mounted) return;
@@ -72,7 +75,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Fetch users from API
       final users = await ApiService.instance.getUsersForDevice(deviceCode);
+      await CompanyBrandingService.instance.refreshFromApi();
       final userList = users.cast<Map<String, dynamic>>();
+      _userSelectionKey++;
 
       // Remove local users that no longer exist on the server
       try {
@@ -172,6 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   : _users.isEmpty
                       ? _buildNoUsersView()
                       : UserSelectionScreen(
+                          key: ValueKey(_userSelectionKey),
                           users: _users,
                           onSyncRequested: _syncUsers,
                         ),

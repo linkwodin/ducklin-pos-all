@@ -53,6 +53,8 @@ export async function downloadWholesaleOrdersSummaryPdf(options: {
   reportHeadingLeft: string;
   /** Localized printed date/time, top right */
   reportHeadingRight: string;
+  /** Optional company logo URL shown in the PDF header */
+  logoUrl?: string;
 }): Promise<void> {
   const {
     filterLines,
@@ -62,6 +64,7 @@ export async function downloadWholesaleOrdersSummaryPdf(options: {
     filename,
     reportHeadingLeft,
     reportHeadingRight,
+    logoUrl,
   } = options;
   await ensureNotoSansScLoaded();
 
@@ -91,15 +94,35 @@ export async function downloadWholesaleOrdersSummaryPdf(options: {
     `width:100%`,
     `font-family:${fontStack}`,
   ].join(';');
+
+  const headingLeftWrap = document.createElement('div');
+  headingLeftWrap.style.cssText = 'display:flex;align-items:center;gap:14px;flex:1;min-width:0;';
+  if (logoUrl?.trim()) {
+    const logoImg = document.createElement('img');
+    logoImg.src = logoUrl.trim();
+    logoImg.alt = '';
+    logoImg.style.cssText = 'max-height:48px;max-width:140px;object-fit:contain;flex-shrink:0;';
+    headingLeftWrap.appendChild(logoImg);
+    await new Promise<void>((resolve) => {
+      if (logoImg.complete) {
+        resolve();
+        return;
+      }
+      logoImg.onload = () => resolve();
+      logoImg.onerror = () => resolve();
+      setTimeout(resolve, 3000);
+    });
+  }
   const headingLeft = document.createElement('div');
   headingLeft.textContent = reportHeadingLeft;
   headingLeft.style.cssText =
     'font-size:13px;font-weight:700;color:#111;flex:1;min-width:0;line-height:1.35;word-break:break-word;';
+  headingLeftWrap.appendChild(headingLeft);
   const headingRight = document.createElement('div');
   headingRight.textContent = reportHeadingRight;
   headingRight.style.cssText =
     'font-size:10px;font-weight:400;color:#546e7a;line-height:1.35;text-align:right;white-space:nowrap;flex-shrink:0;';
-  headingRow.appendChild(headingLeft);
+  headingRow.appendChild(headingLeftWrap);
   headingRow.appendChild(headingRight);
   headerWrap.appendChild(headingRow);
 

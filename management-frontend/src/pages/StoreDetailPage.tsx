@@ -1,39 +1,48 @@
-import { useEffect, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
+  Avatar,
   Box,
+  Button,
+  Checkbox,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  IconButton,
+  InputLabel,
+  Link,
+  ListItemText,
+  MenuItem,
+  OutlinedInput,
   Paper,
+  Select,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
-  CircularProgress,
-  Checkbox,
-  Tooltip,
-  Link,
-  Chip,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
-  IconButton,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import {
+  Add as AddIcon,
   ChevronRight as ChevronRightIcon,
   LocalShipping as LocalShippingIcon,
-  Add as AddIcon,
+  People as PeopleIcon,
   Save as SaveIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from 'notistack';
-import { productsAPI, stockAPI, storesAPI } from '../services/api';
-import type { Product, Stock, Store } from '../types';
+import { productsAPI, stockAPI, storesAPI, usersAPI } from '../services/api';
+import type { Product, Stock, Store, User } from '../types';
 import ProductImageWithPopover from '../components/ProductImageWithPopover';
 import VariantProductPicker from '../components/VariantProductPicker';
 import {
@@ -43,11 +52,50 @@ import {
   stockLevelValue,
   stockProductLabel,
 } from '../utils/productInventory';
+import {
+  POS_RECEIPT_TYPE_OPTIONS,
+  effectivePosAutoPrintReceiptTypes,
+  effectivePosReceiptTypes,
+  type PosReceiptTypeId,
+} from '../utils/posReceiptTypes';
+import { useAuth } from '../context/AuthContext';
+import { canManageUserWorkAssignments } from '../utils/permissions';
+
+function userRoleLabel(role: string, t: (key: string) => string): string {
+  switch (role) {
+    case 'management':
+      return t('users:roleManagement');
+    case 'supervisor':
+      return t('users:roleSupervisor');
+    case 'hq_staff':
+      return t('users:roleHQStaff');
+    case 'pos_user':
+      return t('users:rolePosUser');
+    default:
+      return role;
+  }
+}
+
+function userRoleColor(role: string): 'primary' | 'warning' | 'info' | 'default' {
+  switch (role) {
+    case 'management':
+      return 'primary';
+    case 'supervisor':
+      return 'warning';
+    case 'hq_staff':
+      return 'info';
+    default:
+      return 'default';
+  }
+}
 
 export default function StoreDetailPage() {
   const { id } = useParams<{ id: string }>();
   const storeId = Number(id);
-  const { t, i18n } = useTranslation(['storeDetail', 'assignProductToStore', 'storesPage', 'stores', 'stock', 'common']);
+  const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const canManageUsers = canManageUserWorkAssignments(currentUser?.role);
+  const { t, i18n } = useTranslation(['storeDetail', 'assignProductToStore', 'storesPage', 'stores', 'stock', 'common', 'usersPage', 'users']);
   const theme = useTheme();
   const lang = i18n.language || 'en';
   const { enqueueSnackbar } = useSnackbar();
@@ -61,6 +109,13 @@ export default function StoreDetailPage() {
   const [addProductId, setAddProductId] = useState<number | null>(null);
   const [addLevel, setAddLevel] = useState('0');
   const [addingProduct, setAddingProduct] = useState(false);
+  const [enabledReceiptTypes, setEnabledReceiptTypes] = useState<PosReceiptTypeId[]>([]);
+  const [autoPrintReceiptTypes, setAutoPrintReceiptTypes] = useState<PosReceiptTypeId[]>([]);
+  const [savingReceiptSettings, setSavingReceiptSettings] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersDialogOpen, setUsersDialogOpen] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [savingUsers, setSavingUsers] = useState(false);
   const shipCheckboxSx = {
     color: theme.palette.success.dark,
     '&.Mui-checked': { color: theme.palette.success.dark },
@@ -74,15 +129,18 @@ export default function StoreDetailPage() {
     }
     try {
       setLoading(true);
-      const [stores, stock, productList] = await Promise.all([
-        storesAPI.list(),
+      const [storeData, stock, productList, userList] = await Promise.all([
+        storesAPI.get(storeId),
         stockAPI.getStoreStock(storeId),
         productsAPI.list(),
+        usersAPI.list(),
       ]);
-      const found = stores.find((s) => s.id === storeId) ?? null;
       const rows = stock.filter((row) => row.track_prepacked !== false || row.track_weight);
-      setStore(found);
+      setStore(storeData);
+      setEnabledReceiptTypes(effectivePosReceiptTypes(storeData));
+      setAutoPrintReceiptTypes(effectivePosAutoPrintReceiptTypes(storeData));
       setProducts(productList);
+      setUsers(userList);
       setStockRows(rows);
       setStockDrafts(
         Object.fromEntries(rows.map((row) => [row.product_id, String(stockLevelValue(row, row.product))])),
@@ -103,6 +161,55 @@ export default function StoreDetailPage() {
 
   const assignedProductIds = new Set(stockRows.map((row) => row.product_id));
   const addableProducts = products.filter((p) => !assignedProductIds.has(p.id));
+  const storeUsers = useMemo(
+    () => users.filter((user) => user.stores?.some((s) => s.id === storeId)),
+    [users, storeId],
+  );
+  const assignableUsers = useMemo(
+    () => users.filter((user) => user.is_active),
+    [users],
+  );
+
+  const openUsersDialog = () => {
+    setSelectedUserIds(storeUsers.map((user) => user.id));
+    setUsersDialogOpen(true);
+  };
+
+  const saveStoreUsers = async () => {
+    const previouslyAssigned = storeUsers;
+    const toAddIds = selectedUserIds.filter((id) => !previouslyAssigned.some((user) => user.id === id));
+    const toRemove = previouslyAssigned.filter((user) => !selectedUserIds.includes(user.id));
+
+    try {
+      setSavingUsers(true);
+      for (const userId of toAddIds) {
+        const user = users.find((u) => u.id === userId);
+        if (!user) continue;
+        const currentStoreIds = user.stores?.map((s) => s.id) ?? [];
+        if (!currentStoreIds.includes(storeId)) {
+          await usersAPI.updateStores(user.id, [...currentStoreIds, storeId]);
+        }
+      }
+      for (const user of toRemove) {
+        const currentStoreIds = user.stores?.map((s) => s.id) ?? [];
+        await usersAPI.updateStores(
+          user.id,
+          currentStoreIds.filter((id) => id !== storeId),
+        );
+      }
+      enqueueSnackbar(t('storeDetail:usersSaved'), { variant: 'success' });
+      setUsersDialogOpen(false);
+      await load();
+    } catch (error: unknown) {
+      const msg = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      enqueueSnackbar(msg || t('storeDetail:usersSaveFailed'), { variant: 'error' });
+    } finally {
+      setSavingUsers(false);
+    }
+  };
+
+  const userInitials = (user: User) =>
+    `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase();
 
   const toggleShipFrom = async (row: Stock) => {
     const enabling = !row.wholesale_ship_from;
@@ -149,6 +256,50 @@ export default function StoreDetailPage() {
       enqueueSnackbar(msg || t('storeDetail:stockSaveFailed'), { variant: 'error' });
     } finally {
       setSavingProductId(null);
+    }
+  };
+
+  const toggleReceiptEnabled = (typeId: PosReceiptTypeId, checked: boolean) => {
+    setEnabledReceiptTypes((prev) => {
+      const next = checked
+        ? [...prev, typeId]
+        : prev.filter((id) => id !== typeId);
+      const unique = POS_RECEIPT_TYPE_OPTIONS.map((o) => o.id).filter((id) => next.includes(id));
+      setAutoPrintReceiptTypes((auto) => auto.filter((id) => unique.includes(id)));
+      return unique;
+    });
+  };
+
+  const toggleReceiptAutoPrint = (typeId: PosReceiptTypeId, checked: boolean) => {
+    if (checked && !enabledReceiptTypes.includes(typeId)) return;
+    setAutoPrintReceiptTypes((prev) => {
+      if (checked) return [...prev, typeId];
+      return prev.filter((id) => id !== typeId);
+    });
+  };
+
+  const saveReceiptSettings = async () => {
+    if (enabledReceiptTypes.length === 0) {
+      enqueueSnackbar(t('storeDetail:receiptSettingsNeedOne'), { variant: 'warning' });
+      return;
+    }
+    try {
+      setSavingReceiptSettings(true);
+      const updated = await storesAPI.update(storeId, {
+        pos_receipt_types: enabledReceiptTypes,
+        pos_auto_print_receipt_types: autoPrintReceiptTypes.filter((id) =>
+          enabledReceiptTypes.includes(id),
+        ),
+      });
+      setStore(updated);
+      setEnabledReceiptTypes(effectivePosReceiptTypes(updated));
+      setAutoPrintReceiptTypes(effectivePosAutoPrintReceiptTypes(updated));
+      enqueueSnackbar(t('storeDetail:receiptSettingsSaved'), { variant: 'success' });
+    } catch (error: unknown) {
+      const msg = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      enqueueSnackbar(msg || t('storeDetail:receiptSettingsSaveFailed'), { variant: 'error' });
+    } finally {
+      setSavingReceiptSettings(false);
     }
   };
 
@@ -237,6 +388,149 @@ export default function StoreDetailPage() {
         <Typography variant="body2" color="text.secondary">
           {store.address || '—'}
         </Typography>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          <Box>
+            <Typography variant="h6">{t('storeDetail:usersSection')}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {t('storeDetail:usersHint')}
+            </Typography>
+          </Box>
+          {canManageUsers ? (
+            <Button variant="contained" startIcon={<PeopleIcon />} onClick={openUsersDialog}>
+              {t('storeDetail:manageUsers')}
+            </Button>
+          ) : null}
+        </Box>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ width: 52 }} />
+                <TableCell>{t('usersPage:name')}</TableCell>
+                <TableCell>{t('usersPage:username')}</TableCell>
+                <TableCell>{t('usersPage:role')}</TableCell>
+                <TableCell>{t('usersPage:status')}</TableCell>
+                <TableCell align="center" sx={{ width: 72 }}>
+                  {t('common:actions')}
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {storeUsers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ color: 'text.secondary' }}>
+                    {t('storeDetail:noUsers')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                storeUsers.map((user) => (
+                  <TableRow key={user.id} hover>
+                    <TableCell>
+                      <Avatar
+                        src={user.icon_url}
+                        sx={{
+                          bgcolor: user.icon_color || 'primary.main',
+                          width: 32,
+                          height: 32,
+                          fontSize: 14,
+                        }}
+                      >
+                        {userInitials(user)}
+                      </Avatar>
+                    </TableCell>
+                    <TableCell>
+                      {user.first_name} {user.last_name}
+                    </TableCell>
+                    <TableCell>{user.username}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={userRoleLabel(user.role, t)}
+                        color={userRoleColor(user.role)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={user.is_active ? t('storesPage:active') : t('storesPage:inactive')}
+                        color={user.is_active ? 'success' : 'default'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip title={t('usersPage:workSettings')}>
+                        <IconButton
+                          size="small"
+                          onClick={() => navigate(`/work-settings?user=${user.id}`)}
+                        >
+                          <SettingsIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 1 }}>
+          {t('storeDetail:receiptSettingsSection')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {t('storeDetail:receiptSettingsHint')}
+        </Typography>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('storeDetail:receiptTypeColumn')}</TableCell>
+                <TableCell align="center">{t('storeDetail:receiptEnabledColumn')}</TableCell>
+                <TableCell align="center">{t('storeDetail:receiptAutoPrintColumn')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {POS_RECEIPT_TYPE_OPTIONS.map((option) => {
+                const enabled = enabledReceiptTypes.includes(option.id);
+                const autoPrint = autoPrintReceiptTypes.includes(option.id);
+                return (
+                  <TableRow key={option.id}>
+                    <TableCell>{t(option.labelKey)}</TableCell>
+                    <TableCell align="center">
+                      <Checkbox
+                        checked={enabled}
+                        onChange={(e) => toggleReceiptEnabled(option.id, e.target.checked)}
+                        disabled={savingReceiptSettings}
+                      />
+                    </TableCell>
+                    <TableCell align="center">
+                      <Checkbox
+                        checked={autoPrint}
+                        disabled={!enabled || savingReceiptSettings}
+                        onChange={(e) => toggleReceiptAutoPrint(option.id, e.target.checked)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            startIcon={savingReceiptSettings ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+            onClick={saveReceiptSettings}
+            disabled={savingReceiptSettings}
+          >
+            {t('storeDetail:saveReceiptSettings')}
+          </Button>
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 3 }}>
@@ -369,6 +663,51 @@ export default function StoreDetailPage() {
           </Button>
           <Button variant="contained" onClick={handleAddProduct} disabled={addingProduct || !addProductId}>
             {addingProduct ? t('storeDetail:addingProduct') : t('storeDetail:addProduct')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={usersDialogOpen}
+        onClose={() => !savingUsers && setUsersDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{t('storeDetail:manageUsersTitle')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+            {t('storeDetail:manageUsersHint')}
+          </Typography>
+          <FormControl fullWidth>
+            <InputLabel>{t('storeDetail:selectUsers')}</InputLabel>
+            <Select
+              multiple
+              value={selectedUserIds}
+              onChange={(e) => setSelectedUserIds(e.target.value as number[])}
+              input={<OutlinedInput label={t('storeDetail:selectUsers')} />}
+              renderValue={(selected) => {
+                const picked = assignableUsers.filter((user) => (selected as number[]).includes(user.id));
+                return picked.map((user) => `${user.first_name} ${user.last_name}`).join(', ');
+              }}
+            >
+              {assignableUsers.map((user) => (
+                <MenuItem key={user.id} value={user.id}>
+                  <Checkbox checked={selectedUserIds.includes(user.id)} />
+                  <ListItemText
+                    primary={`${user.first_name} ${user.last_name}`}
+                    secondary={`${user.username} (${userRoleLabel(user.role, t)})`}
+                  />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUsersDialogOpen(false)} disabled={savingUsers}>
+            {t('common:cancel')}
+          </Button>
+          <Button variant="contained" onClick={saveStoreUsers} disabled={savingUsers}>
+            {savingUsers ? t('storeDetail:savingUsers') : t('storeDetail:saveUsers')}
           </Button>
         </DialogActions>
       </Dialog>

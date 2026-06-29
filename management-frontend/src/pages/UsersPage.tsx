@@ -20,20 +20,25 @@ import {
   MenuItem,
   Avatar,
   Alert,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Lock as LockIcon,
   Image as ImageIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { usersAPI, storesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
+import { usePosModuleEnabled, useWholesaleOrderEnabled } from '../hooks/useWholesaleOrderEnabled';
 import type { User, Store } from '../types';
 
 export default function UsersPage() {
   const { t } = useTranslation(['users', 'usersPage']);
+  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -42,6 +47,9 @@ export default function UsersPage() {
   const [iconDialogOpen, setIconDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const { enqueueSnackbar } = useSnackbar();
+  const { enabled: posEnabled } = usePosModuleEnabled();
+  const { enabled: wholesaleEnabled } = useWholesaleOrderEnabled();
+  const hasModuleSettings = posEnabled || wholesaleEnabled;
 
   useEffect(() => {
     fetchUsers();
@@ -69,13 +77,39 @@ export default function UsersPage() {
     setIconDialogOpen(true);
   };
 
-  const handleSave = async (userData: any) => {
+  const handleSave = async (userData: {
+    username: string;
+    password?: string;
+    pin?: string;
+    first_name: string;
+    last_name: string;
+    email?: string;
+    role: string;
+    store_ids: number[];
+  }) => {
     try {
       if (editingUser) {
-        await usersAPI.update(editingUser.id, userData);
+        await usersAPI.update(editingUser.id, {
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          role: userData.role as User['role'],
+        });
+        if (posEnabled) {
+          await usersAPI.updateStores(editingUser.id, userData.store_ids);
+        }
         enqueueSnackbar('User updated', { variant: 'success' });
       } else {
-        await usersAPI.create(userData);
+        await usersAPI.create({
+          username: userData.username,
+          password: userData.password!,
+          pin: posEnabled ? userData.pin : undefined,
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          role: userData.role,
+          store_ids: posEnabled ? userData.store_ids : [],
+        });
         enqueueSnackbar('User created', { variant: 'success' });
       }
       setOpen(false);
@@ -98,10 +132,14 @@ export default function UsersPage() {
         return 'primary';
       case 'supervisor':
         return 'warning';
+      case 'hq_staff':
+        return 'info';
       default:
         return 'default';
     }
   };
+
+  const columnCount = 7 + (posEnabled ? 1 : 0);
 
   return (
     <Box>
@@ -128,7 +166,7 @@ export default function UsersPage() {
               <TableCell>{t('usersPage:username')}</TableCell>
               <TableCell>{t('usersPage:email')}</TableCell>
               <TableCell>{t('usersPage:role')}</TableCell>
-              <TableCell>{t('usersPage:stores')}</TableCell>
+              {posEnabled ? <TableCell>{t('usersPage:stores')}</TableCell> : null}
               <TableCell>{t('usersPage:status')}</TableCell>
               <TableCell>{t('usersPage:actions')}</TableCell>
             </TableRow>
@@ -136,13 +174,13 @@ export default function UsersPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={columnCount} align="center">
                   {t('usersPage:loading')}
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={columnCount} align="center">
                   {t('usersPage:noUsers')}
                 </TableCell>
               </TableRow>
@@ -173,9 +211,11 @@ export default function UsersPage() {
                       color={getRoleColor(user.role) as any}
                     />
                   </TableCell>
-                  <TableCell>
-                    {user.stores?.map((s) => s.name).join(', ') || '-'}
-                  </TableCell>
+                  {posEnabled ? (
+                    <TableCell>
+                      {user.stores?.map((s) => s.name).join(', ') || '-'}
+                    </TableCell>
+                  ) : null}
                   <TableCell>
                     <Chip
                       label={user.is_active ? 'Active' : 'Inactive'}
@@ -185,6 +225,15 @@ export default function UsersPage() {
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 1 }}>
+                      {hasModuleSettings ? (
+                        <IconButton
+                          size="small"
+                          onClick={() => navigate(`/work-settings?user=${user.id}`)}
+                          title={t('usersPage:workSettings')}
+                        >
+                          <SettingsIcon />
+                        </IconButton>
+                      ) : null}
                       <IconButton
                         size="small"
                         onClick={() => {
@@ -195,13 +244,15 @@ export default function UsersPage() {
                       >
                         <EditIcon />
                       </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleChangeUserPIN(user)}
-                        title="Change PIN"
-                      >
-                        <LockIcon />
-                      </IconButton>
+                      {posEnabled ? (
+                        <IconButton
+                          size="small"
+                          onClick={() => handleChangeUserPIN(user)}
+                          title="Change PIN"
+                        >
+                          <LockIcon />
+                        </IconButton>
+                      ) : null}
                       <IconButton
                         size="small"
                         onClick={() => handleChangeUserIcon(user)}
@@ -226,6 +277,7 @@ export default function UsersPage() {
         }}
         onSave={handleSave}
         user={editingUser}
+        posEnabled={posEnabled}
       />
       <UserPINDialog
         open={pinDialogOpen}
@@ -284,11 +336,13 @@ function UserDialog({
   onClose,
   onSave,
   user,
+  posEnabled,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (data: any) => void;
   user: User | null;
+  posEnabled: boolean;
 }) {
   const { t } = useTranslation(['users', 'usersPage']);
   const [formData, setFormData] = useState({
@@ -304,8 +358,10 @@ function UserDialog({
   const [stores, setStores] = useState<Store[]>([]);
 
   useEffect(() => {
-    fetchStores();
-  }, []);
+    if (posEnabled) {
+      fetchStores();
+    }
+  }, [posEnabled]);
 
   useEffect(() => {
     if (user) {
@@ -316,7 +372,7 @@ function UserDialog({
         first_name: user.first_name || '',
         last_name: user.last_name || '',
         email: user.email || '',
-        role: user.role || 'pos_user',
+        role: user.role || (posEnabled ? 'pos_user' : 'hq_staff'),
         store_ids: user.stores?.map((s) => s.id) || [],
       });
     } else {
@@ -327,11 +383,11 @@ function UserDialog({
         first_name: '',
         last_name: '',
         email: '',
-        role: 'pos_user',
+        role: posEnabled ? 'pos_user' : 'hq_staff',
         store_ids: [],
       });
     }
-  }, [user, open]);
+  }, [user, open, posEnabled]);
 
   const fetchStores = async () => {
     try {
@@ -372,13 +428,15 @@ function UserDialog({
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
           )}
-          <TextField
-            label="PIN"
-            fullWidth
-            value={formData.pin}
-            onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
-            helperText="4-digit PIN for POS login"
-          />
+          {posEnabled ? (
+            <TextField
+              label="PIN"
+              fullWidth
+              value={formData.pin}
+              onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
+              helperText="4-digit PIN for POS login"
+            />
+          ) : null}
           <TextField
             label={t('users:firstName')}
             required
@@ -409,9 +467,24 @@ function UserDialog({
             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
           >
             <MenuItem value="management">{t('users:roleManagement')}</MenuItem>
-            <MenuItem value="pos_user">{t('users:rolePosUser')}</MenuItem>
+            <MenuItem value="hq_staff">{t('users:roleHQStaff')}</MenuItem>
+            {posEnabled ? <MenuItem value="pos_user">{t('users:rolePosUser')}</MenuItem> : null}
             <MenuItem value="supervisor">{t('users:roleSupervisor')}</MenuItem>
           </TextField>
+          {posEnabled ? (
+            <Autocomplete
+              multiple
+              options={stores}
+              getOptionLabel={(s) => s.name}
+              value={stores.filter((s) => formData.store_ids.includes(s.id))}
+              onChange={(_, value) =>
+                setFormData({ ...formData, store_ids: value.map((s) => s.id) })
+              }
+              renderInput={(params) => (
+                <TextField {...params} label={t('usersPage:stores')} />
+              )}
+            />
+          ) : null}
         </Box>
       </DialogContent>
       <DialogActions>

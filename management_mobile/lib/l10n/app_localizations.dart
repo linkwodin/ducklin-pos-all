@@ -471,6 +471,9 @@ abstract class AppLocalizations {
   /// **'Management'**
   String get roleManagement;
 
+  /// No description provided for @roleHQStaff.
+  String get roleHQStaff;
+
   /// No description provided for @roleSupervisor.
   ///
   /// In en, this message translates to:
@@ -758,6 +761,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'In transit'**
   String get wholesaleStatusInTransit;
+
+  /// No description provided for @wholesaleStatusPendingInvoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending invoice email'**
+  String get wholesaleStatusPendingInvoice;
 
   /// No description provided for @wholesaleStatusPendingPayment.
   ///

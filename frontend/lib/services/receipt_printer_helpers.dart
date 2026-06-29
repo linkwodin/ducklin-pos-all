@@ -316,6 +316,60 @@ class ReceiptPrinterHelpers {
     return getTextBytes(generator, text, baseStyles: baseStyles);
   }
 
+  /// Print company logo (when available) or company name at the top of a receipt.
+  static Future<List<int>> printCompanyHeader(
+    esc_pos_utils.Generator generator, {
+    required String companyName,
+    String? logoPath,
+  }) async {
+    List<int> bytes = [];
+    if (logoPath != null && logoPath.isNotEmpty && File(logoPath).existsSync()) {
+      try {
+        final fileBytes = await File(logoPath).readAsBytes();
+        final decoded = await convertImageToEscPos(fileBytes);
+        if (decoded != null) {
+          final img.Image resized = decoded.width > 384
+              ? img.copyResize(decoded, width: 384)
+              : decoded;
+          bytes += generator.image(resized, align: esc_pos_utils.PosAlign.center);
+          bytes += generator.feed(1);
+          return bytes;
+        }
+      } catch (e) {
+        _logError('Error printing company logo on receipt', e);
+      }
+    }
+
+    final name = companyName.trim();
+    if (name.isEmpty) return bytes;
+
+    final companyImageBytes = await renderTextAsImage(
+      name,
+      fontSize: 28,
+      bold: true,
+      maxWidth: 800,
+    );
+    if (companyImageBytes != null) {
+      final companyImg = await convertImageToEscPos(companyImageBytes);
+      if (companyImg != null) {
+        bytes += generator.image(companyImg, align: esc_pos_utils.PosAlign.center);
+        bytes += generator.feed(1);
+        return bytes;
+      }
+    }
+    bytes += await getTextBytesWithImage(
+      generator,
+      name,
+      baseStyles: esc_pos_utils.PosStyles(
+        align: esc_pos_utils.PosAlign.center,
+        bold: true,
+        height: esc_pos_utils.PosTextSize.size2,
+      ),
+    );
+    bytes += generator.feed(1);
+    return bytes;
+  }
+
   /// Send bytes to printer
   static Future<void> sendToPrinter(
     List<int> bytes,

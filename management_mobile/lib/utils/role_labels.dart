@@ -8,6 +8,8 @@ String roleLabel(AppLocalizations l10n, String role) {
       return l10n.roleSupervisor;
     case 'pos_user':
       return l10n.rolePosUser;
+    case 'hq_staff':
+      return l10n.roleHQStaff;
     case 'cashier':
       return l10n.roleCashier;
     default:

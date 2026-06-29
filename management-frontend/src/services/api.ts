@@ -127,14 +127,68 @@ api.interceptors.response.use(
   },
 );
 
+export type LogoType = 'pdf' | 'web' | 'pos';
+
+export interface PublicCompanyBranding {
+  company_name: string;
+  logo_url?: string;
+  web_logo_url?: string;
+  pos_logo_url?: string;
+  pdf_logo_url?: string;
+}
+
 // Company settings (for PDF/document header)
 export const settingsAPI = {
+  getPublicBranding: async (): Promise<PublicCompanyBranding> => {
+    const { data } = await api.get('/public/company-branding');
+    return data;
+  },
   getCompany: async (): Promise<CompanySettings> => {
     const { data } = await api.get('/settings/company');
     return data;
   },
   updateCompany: async (body: Partial<CompanySettings>): Promise<CompanySettings> => {
     const { data } = await api.put('/settings/company', body);
+    return data;
+  },
+  uploadCompanyLogo: async (formData: FormData): Promise<CompanySettings> => {
+    const { data } = await api.post('/settings/company/logo', formData);
+    return data;
+  },
+  uploadCompanyLogoByType: async (type: LogoType, formData: FormData): Promise<CompanySettings> => {
+    const { data } = await api.post(`/settings/company/logo/${type}`, formData);
+    return data;
+  },
+  copyCompanyLogo: async (from: LogoType, to: LogoType): Promise<CompanySettings> => {
+    const { data } = await api.post('/settings/company/logo/copy', { from, to });
+    return data;
+  },
+  uploadCompanyLogoAll: async (formData: FormData): Promise<CompanySettings> => {
+    const { data } = await api.post('/settings/company/logo/all', formData);
+    return data;
+  },
+  toggleWholesaleOrder: async (body: {
+    enabled: boolean;
+    password?: string;
+    product_serial_code?: string;
+  }): Promise<CompanySettings> => {
+    const { data } = await api.post('/settings/company/wholesale/toggle', body);
+    return data;
+  },
+  getSystemInfo: async (): Promise<{
+    backend_version: string;
+    backend_build_date?: string;
+    installation_id: string;
+  }> => {
+    const { data } = await api.get('/settings/system-info');
+    return data;
+  },
+  togglePosModule: async (body: {
+    enabled: boolean;
+    password?: string;
+    product_serial_code?: string;
+  }): Promise<CompanySettings> => {
+    const { data } = await api.post('/settings/company/pos/toggle', body);
     return data;
   },
 };
@@ -402,8 +456,16 @@ export const storesAPI = {
     const { data } = await api.get('/stores', { params });
     return data;
   },
+  get: async (id: number): Promise<Store> => {
+    const { data } = await api.get(`/stores/${id}`);
+    return data;
+  },
   create: async (store: Partial<Store>): Promise<Store> => {
     const { data } = await api.post('/stores', store);
+    return data;
+  },
+  update: async (id: number, store: Partial<Store>): Promise<Store> => {
+    const { data } = await api.put(`/stores/${id}`, store);
     return data;
   },
 };
@@ -458,6 +520,20 @@ export const usersAPI = {
   },
   updateStores: async (id: number, storeIds: number[]): Promise<User> => {
     const { data } = await api.put(`/users/${id}/stores`, { store_ids: storeIds });
+    return data;
+  },
+  updateWorkSettings: async (
+    id: number,
+    body: {
+      store_ids?: number[];
+      wholesale_client_ids?: number[];
+      default_store_id?: number | null;
+      default_wholesale_client_id?: number | null;
+      clear_default_store?: boolean;
+      clear_default_wholesale_client?: boolean;
+    },
+  ): Promise<User> => {
+    const { data } = await api.put(`/users/${id}/work-settings`, body);
     return data;
   },
 };

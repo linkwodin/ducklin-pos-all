@@ -10,7 +10,7 @@ CREATE TABLE users (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255),
-    role ENUM('management', 'pos_user', 'supervisor') NOT NULL,
+    role ENUM('management', 'pos_user', 'supervisor', 'hq_staff') NOT NULL,
     icon_url VARCHAR(500),
     icon_color VARCHAR(7), -- Hex color code
     is_active BOOLEAN DEFAULT TRUE,
@@ -26,6 +26,9 @@ CREATE TABLE stores (
     name VARCHAR(255) NOT NULL,
     address TEXT,
     is_active BOOLEAN DEFAULT TRUE,
+    pos_receipt_types TEXT,
+    pos_auto_print_receipt_types TEXT,
+    pos_receipt_settings_configured BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

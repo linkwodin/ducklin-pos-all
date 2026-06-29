@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart' as esc_pos_utils;
 import 'package:pos_system/l10n/app_localizations.dart';
 import 'receipt_printer_helpers.dart';
+import 'company_branding_service.dart';
 
 /// Full receipt printer - with or without price, with QR code (audit note = no price)
 class FullReceiptPrinter {
@@ -24,33 +25,13 @@ class FullReceiptPrinter {
     List<int> bytes = [];
     bytes += generator.reset();
 
-    // Print company name
-    final companyName = '德靈公司 Ducklin Company';
-    final companyImageBytes = await ReceiptPrinterHelpers.renderTextAsImage(
-      companyName,
-      fontSize: 28,
-      bold: true,
-      maxWidth: 800,
+    // Print company branding
+    final branding = await CompanyBrandingService.instance.resolveForReceipt();
+    bytes += await ReceiptPrinterHelpers.printCompanyHeader(
+      generator,
+      companyName: branding['company_name'] ?? '',
+      logoPath: branding['logo_path'],
     );
-    if (companyImageBytes != null) {
-      final companyImg = await ReceiptPrinterHelpers.convertImageToEscPos(companyImageBytes);
-      if (companyImg != null) {
-        bytes += generator.image(companyImg, align: esc_pos_utils.PosAlign.center);
-      } else {
-        bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
-          generator,
-          companyName,
-          baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
-        );
-      }
-    } else {
-      bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
-        generator,
-        companyName,
-        baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
-      );
-    }
-    bytes += generator.feed(1);
 
     // Print store name if available
     if (storeName.isNotEmpty) {

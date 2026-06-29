@@ -32,7 +32,8 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Add as AddIcon, ChevronRight as ChevronRightIcon, AttachFile as AttachFileIcon, Delete as DeleteIcon } from '@mui/icons-material';
-import { wholesaleOrdersAPI, wholesaleClientsAPI, storesAPI, productsAPI } from '../services/api';
+import { wholesaleOrdersAPI, wholesaleClientsAPI, storesAPI, productsAPI, usersAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { useSnackbar } from 'notistack';
 import type { WholesaleClient, Store, Product } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -81,6 +82,7 @@ function getUnitPrice(product: Product | undefined, sectorId?: number): number {
 
 export default function WholesaleOrderCreatePage() {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const { t, i18n } = useTranslation();
   const lang = i18n.language || 'en';
   const [stores, setStores] = useState<Store[]>([]);
@@ -120,6 +122,7 @@ export default function WholesaleOrderCreatePage() {
   const [orderDiscountInputValue, setOrderDiscountInputValue] = useState('');
   const [poAttachmentFiles, setPoAttachmentFiles] = useState<File[]>([]);
   const [poDropActive, setPoDropActive] = useState(false);
+  const [defaultStoreId, setDefaultStoreId] = useState<number | undefined>();
   const { enqueueSnackbar } = useSnackbar();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -142,21 +145,42 @@ export default function WholesaleOrderCreatePage() {
     const load = async () => {
       try {
         setLoading(true);
-        const [sList, pList, cList, channels] = await Promise.all([
+        const [sList, pList, cList, channels, workUser] = await Promise.all([
           storesAPI.list(),
           productsAPI.list(undefined, poDate, poDate),
           wholesaleClientsAPI.list({ active_only: true }),
           wholesaleOrdersAPI.getRecentOrderChannels().catch(() => []),
+          authUser?.id ? usersAPI.get(authUser.id).catch(() => null) : Promise.resolve(null),
         ]);
-        setStores(sList);
+        const allowedClientIds = workUser?.wholesale_clients?.map((c) => c.id) ?? [];
+        const filteredClients =
+          allowedClientIds.length > 0 ? cList.filter((c) => allowedClientIds.includes(c.id)) : [];
+        const allowedStoreIds = workUser?.stores?.map((s) => s.id) ?? [];
+        const filteredStores =
+          allowedStoreIds.length > 0 ? sList.filter((s) => allowedStoreIds.includes(s.id)) : sList;
+        setStores(filteredStores.length > 0 ? filteredStores : sList);
         setProducts(pList);
-        setClients(cList);
+        setClients(filteredClients);
         setRecentOrderChannels(channels);
-        if (cList.length) {
-          setClientId(cList[0].id);
+        const initialClientId =
+          workUser?.default_wholesale_client_id &&
+          filteredClients.some((c) => c.id === workUser.default_wholesale_client_id)
+            ? workUser.default_wholesale_client_id
+            : filteredClients[0]?.id;
+        if (initialClientId) {
+          const initialClient = filteredClients.find((c) => c.id === initialClientId);
+          setClientId(initialClientId);
           setShippingStoreId('');
-          setPaymentTerms(cList[0].terms ?? '');
+          setPaymentTerms(initialClient?.terms ?? '');
         }
+        const storeId =
+          workUser?.default_store_id &&
+          (filteredStores.length > 0 ? filteredStores : sList).some(
+            (s) => s.id === workUser.default_store_id,
+          )
+            ? workUser.default_store_id
+            : (filteredStores.length > 0 ? filteredStores : sList)[0]?.id;
+        setDefaultStoreId(storeId);
       } catch {
         enqueueSnackbar('Failed to load data', { variant: 'error' });
       } finally {
@@ -164,7 +188,7 @@ export default function WholesaleOrderCreatePage() {
       }
     };
     load();
-  }, [enqueueSnackbar]);
+  }, [enqueueSnackbar, authUser?.id]);
 
   const selectedClient = clients.find((c) => c.id === clientId);
   const clientSectorId = selectedClient?.sector_id;
@@ -249,7 +273,7 @@ export default function WholesaleOrderCreatePage() {
       const order = await wholesaleOrdersAPI.create({
         wholesale_client_id: clientId as number,
         wholesale_client_store_id: shippingStoreIdToUse || undefined,
-        store_id: stores[0].id,
+        store_id: defaultStoreId ?? stores[0]?.id,
         po_number: orderChannel === 'po' ? (poNumber.trim() || undefined) : undefined,
         order_channel: orderChannel,
         po_date: poDate || undefined,

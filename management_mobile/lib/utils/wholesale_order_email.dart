@@ -150,12 +150,34 @@ WholesaleEmailStepState wholesaleEmailStepState(
 bool wholesaleOrderEmailStepDone(
   WholesaleOrderEmailType type,
   List<AuditLogEntry> auditLogs, {
+  WholesaleOrder? order,
   bool workflowInvoiceEmailDone = false,
 }) {
   final state = wholesaleEmailStepState(type, auditLogs);
   if (state.done) return true;
-  if (type == WholesaleOrderEmailType.invoice && workflowInvoiceEmailDone) return true;
-  return false;
+  if (order == null) {
+    if (type == WholesaleOrderEmailType.invoice && workflowInvoiceEmailDone) return true;
+    return false;
+  }
+  final paymentClosed = order.paymentConfirmedAt?.trim().isNotEmpty ?? false;
+  switch (type) {
+    case WholesaleOrderEmailType.invoice:
+      if (workflowInvoiceEmailDone) return true;
+      if (order.invoiceSentAt?.trim().isNotEmpty ?? false) return true;
+      if (paymentClosed) return true;
+      return false;
+    case WholesaleOrderEmailType.shipmentsDelivered:
+      if (paymentClosed &&
+          order.shipments.isNotEmpty &&
+          order.shipments.every((s) => s.status == 'completed')) {
+        return true;
+      }
+      return false;
+    case WholesaleOrderEmailType.orderConfirm:
+      if (order.shipments.any(shipmentHasDeliveryNoteStarted)) return true;
+      if (paymentClosed && order.shipments.isNotEmpty) return true;
+      return false;
+  }
 }
 
 const Map<WholesaleOrderEmailType, List<String>> wholesaleOrderEmailAttachmentKinds = {

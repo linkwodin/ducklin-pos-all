@@ -60,6 +60,7 @@ import {
   wholesaleOrderStatusLabel,
 } from '../utils/wholesaleOrderEmail';
 import { isWholesaleOrderPaymentConfirmationPhase, buildWholesaleOrderWorkflowContext } from '../utils/wholesaleOrderWorkflow';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 /** Above this count, attachment ZIP is requested by email (server builds ZIP) instead of browser download. */
 const BULK_ZIP_EMAIL_THRESHOLD = 10;
@@ -374,6 +375,9 @@ export default function WholesaleOrdersPage() {
         filename: `wholesale-orders-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`,
         reportHeadingLeft,
         reportHeadingRight,
+        logoUrl: (companyRes?.pdf_logo_url || companyRes?.logo_url)
+          ? resolveAssetUrl(companyRes.pdf_logo_url || companyRes.logo_url || '')
+          : undefined,
       });
     } catch {
       enqueueSnackbar(t('wholesaleOrdersPage.exportPdfError'), { variant: 'error' });

@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
 import LanguageSelector from '../components/LanguageSelector';
+import { useCompanyBranding } from '../hooks/useCompanyBranding';
 
 const envLabel =
   import.meta.env.MODE === 'uat' ? 'UAT' :
@@ -206,6 +207,8 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const { canvasRef, handleMouseMove } = useParticleCanvas();
+  const { companyName, logoSrc, fallbackLogo } = useCompanyBranding();
+  const displayCompanyName = companyName || 'Ducklin Company UK';
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
@@ -331,15 +334,21 @@ export default function LoginPage() {
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3.5, ...stagger(0) }}>
           <Box
             component="img"
-            src="/logo.png"
-            alt="Company Logo"
+            src={logoSrc}
+            alt={displayCompanyName}
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (img.src !== fallbackLogo && !img.src.endsWith('/logo.png')) {
+                img.src = fallbackLogo;
+              }
+            }}
             sx={{
-              height: 64, width: 'auto', objectFit: 'contain', mb: 1.5,
+              height: 64, width: 'auto', maxWidth: 220, objectFit: 'contain', mb: 1.5,
               animation: `${shimmer} 4s ease-in-out infinite`,
             }}
           />
           <Typography sx={{ fontSize: '1.05rem', fontWeight: 600, color: 'rgba(0,0,0,0.8)', letterSpacing: '0.02em' }}>
-            Ducklin Company UK
+            {displayCompanyName}
           </Typography>
           <Typography sx={{
             fontSize: '0.72rem', fontWeight: 500, color: 'rgba(0,0,0,0.4)',
@@ -551,7 +560,7 @@ export default function LoginPage() {
           ...stagger(200),
         }}
       >
-        &copy; {new Date().getFullYear()} Ducklin Company UK. All rights reserved.
+        &copy; {new Date().getFullYear()} {displayCompanyName}. All rights reserved.
       </Typography>
     </Box>
   );

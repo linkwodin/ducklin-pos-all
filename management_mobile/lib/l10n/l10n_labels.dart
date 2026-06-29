@@ -60,6 +60,9 @@ extension AppLocalizationsLabels on AppLocalizations {
     if (order.status == 'rejected') return wholesaleStatusRejected;
     if (order.status == 'deleted') return wholesaleStatusDeleted;
 
+    if (isWholesaleOrderPaymentSettled(order, ctx)) return wholesaleStatusCompleted;
+    if (hasPaymentProofDocument(order)) return wholesaleStatusPendingPayment;
+
     final steps = computeWholesaleOrderProcessSteps(order, ctx);
     if (steps.every((s) => s.done)) return wholesaleStatusCompleted;
 
@@ -71,6 +74,7 @@ extension AppLocalizationsLabels on AppLocalizations {
       case WholesaleProcessStepKey.stepFinishShipment:
         return wholesaleStatusInTransit;
       case WholesaleProcessStepKey.stepSendInvoiceEmail:
+        return wholesaleStatusPendingInvoice;
       case WholesaleProcessStepKey.stepPaymentConfirmation:
         return wholesaleStatusPendingPayment;
       case WholesaleProcessStepKey.stepComplete:

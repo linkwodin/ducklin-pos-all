@@ -9,6 +9,7 @@ import 'package:barcode/barcode.dart';
 import 'package:image/image.dart' as img;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'receipt_printer_helpers.dart';
+import 'company_branding_service.dart';
 import '../utils/weight_barcode.dart';
 
 /// Barcode receipt printer - with entry price and total, with barcode
@@ -39,33 +40,13 @@ class BarcodeReceiptPrinter {
     List<int> bytes = [];
     bytes += generator.reset();
 
-    // Print company name
-    final companyName = '德靈公司 Ducklin Company';
-    final companyImageBytes = await ReceiptPrinterHelpers.renderTextAsImage(
-      companyName,
-      fontSize: 28,
-      bold: true,
-      maxWidth: 800,
+    // Print company branding
+    final branding = await CompanyBrandingService.instance.resolveForReceipt();
+    bytes += await ReceiptPrinterHelpers.printCompanyHeader(
+      generator,
+      companyName: branding['company_name'] ?? '',
+      logoPath: branding['logo_path'],
     );
-    if (companyImageBytes != null) {
-      final companyImg = await ReceiptPrinterHelpers.convertImageToEscPos(companyImageBytes);
-      if (companyImg != null) {
-        bytes += generator.image(companyImg, align: esc_pos_utils.PosAlign.center);
-      } else {
-        bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
-          generator,
-          companyName,
-          baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
-        );
-      }
-    } else {
-      bytes += await ReceiptPrinterHelpers.getTextBytesWithImage(
-        generator,
-        companyName,
-        baseStyles: esc_pos_utils.PosStyles(align: esc_pos_utils.PosAlign.center, bold: true, height: esc_pos_utils.PosTextSize.size2),
-      );
-    }
-    bytes += generator.feed(1);
 
     // Print store name if available
     if (storeName.isNotEmpty) {

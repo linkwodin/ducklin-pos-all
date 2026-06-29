@@ -36,14 +36,15 @@ class ImageCacheService {
   static Future<String?> getOrDownload(String url, {String subdir = subdirLogo}) async {
     if (url.isEmpty) return null;
     try {
+      final resolved = ApiService.instance.resolveAssetUrl(url);
       final dir = await _getCacheDir(subdir);
-      final key = _cacheKey(url);
-      final ext = _extensionFromUrl(url);
+      final key = _cacheKey(resolved);
+      final ext = _extensionFromUrl(resolved);
       final filePath = path.join(dir, '$key$ext');
       final file = File(filePath);
       if (await file.exists()) return filePath;
 
-      final response = await ApiService.instance.downloadUrl(url);
+      final response = await ApiService.instance.downloadUrl(resolved);
       if (response == null) return null;
       await file.writeAsBytes(response);
       return filePath;

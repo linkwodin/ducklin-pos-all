@@ -1,0 +1,28 @@
+# Local development MySQL — started automatically by INSTALL-LOCAL.sh / INSTALL-LOCAL.bat
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pos-mysql-local
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: pos_local_root
+      MYSQL_DATABASE: pos_system
+      MYSQL_USER: pos_user
+      MYSQL_PASSWORD: pos_local_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - pos_mysql_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ppos_local_root"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  pos_mysql_data:

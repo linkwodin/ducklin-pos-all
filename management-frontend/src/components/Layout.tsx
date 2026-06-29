@@ -43,12 +43,16 @@ import {
   QrCode2 as BarcodeReferenceIcon,
   SmartToy as SmartToyIcon,
   Menu as MenuIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import Collapse from '@mui/material/Collapse';
 import { useAuth } from '../context/AuthContext';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isPosUser, shouldHideCostEditorMenu } from '../utils/permissions';
 import LanguageSelector from './LanguageSelector';
+import { useCompanyBranding } from '../hooks/useCompanyBranding';
+import { usePosModuleEnabled, useWholesaleOrderEnabled } from '../hooks/useWholesaleOrderEnabled';
 
 const drawerWidth = 260;
 
@@ -67,9 +71,14 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const userRole = user?.role;
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { companyName, logoSrc, fallbackLogo } = useCompanyBranding();
+  const { enabled: wholesaleEnabled } = useWholesaleOrderEnabled();
+  const { enabled: posEnabled } = usePosModuleEnabled();
+  const hasModuleSettings = posEnabled || wholesaleEnabled;
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -79,58 +88,109 @@ export default function Layout() {
     if (!isDesktop) setMobileNavOpen(false);
   };
 
-  const menuStructure: MenuItem[] = [
-    { text: t('layout.menuHome'), icon: <DashboardIcon />, path: '/' },
-    { text: t('layout.report'), icon: <TableChartIcon />, path: '/reports' },
-    {
-      text: t('layout.menuProducts'),
-      icon: <MenuBookIcon />,
-      children: [
-        { text: t('layout.products'), icon: <InventoryIcon />, path: '/products' },
-        { text: t('layout.productLines'), icon: <MenuBookIcon />, path: '/product-lines' },
-        { text: t('layout.productBarcodeReference'), icon: <BarcodeReferenceIcon />, path: '/product-barcode-reference' },
-        { text: t('layout.categories'), icon: <LabelIcon />, path: '/categories' },
-        { text: t('layout.sectors'), icon: <CategoryIcon />, path: '/sectors' },
-        { text: t('layout.catalogs'), icon: <MenuBookIcon />, path: '/catalogs' },
-        { text: 'Cost Editor', icon: <TableChartIcon />, path: '/product-cost-editor' },
-        { text: 'Cost Editor v2', icon: <TableChartIcon />, path: '/product-cost-editor-v2' },
-      ],
-    },
-    {
-      text: t('layout.menuInventory'),
-      icon: <WarehouseIcon />,
-      children: [
-        { text: t('layout.stock'), icon: <WarehouseIcon />, path: '/stock' },
-        { text: t('layout.assignProductToStore'), icon: <StoreIcon />, path: '/assign-product-to-store' },
-        { text: t('layout.shipment'), icon: <LocalShippingIcon />, path: '/restock-orders' },
-        { text: t('layout.stockReport'), icon: <AssessmentIcon />, path: '/stock-report' },
-        { text: t('layout.stocktake'), icon: <AssignmentIcon />, path: '/stocktake' },
-        { text: t('layout.timetable'), icon: <EventIcon />, path: '/timetable' },
-      ],
-    },
-    { text: t('layout.menuPos'), icon: <ShoppingCartIcon />, path: '/orders' },
-    {
+  const menuStructure: MenuItem[] = useMemo(() => {
+    const wholesaleMenu: MenuItemGroup = {
       text: t('layout.menuWholesale'),
       icon: <LocalShippingIcon />,
-      children: [
-        { text: t('layout.wholesaleOrders'), icon: <ShoppingCartIcon />, path: '/wholesale-orders' },
-        { text: t('layout.wholesaleShipments'), icon: <LocalShippingIcon />, path: '/wholesale-shipments' },
-        { text: t('layout.wholesaleClients'), icon: <PeopleIcon />, path: '/wholesale-clients' },
-      ],
-    },
-    {
-      text: t('layout.menuSettings'),
-      icon: <StoreIcon />,
-      children: [
-        { text: t('layout.users'), icon: <PeopleIcon />, path: '/users' },
-        { text: t('layout.stores'), icon: <StoreIcon />, path: '/stores' },
-        { text: t('layout.devices'), icon: <DevicesIcon />, path: '/devices' },
-        { text: t('layout.currencyRates'), icon: <CurrencyExchangeIcon />, path: '/currency-rates' },
-        { text: t('layout.companySettings'), icon: <BusinessIcon />, path: '/company-settings' },
-        { text: t('layout.internalAiPlaybook'), icon: <SmartToyIcon />, path: '/internal-ai-playbook' },
-      ],
-    },
-  ];
+      children: isPosUser(userRole)
+        ? [
+            { text: t('layout.wholesaleOrders'), icon: <ShoppingCartIcon />, path: '/wholesale-orders' },
+            { text: t('layout.wholesaleShipments'), icon: <LocalShippingIcon />, path: '/wholesale-shipments' },
+          ]
+        : [
+            { text: t('layout.wholesaleOrders'), icon: <ShoppingCartIcon />, path: '/wholesale-orders' },
+            { text: t('layout.wholesaleShipments'), icon: <LocalShippingIcon />, path: '/wholesale-shipments' },
+            { text: t('layout.wholesaleClients'), icon: <PeopleIcon />, path: '/wholesale-clients' },
+          ],
+    };
+
+    if (isPosUser(userRole)) {
+      return [
+        { text: t('layout.menuHome'), icon: <DashboardIcon />, path: '/' },
+        { text: t('layout.menuPos'), icon: <ShoppingCartIcon />, path: '/orders' },
+        {
+          text: t('layout.menuProducts'),
+          icon: <MenuBookIcon />,
+          children: [
+            { text: t('layout.productLines'), icon: <MenuBookIcon />, path: '/product-lines' },
+            {
+              text: t('layout.productBarcodeReference'),
+              icon: <BarcodeReferenceIcon />,
+              path: '/product-barcode-reference',
+            },
+          ],
+        },
+        ...(wholesaleEnabled ? [wholesaleMenu] : []),
+      ];
+    }
+
+    const productChildren: MenuItemLeaf[] = [
+      { text: t('layout.products'), icon: <InventoryIcon />, path: '/products' },
+      { text: t('layout.productLines'), icon: <MenuBookIcon />, path: '/product-lines' },
+      {
+        text: t('layout.productBarcodeReference'),
+        icon: <BarcodeReferenceIcon />,
+        path: '/product-barcode-reference',
+      },
+      { text: t('layout.categories'), icon: <LabelIcon />, path: '/categories' },
+      { text: t('layout.sectors'), icon: <CategoryIcon />, path: '/sectors' },
+      { text: t('layout.catalogs'), icon: <MenuBookIcon />, path: '/catalogs' },
+    ];
+    if (!shouldHideCostEditorMenu(userRole)) {
+      productChildren.push(
+        { text: t('layout.costEditor'), icon: <TableChartIcon />, path: '/product-cost-editor' },
+        { text: 'Cost Editor v2', icon: <TableChartIcon />, path: '/product-cost-editor-v2' },
+      );
+    }
+
+    const settingsChildren: MenuItemLeaf[] = [
+      { text: t('layout.users'), icon: <PeopleIcon />, path: '/users' },
+    ];
+    if (hasModuleSettings) {
+      settingsChildren.push({
+        text: t('layout.userWorkSettings'),
+        icon: <AssignmentIcon />,
+        path: '/work-settings',
+      });
+    }
+    settingsChildren.push(
+      { text: t('layout.stores'), icon: <StoreIcon />, path: '/stores' },
+      { text: t('layout.devices'), icon: <DevicesIcon />, path: '/devices' },
+      { text: t('layout.currencyRates'), icon: <CurrencyExchangeIcon />, path: '/currency-rates' },
+      { text: t('layout.companySettings'), icon: <BusinessIcon />, path: '/company-settings' },
+      { text: t('layout.systemInfo'), icon: <InfoIcon />, path: '/system-info' },
+      { text: t('layout.internalAiPlaybook'), icon: <SmartToyIcon />, path: '/internal-ai-playbook' },
+    );
+
+    return [
+      { text: t('layout.menuHome'), icon: <DashboardIcon />, path: '/' },
+      { text: t('layout.report'), icon: <TableChartIcon />, path: '/reports' },
+      {
+        text: t('layout.menuProducts'),
+        icon: <MenuBookIcon />,
+        children: productChildren,
+      },
+      {
+        text: t('layout.menuInventory'),
+        icon: <WarehouseIcon />,
+        children: [
+          { text: t('layout.stock'), icon: <WarehouseIcon />, path: '/stock' },
+          { text: t('layout.assignProductToStore'), icon: <StoreIcon />, path: '/assign-product-to-store' },
+          { text: t('layout.shipment'), icon: <LocalShippingIcon />, path: '/restock-orders' },
+          { text: t('layout.stockReport'), icon: <AssessmentIcon />, path: '/stock-report' },
+          { text: t('layout.stocktake'), icon: <AssignmentIcon />, path: '/stocktake' },
+          { text: t('layout.timetable'), icon: <EventIcon />, path: '/timetable' },
+        ],
+      },
+      { text: t('layout.menuPos'), icon: <ShoppingCartIcon />, path: '/orders' },
+      ...(wholesaleEnabled ? [wholesaleMenu] : []),
+      {
+        text: t('layout.menuSettings'),
+        icon: <StoreIcon />,
+        children: settingsChildren,
+      },
+    ];
+  }, [t, userRole, wholesaleEnabled, hasModuleSettings]);
 
   const toggleGroup = (key: string) => {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -265,11 +325,18 @@ export default function Layout() {
           </IconButton>
           <Box
             component="img"
-            src="/logo.png"
-            alt="Logo"
+            src={logoSrc}
+            alt={companyName || 'Logo'}
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (img.src !== fallbackLogo && !img.src.endsWith('/logo.png')) {
+                img.src = fallbackLogo;
+              }
+            }}
             sx={{
               height: { xs: 28, sm: 32 },
               width: 'auto',
+              maxWidth: { xs: 100, sm: 120 },
               objectFit: 'contain',
               mr: { xs: 1, sm: 1.5 },
               flexShrink: 0,
@@ -314,6 +381,19 @@ export default function Layout() {
               {!user?.icon_url && getInitials()}
             </Avatar>
             <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+              {hasModuleSettings ? (
+                <MenuItem
+                  onClick={() => {
+                    navigate('/work-settings');
+                    handleMenuClose();
+                  }}
+                >
+                  <ListItemIcon>
+                    <AssignmentIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary={t('layout.userWorkSettings')} />
+                </MenuItem>
+              ) : null}
               <MenuItem
                 onClick={() => {
                   navigate('/profile');

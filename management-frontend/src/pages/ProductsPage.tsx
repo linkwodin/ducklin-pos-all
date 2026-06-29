@@ -35,12 +35,16 @@ import {
 import { productsAPI, categoriesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
+import { canDeleteProduct } from '../utils/permissions';
 import type { Product } from '../types';
 import { productDisplayBarcode, productIsWeight } from '../utils/productInventory';
 import ProductVariantDialog from '../components/ProductVariantDialog';
 
 export default function ProductsPage() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const allowDelete = canDeleteProduct(user?.role);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,11 +252,13 @@ export default function ProductsPage() {
                       <EditIcon />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title={t('common.delete')}>
-                    <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
-                      <DeleteIcon />
-                    </IconButton>
-                  </Tooltip>
+                  {allowDelete && (
+                    <Tooltip title={t('common.delete')}>
+                      <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
               </Paper>
             ))
@@ -322,9 +328,11 @@ export default function ProductsPage() {
                       >
                         <EditIcon />
                       </IconButton>
-                      <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
-                        <DeleteIcon />
-                      </IconButton>
+                      {allowDelete && (
+                        <IconButton size="small" onClick={() => handleDelete(product.id)} color="error">
+                          <DeleteIcon />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

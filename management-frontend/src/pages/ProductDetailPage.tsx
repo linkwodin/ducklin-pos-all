@@ -42,6 +42,8 @@ import {
 import { productsAPI, sectorsAPI, currencyRatesAPI } from '../services/api';
 import { useSnackbar } from 'notistack';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
+import { canEditProductCost } from '../utils/permissions';
 import type { Product, ProductCost, PriceHistory, CurrencyRate } from '../types';
 import ProductVariantForm from '../components/ProductVariantForm';
 import { formatPerWeightVariantLabel, weightVariantGramsFromProduct } from '../utils/productForm';
@@ -57,6 +59,8 @@ import {
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const allowCostEdit = canEditProductCost(user?.role);
   const { enqueueSnackbar } = useSnackbar();
   const [product, setProduct] = useState<Product | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>([]);
@@ -206,12 +210,14 @@ export default function ProductDetailPage() {
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                     <Typography variant="h6">{t('productDetail.currentCostConfig')}</Typography>
-                    <Button
-                      variant="outlined"
-                      onClick={() => setCostDialogOpen(true)}
-                    >
-                      {t('productDetail.updateCost')}
-                    </Button>
+                    {allowCostEdit && (
+                      <Button
+                        variant="outlined"
+                        onClick={() => setCostDialogOpen(true)}
+                      >
+                        {t('productDetail.updateCost')}
+                      </Button>
+                    )}
                   </Box>
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
@@ -254,12 +260,14 @@ export default function ProductDetailPage() {
                 <Typography variant="body1" gutterBottom>
                   {t('productDetail.noCostConfig')}
                 </Typography>
-                <Button
-                  variant="contained"
-                  onClick={() => setCostDialogOpen(true)}
-                >
-                  {t('productDetail.setCost')}
-                </Button>
+                {allowCostEdit && (
+                  <Button
+                    variant="contained"
+                    onClick={() => setCostDialogOpen(true)}
+                  >
+                    {t('productDetail.setCost')}
+                  </Button>
+                )}
               </Box>
             )}
           </Box>

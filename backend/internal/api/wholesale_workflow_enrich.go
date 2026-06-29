@@ -98,7 +98,9 @@ func (h *WholesaleOrderHandler) enrichWholesaleOrdersWorkflow(orders []models.Wh
 		wo := &orders[i]
 		orderLogs := logsByOrder[wo.ID]
 
-		if wo.InvoiceSentAt != nil && !wo.InvoiceSentAt.IsZero() {
+		if wo.PaymentConfirmedAt != nil && !wo.PaymentConfirmedAt.IsZero() {
+			wo.WorkflowInvoiceEmailDone = true
+		} else if wo.InvoiceSentAt != nil && !wo.InvoiceSentAt.IsZero() {
 			wo.WorkflowInvoiceEmailDone = true
 		} else {
 			wo.WorkflowInvoiceEmailDone = latestInvoiceEmailDoneFromAudits(orderLogs)
@@ -116,8 +118,8 @@ func wholesaleOrderGrandTotal(wo *models.WholesaleOrder) float64 {
 }
 
 func isWholesaleOrderPaymentFullyReceived(wo *models.WholesaleOrder) bool {
-	if wo.PaymentConfirmedAt == nil || wo.PaymentConfirmedAt.IsZero() {
-		return false
+	if wo.PaymentConfirmedAt != nil && !wo.PaymentConfirmedAt.IsZero() {
+		return true
 	}
 	orderTotal := wholesaleOrderGrandTotal(wo)
 	if wo.WorkflowPaymentProofTotal != nil {
@@ -127,5 +129,5 @@ func isWholesaleOrderPaymentFullyReceived(wo *models.WholesaleOrder) bool {
 	if orderHasPaymentProofDocument(wo) {
 		return false
 	}
-	return true
+	return false
 }

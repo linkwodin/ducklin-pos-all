@@ -37,6 +37,16 @@ func (h *WholesaleClientHandler) List(c *gin.Context) {
 	if c.Query("active_only") == "1" {
 		query = query.Where("is_active = ?", true)
 	}
+	if role, _ := c.Get("role"); role == RolePosUser {
+		userIDInterface, _ := c.Get("user_id")
+		userID := userIDInterface.(uint)
+		clientIDs := posUserWholesaleClientIDs(h.db, userID)
+		if len(clientIDs) == 0 {
+			c.JSON(http.StatusOK, []models.WholesaleClient{})
+			return
+		}
+		query = query.Where("id IN ?", clientIDs)
+	}
 	query = query.Order("name ASC")
 
 	var list []models.WholesaleClient

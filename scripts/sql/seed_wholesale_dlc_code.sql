@@ -1,0 +1,2 @@
+-- Wholesale DLC codes are generated per installation with the dlc-gen tool.
+-- See backend/cmd/dlc-gen and Management → System information for the system name.

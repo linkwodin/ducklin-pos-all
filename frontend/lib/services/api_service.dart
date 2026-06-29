@@ -377,6 +377,14 @@ class ApiService {
     return response.data is List ? response.data as List<dynamic> : [];
   }
 
+  /// Get a single store (includes POS receipt settings).
+  Future<Map<String, dynamic>> getStore(int storeId) async {
+    final response = await _dio.get('/stores/$storeId');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
   /// List wholesale clients (active only for dropdown when creating orders).
   Future<List<dynamic>> listWholesaleClients({bool activeOnly = true}) async {
     final response = await _dio.get(
@@ -508,6 +516,14 @@ class ApiService {
   /// Company settings (courier list, etc.).
   Future<Map<String, dynamic>> getCompanySettings() async {
     final response = await _dio.get('/settings/company');
+    return response.data is Map<String, dynamic>
+        ? response.data as Map<String, dynamic>
+        : Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Public company branding for login screen (no auth required).
+  Future<Map<String, dynamic>> getPublicCompanyBranding() async {
+    final response = await _dio.get('/public/company-branding');
     return response.data is Map<String, dynamic>
         ? response.data as Map<String, dynamic>
         : Map<String, dynamic>.from(response.data as Map);
@@ -667,8 +683,9 @@ class ApiService {
   /// Download image (or any file) from [url] and return bytes. Uses full URL as-is.
   Future<Uint8List?> downloadUrl(String url) async {
     try {
+      final resolved = _resolveAssetUrl(url);
       final r = await _dio.get<dynamic>(
-        url,
+        resolved,
         options: Options(responseType: ResponseType.bytes),
       );
       final data = r.data;
@@ -680,6 +697,36 @@ class ApiService {
       return null;
     }
   }
+
+  String _resolveAssetUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final root = _baseUrl!.replaceFirst(RegExp(r'/api/v1/?$'), '');
+    final rootUri = Uri.parse(root);
+
+    late Uri uri;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      uri = Uri.parse(trimmed);
+    } else if (trimmed.startsWith('/')) {
+      uri = rootUri.replace(path: trimmed);
+    } else {
+      uri = rootUri.resolve(trimmed);
+    }
+
+    if (uri.host == 'localhost') {
+      uri = uri.replace(host: rootUri.host, port: rootUri.hasPort ? rootUri.port : uri.port);
+    }
+
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      pathSegments: uri.pathSegments,
+    ).toString();
+  }
+
+  /// Resolve a stored asset path or URL against the configured API server.
+  String resolveAssetUrl(String url) => _resolveAssetUrl(url);
 
   /// Health check (GET /health at server root). Returns true if server is reachable.
   Future<bool> healthCheck() async {
