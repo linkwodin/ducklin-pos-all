@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 REM One-click local install for Windows (MySQL via Docker + backend + management UI).
 REM Usage: INSTALL-LOCAL.bat [--start] [--with-flutter] [--skip-docker]
 
-set "REPO_ROOT=%~dp0"
+set "REPO_ROOT=%~dp0.."
 if "%REPO_ROOT:~-1%"=="\" set "REPO_ROOT=%REPO_ROOT:~0,-1%"
 set "COMPOSE_FILE=%REPO_ROOT%\docker-compose.local.yml"
 set "ENV_FILE=%REPO_ROOT%\backend\.env"
@@ -29,18 +29,15 @@ echo   POS System - Local One-Click Install
 echo ========================================
 echo.
 
-call :need_cmd docker || exit /b 1
 call :need_cmd go || exit /b 1
 call :need_cmd node || exit /b 1
 call :need_cmd npm || exit /b 1
 
 if "%SKIP_DOCKER%"=="0" (
+  echo ==^> Checking Docker
+  call "%REPO_ROOT%\scripts\ensure-docker.bat"
+  if errorlevel 1 exit /b 1
   echo ==^> Starting MySQL ^(Docker^)
-  docker info >nul 2>&1
-  if errorlevel 1 (
-    echo [ERROR] Docker is not running. Start Docker Desktop and try again.
-    exit /b 1
-  )
   call :compose_up
   if errorlevel 1 exit /b 1
   call :wait_for_mysql

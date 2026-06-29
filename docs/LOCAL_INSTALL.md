@@ -8,7 +8,7 @@ Install these once on the machine:
 
 | Tool | Version | Download |
 |------|---------|----------|
-| **Docker Desktop** | latest | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
+| **Docker Desktop** | latest | Installed automatically by `INSTALL-LOCAL.bat` if missing (via winget) |
 | **Go** | 1.21+ | [go.dev/dl](https://go.dev/dl/) |
 | **Node.js** | 18+ | [nodejs.org](https://nodejs.org/) |
 
@@ -123,7 +123,8 @@ The Flutter app uses `http://127.0.0.1:8868/api/v1` in development mode (`fronte
 
 | Problem | Fix |
 |---------|-----|
-| Docker not running | Start Docker Desktop, re-run installer |
+| Docker not running | The installer starts Docker Desktop and waits up to 10 minutes; if it times out, open Docker Desktop manually and re-run |
+| Docker install failed | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) manually, or use `--skip-docker` with your own MySQL |
 | Port 3306 in use | Stop local MySQL or change the port mapping in `docker-compose.local.yml` and `backend/.env` |
 | Port 8868 / 3000 in use | Stop other services or change `PORT` in `backend/.env` / Vite port in `management-frontend/vite.config.ts` |
 | Re-seed admin | Drop DB volume (`docker compose … down -v`) and re-run install, or create users in the management UI |

@@ -16,6 +16,10 @@ if not exist "%REPO_ROOT%\backend\.env" (
   exit /b 1
 )
 
+echo ==^> Checking Docker
+call "%REPO_ROOT%\scripts\ensure-docker.bat"
+if errorlevel 1 exit /b 1
+
 echo ==^> Starting MySQL
 docker compose version >nul 2>&1
 if not errorlevel 1 (

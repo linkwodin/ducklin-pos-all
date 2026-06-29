@@ -6,6 +6,7 @@ This directory contains all deployment and utility scripts for the POS system.
 
 ```
 scripts/
+├── ensure-docker.bat            # Windows: check/install Docker Desktop, wait for engine
 ├── install-local.sh             # One-click local install (MySQL + backend + management UI)
 ├── install-local.bat            # Windows local install
 ├── start-local.sh               # Start local dev stack
